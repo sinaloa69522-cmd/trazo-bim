@@ -45,7 +45,10 @@ export function PlanView({ ed, spaceDown }: { ed: Editor; spaceDown: MutableRefO
     mo.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
     document.fonts?.ready.then(draw);
 
-    let pan: { x: number; y: number; moved: boolean; pick?: Selection | null } | null = null;
+    // pan: rueda pulsada, espacio + arrastre, botón derecho o arrastrar con el dedo.
+    // Con el ratón, arrastrar sobre el vacío dibuja una ventana de selección.
+    let pan: { x: number; y: number; moved: boolean; right: boolean; pick?: Selection | null } | null = null;
+    let box: { sx: number; sy: number; moved: boolean; additive: boolean; pick?: Selection | null } | null = null;
     const local = (e: MouseEvent) => { const r = cv.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top }; };
     const onMove = (e: PointerEvent) => {
       if (pan) {
@@ -56,18 +59,33 @@ export function PlanView({ ed, spaceDown }: { ed: Editor; spaceDown: MutableRefO
         return;
       }
       const p = local(e);
+      if (box) {
+        if (Math.hypot(p.x - box.sx, p.y - box.sy) > 4) box.moved = true;
+        if (box.moved) { ed.box = { a: ed.toW(box.sx, box.sy), b: ed.toW(p.x, p.y) }; ed.emit(); return; }
+      }
       ed.pointerMove(p.x, p.y);
     };
     const onDown = (e: PointerEvent) => {
       cv.setPointerCapture(e.pointerId);
-      if (e.button === 1 || (e.button === 0 && spaceDown.current)) { pan = { x: e.clientX, y: e.clientY, moved: true }; return; }
-      if (e.button === 2) { ed.escape(); return; }
-      const p = local(e), r = ed.pointerDown(p.x, p.y);
-      if (r.pan) pan = { x: e.clientX, y: e.clientY, moved: false, pick: r.pick };
+      if (e.button === 1 || (e.button === 0 && spaceDown.current)) { pan = { x: e.clientX, y: e.clientY, moved: true, right: false }; return; }
+      if (e.button === 2) { pan = { x: e.clientX, y: e.clientY, moved: false, right: true }; return; }
+      const p = local(e), additive = e.shiftKey || e.ctrlKey || e.metaKey, r = ed.pointerDown(p.x, p.y, additive);
+      if (!r.box) return;
+      if (e.pointerType === "touch") pan = { x: e.clientX, y: e.clientY, moved: false, right: false, pick: r.pick };
+      else box = { sx: p.x, sy: p.y, moved: false, additive, pick: r.pick };
     };
-    const onUp = () => {
-      if (pan && !pan.moved && ed.tool === "select") ed.select(pan.pick ?? null);
-      pan = null;
+    const onUp = (e: PointerEvent) => {
+      if (pan && !pan.moved) {
+        if (pan.right) ed.escape();
+        else if (ed.tool === "select") ed.select(pan.pick ?? null);
+      }
+      if (box) {
+        const p = local(e);
+        if (box.moved) ed.selectBox(ed.toW(box.sx, box.sy), ed.toW(p.x, p.y), box.additive);
+        else if (box.pick && box.additive) ed.toggleSelect(box.pick);
+        else if (!box.additive) ed.select(box.pick ?? null);
+      }
+      pan = null; box = null;
       ed.pointerUp();
     };
     const onWheel = (e: WheelEvent) => { e.preventDefault(); const p = local(e); ed.zoomAt(p.x, p.y, Math.exp(-e.deltaY * 0.0015)); };
@@ -76,6 +94,7 @@ export function PlanView({ ed, spaceDown }: { ed: Editor; spaceDown: MutableRefO
     cv.addEventListener("pointermove", onMove);
     cv.addEventListener("pointerdown", onDown);
     cv.addEventListener("pointerup", onUp);
+    cv.addEventListener("pointercancel", onUp);
     cv.addEventListener("pointerleave", onLeave);
     cv.addEventListener("wheel", onWheel, { passive: false });
     cv.addEventListener("contextmenu", noMenu);
@@ -83,7 +102,7 @@ export function PlanView({ ed, spaceDown }: { ed: Editor; spaceDown: MutableRefO
       unsub(); ro.disconnect(); mo.disconnect(); mq.removeEventListener("change", retheme);
       cancelAnimationFrame(frame); ed.fitRequest = null;
       cv.removeEventListener("pointermove", onMove); cv.removeEventListener("pointerdown", onDown);
-      cv.removeEventListener("pointerup", onUp); cv.removeEventListener("pointerleave", onLeave);
+      cv.removeEventListener("pointerup", onUp); cv.removeEventListener("pointercancel", onUp); cv.removeEventListener("pointerleave", onLeave);
       cv.removeEventListener("wheel", onWheel); cv.removeEventListener("contextmenu", noMenu);
     };
   }, [ed, spaceDown]);

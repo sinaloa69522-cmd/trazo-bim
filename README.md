@@ -5,8 +5,10 @@ Herramienta web de dibujo arquitectónico que toma como referencia AutoCAD (plan
 ## Qué hace hoy
 
 - **Planta 2D:** muros, puertas, ventanas, líneas y cotas con ORTO (F8) y referencias a objetos (F3).
-- **Línea de comandos estilo AutoCAD:** `M` muro, `P` puerta, `V` ventana, `L` línea, `C` cota, `H` habitación, `MO` mover, `CO` copiar, `B` borrar, `U` deshacer, `Z` encuadrar. Mientras dibujas, teclea una longitud (`4.5`) o coordenadas (`3,2` o `@1,0`).
+- **Línea de comandos estilo AutoCAD:** `M` muro, `P` puerta, `V` ventana, `L` línea, `C` cota, `H` habitación, `MO` mover, `CO` copiar, `SI` simetría, `B` borrar, `U` deshacer, `Z` encuadrar. Mientras dibujas, teclea una longitud (`4.5`) o coordenadas (`3,2` o `@1,0`).
 - **Edición:** selecciona un muro y arrastra sus pinzamientos para estirarlo o moverlo; los muros unidos lo siguen y los huecos conservan su posición.
+- **Selección múltiple:** Mayús o Ctrl + clic, o ventana de selección (de izquierda a derecha, lo que queda dentro; de derecha a izquierda, también lo que cruza). Mover, copiar, simetría (`SI`) y borrar actúan sobre toda la selección.
+- **Importar DXF:** líneas y polilíneas (LINE, LWPOLYLINE, POLYLINE) como anotación, con detección de unidades. "Convertir líneas en muros" las pasa a muros.
 - **Habitaciones:** superficie útil calculada desde los muros.
 - **3D:** modelo generado a partir de la planta (Three.js).
 - **Exportación DXF** por capas (`A-MUROS`, `A-PUERTAS`, `A-VENTANAS`, `A-COTAS`, `A-ANOTACION`, `A-HABITACIONES`).
@@ -30,7 +32,7 @@ npm run build      # comprobación de tipos y build de producción
 
 ## Hoja de ruta
 
-1. Planta 2D: importar DXF, simetría, recortar y alargar, selección múltiple.
+1. Planta 2D: recortar y alargar, desfase (equidistancia), bloques.
 2. BIM: niveles, losas, cubiertas, escaleras, tipos de muro con capas de materiales.
 3. Documentación: tablas de puertas y ventanas, láminas con cajetín, impresión a PDF.
 4. Intercambio: exportación IFC para Revit y ArchiCAD.
