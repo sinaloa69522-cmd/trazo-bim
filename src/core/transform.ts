@@ -1,7 +1,7 @@
 import type { Pt } from "./geometry";
 import { nextId, type Model } from "./model";
 
-export type ElementType = "wall" | "opening" | "line" | "dim" | "room";
+export type ElementType = "wall" | "opening" | "line" | "dim" | "room" | "slab";
 export interface ElementRef { type: ElementType; id: number }
 
 type Seg = { x1: number; y1: number; x2: number; y2: number };
@@ -29,7 +29,7 @@ function applySeg(s: Seg, t: Xform) {
 }
 
 const listOf = (m: Model, type: ElementType) =>
-  ({ wall: m.walls, opening: m.openings, line: m.lines, dim: m.dims, room: m.rooms })[type] as { id: number }[];
+  ({ wall: m.walls, opening: m.openings, line: m.lines, dim: m.dims, room: m.rooms, slab: m.slabs })[type] as { id: number }[];
 
 export function findElement(m: Model, r: ElementRef) {
   return listOf(m, r.type).find((o) => o.id === r.id) ?? null;
@@ -49,6 +49,7 @@ export function transformElements(m: Model, refs: ElementRef[], t: Xform, copy: 
     const el = copy ? JSON.parse(JSON.stringify(src)) : src;
     if (copy) el.id = nextId(m);
     if (r.type === "room") { const p = t.map(el); el.x = p.x; el.y = p.y; if (copy) el.name = `${el.name} (copia)`; }
+    else if (r.type === "slab") { el.pts = el.pts.map(t.map); if (t.reflects) el.pts.reverse(); }
     else applySeg(el, t);
     // la simetría invierte el lado de la normal: la cota cambia de lado y las puertas abren al lado contrario
     if (t.reflects && r.type === "dim") el.off = -el.off;
@@ -68,10 +69,11 @@ export function transformElements(m: Model, refs: ElementRef[], t: Xform, copy: 
 
 export function deleteElements(m: Model, refs: ElementRef[]) {
   const ids = (type: ElementType) => new Set(refs.filter((r) => r.type === type).map((r) => r.id));
-  const walls = ids("wall"), ops = ids("opening"), lines = ids("line"), dims = ids("dim"), rooms = ids("room");
+  const walls = ids("wall"), ops = ids("opening"), lines = ids("line"), dims = ids("dim"), rooms = ids("room"), slabs = ids("slab");
   m.walls = m.walls.filter((w) => !walls.has(w.id));
   m.openings = m.openings.filter((o) => !ops.has(o.id) && !walls.has(o.wallId));
   m.lines = m.lines.filter((l) => !lines.has(l.id));
   m.dims = m.dims.filter((d) => !dims.has(d.id));
   m.rooms = m.rooms.filter((r) => !rooms.has(r.id));
+  m.slabs = m.slabs.filter((r) => !slabs.has(r.id));
 }

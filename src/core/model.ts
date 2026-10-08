@@ -45,16 +45,36 @@ export interface Room {
   name: string;
 }
 
+export interface Slab {
+  id: number;
+  /** Contorno cerrado, en orden */
+  pts: { x: number; y: number }[];
+  /** Espesor; la losa va por debajo de la cota del nivel */
+  thick: number;
+}
+
+/** Contenido de un nivel (una planta). Los identificadores son únicos dentro del nivel. */
 export interface Model {
   walls: Wall[];
   openings: Opening[];
   lines: Line[];
   dims: Dim[];
   rooms: Room[];
+  slabs: Slab[];
   nid: number;
 }
 
-export type LayerId = "muros" | "puertas" | "ventanas" | "cotas" | "anot" | "hab";
+export interface Level extends Model {
+  name: string;
+  /** Cota del suelo del nivel, en metros */
+  elev: number;
+}
+
+export interface Project {
+  levels: Level[];
+}
+
+export type LayerId = "muros" | "puertas" | "ventanas" | "cotas" | "anot" | "hab" | "losas";
 
 export interface Layer {
   id: LayerId;
@@ -72,9 +92,14 @@ export const LAYERS: Layer[] = [
   { id: "cotas", name: "A-COTAS", label: "Cotas", tok: "--dim" },
   { id: "anot", name: "A-ANOTACION", label: "Anotación", tok: "--anno" },
   { id: "hab", name: "A-HABITACIONES", label: "Habitaciones", tok: "--accent" },
+  { id: "losas", name: "A-LOSAS", label: "Losas", tok: "--muted" },
 ];
 
-export const emptyModel = (): Model => ({ walls: [], openings: [], lines: [], dims: [], rooms: [], nid: 1 });
+export const emptyModel = (): Model => ({ walls: [], openings: [], lines: [], dims: [], rooms: [], slabs: [], nid: 1 });
+
+export const newLevel = (name: string, elev: number, content: Model = emptyModel()): Level => ({ ...content, name, elev });
+
+export const emptyProject = (): Project => ({ levels: [newLevel("Planta baja", 0)] });
 
 export const nextId = (m: Model) => m.nid++;
 
@@ -86,7 +111,23 @@ export function cloneModel(m: Model): Model {
 export function normalizeModel(raw: unknown): Model {
   const m = { ...emptyModel(), ...(raw as Partial<Model>) };
   m.rooms = m.rooms ?? [];
+  m.slabs = m.slabs ?? [];
   return m;
+}
+
+/** Acepta proyectos guardados y también modelos de una sola planta de versiones anteriores. */
+export function normalizeProject(raw: unknown): Project {
+  const r = raw as Partial<Project> & Partial<Model>;
+  if (Array.isArray(r?.levels) && r.levels.length)
+    return { levels: r.levels.map((l, i) => ({ ...normalizeModel(l), name: l.name ?? `Nivel ${i}`, elev: l.elev ?? 0 })) };
+  return { levels: [newLevel("Planta baja", 0, normalizeModel(raw))] };
+}
+
+/** Vivienda de ejemplo: planta baja de 10 x 7 m con su losa. */
+export function sampleProject(): Project {
+  const m = sampleModel();
+  m.slabs.push({ id: nextId(m), pts: [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 7 }, { x: 0, y: 7 }], thick: 0.2 });
+  return { levels: [newLevel("Planta baja", 0, m)] };
 }
 
 /** Vivienda de ejemplo de 10 x 7 m. */

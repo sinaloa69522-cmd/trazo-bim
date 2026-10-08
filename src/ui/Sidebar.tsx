@@ -1,5 +1,5 @@
 import { Fragment, useState } from "react";
-import { dimGeom, dir, fits } from "../core/geometry";
+import { dimGeom, dir, fits, polygonArea } from "../core/geometry";
 import { LAYERS, type Model } from "../core/model";
 import type { Editor } from "../editor/Editor";
 
@@ -24,7 +24,7 @@ function Properties({ ed, onFocusCommand }: { ed: Editor; onFocusCommand: () => 
   let title = "Valores por defecto", body: JSX.Element | null = null;
   const n = ed.sels.length;
   const key = sel ? `${sel.type}-${sel.id}` : n > 1 ? "multi" : "def";
-  const TYPE_LABEL = { wall: "Muros", opening: "Puertas y ventanas", line: "Líneas", dim: "Cotas", room: "Habitaciones" } as const;
+  const TYPE_LABEL = { wall: "Muros", opening: "Puertas y ventanas", line: "Líneas", dim: "Cotas", room: "Habitaciones", slab: "Losas" } as const;
 
   if (sel && o && sel.type === "wall") {
     const w = o as Model["walls"][number];
@@ -56,6 +56,11 @@ function Properties({ ed, onFocusCommand }: { ed: Editor; onFocusCommand: () => 
         onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
         onBlur={(e) => { const v = e.target.value.trim(); if (v && v !== r.name) ed.edit(() => { r.name = v; }); }} />
     </>;
+  } else if (sel && o && sel.type === "slab") {
+    const sl = o as Model["slabs"][number];
+    title = "Losa";
+    ro.push(["Superficie", `${num(polygonArea(sl.pts))} m²`], ["Vértices", String(sl.pts.length)]);
+    body = <NumberField id={`${key}-t`} label="Espesor (m)" value={sl.thick} onCommit={(v) => ed.edit(() => { sl.thick = v; })} />;
   } else if (sel && o && sel.type === "line") {
     const l = o as Model["lines"][number];
     title = "Línea";
@@ -76,6 +81,7 @@ function Properties({ ed, onFocusCommand }: { ed: Editor; onFocusCommand: () => 
       <NumberField id="def-dw" label="Ancho puerta" value={d.doorW} onCommit={(v) => { d.doorW = v; ed.emit(); }} />
       <NumberField id="def-ww" label="Ancho ventana" value={d.winW} onCommit={(v) => { d.winW = v; ed.emit(); }} />
       <NumberField id="def-s" label="Antepecho" value={d.sill} onCommit={(v) => { d.sill = v; ed.emit(); }} />
+      <NumberField id="def-sl" label="Espesor losa" value={d.slabThick} onCommit={(v) => { d.slabThick = v; ed.emit(); }} />
     </>;
   }
 
@@ -101,10 +107,39 @@ function Properties({ ed, onFocusCommand }: { ed: Editor; onFocusCommand: () => 
   );
 }
 
+function Levels({ ed }: { ed: Editor }) {
+  const levels = ed.project.levels, cur = ed.model;
+  return (
+    <section>
+      <h2>Niveles</h2>
+      <div className="levels" role="radiogroup" aria-label="Nivel activo">
+        {[...levels].map((l, i) => ({ l, i })).reverse().map(({ l, i }) => (
+          <button key={i} role="radio" aria-checked={i === ed.active} className="level" onClick={() => ed.setActiveLevel(i)}>
+            <span>{l.name}</span><span className="n">{l.elev >= 0 ? "+" : ""}{l.elev.toFixed(2)}</span>
+          </button>
+        ))}
+      </div>
+      <div className="props" key={`lv-${ed.active}-${levels.length}`}>
+        <label htmlFor="lv-name">Nombre</label>
+        <input id="lv-name" type="text" defaultValue={cur.name}
+          onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
+          onBlur={(e) => { const v = e.target.value.trim(); if (v && v !== cur.name) ed.renameLevel(v); }} />
+        <NumberField id="lv-elev" label="Cota (m)" value={cur.elev} onCommit={(v) => ed.setLevelElevation(v)} />
+        <div className="full" style={{ display: "flex", gap: 6 }}>
+          <button className="btn" style={{ flex: 1 }} onClick={() => ed.addLevel(false)} title="Nivel vacío encima, con el de abajo en gris como referencia">Nuevo nivel</button>
+          <button className="btn" style={{ flex: 1 }} onClick={() => ed.addLevel(true)} title="Copia muros, huecos y losas del nivel activo">Duplicar</button>
+        </div>
+        {levels.length > 1 && <button className="btn full" onClick={() => ed.deleteLevel()}>Borrar nivel</button>}
+      </div>
+    </section>
+  );
+}
+
 export function Sidebar({ ed, onFocusCommand }: { ed: Editor; onFocusCommand: () => void }) {
   const counts = ed.layerCounts(), s = ed.stats();
   return (
     <aside className="side">
+      <Levels ed={ed} />
       <section>
         <h2>Capas</h2>
         {LAYERS.map((L) => (
@@ -131,7 +166,7 @@ export function Sidebar({ ed, onFocusCommand }: { ed: Editor; onFocusCommand: ()
       </section>
       <p className="hint">
         Escribe comandos como en AutoCAD: <b>M</b> muro, <b>P</b> puerta, <b>V</b> ventana, <b>L</b> línea, <b>C</b> cota,{" "}
-        <b>H</b> habitación, <b>MO</b> mover, <b>CO</b> copiar, <b>SI</b> simetría, <b>TR</b> recortar, <b>AL</b> alargar, <b>DE</b> desfase. Mientras dibujas, teclea una longitud (p. ej. <b>4.5</b>) y Enter.
+        <b>H</b> habitación, <b>LO</b> losa, <b>MO</b> mover, <b>CO</b> copiar, <b>SI</b> simetría, <b>TR</b> recortar, <b>AL</b> alargar, <b>DE</b> desfase. Mientras dibujas, teclea una longitud (p. ej. <b>4.5</b>) y Enter.
         Selecciona un muro y arrastra sus cuadros azules para estirarlo. Arrastra sobre el vacío para seleccionar con ventana (Mayús o Ctrl suma a la selección). Rueda para zoom; arrastra con el botón derecho, la rueda o Espacio para desplazar. F8 orto, F3 referencias.
       </p>
     </aside>

@@ -1,5 +1,5 @@
 import { dimGeom, dimOffset, dir, loc, pieces, type Pt } from "../core/geometry";
-import type { Dim, Wall } from "../core/model";
+import type { Dim, Model, Wall } from "../core/model";
 import { RC } from "../core/rooms";
 import type { Editor, SelType } from "./Editor";
 
@@ -50,6 +50,25 @@ export function drawPlan(ctx: CanvasRenderingContext2D, ed: Editor, C: PlanColor
   const quad = (w: Wall | { x1: number; y1: number; x2: number; y2: number }, a: number, b: number, n0: number, n1: number) =>
     [loc(w, a, n0), loc(w, b, n0), loc(w, b, n1), loc(w, a, n1)];
   const isSel = (type: SelType, id: number) => ed.isSelected(type, id);
+
+  // nivel inferior como referencia (gris claro), como el subyacente de Revit
+  const below = ed.levelBelow();
+  if (below && ed.vis.muros) {
+    ctx.globalAlpha = 0.18;
+    for (const w of below.walls) { const h = w.thick / 2, L = dir(w).L; poly(quad(w, 0, L, -h, h), C.muted); }
+    ctx.globalAlpha = 1;
+  }
+
+  // losas: contorno discontinuo y trama suave
+  if (ed.vis.losas) for (const sl of m.slabs) {
+    const hl = isSel("slab", sl.id) || (ed.hover?.type === "slab" && ed.hover.id === sl.id);
+    ctx.globalAlpha = hl ? 0.14 : 0.05;
+    poly(sl.pts, hl ? C.accent : C.muted);
+    ctx.globalAlpha = 1;
+    ctx.setLineDash([8, 3, 2, 3]);
+    poly(sl.pts, null, hl ? C.accent : C.muted, hl ? 2 : 1);
+    ctx.setLineDash([]);
+  }
 
   // habitaciones (relleno)
   const rg = ed.rooms;
@@ -123,7 +142,13 @@ export function drawPlan(ctx: CanvasRenderingContext2D, ed: Editor, C: PlanColor
     ctx.globalAlpha = 0.55;
     for (const r of ed.sels) {
       if (r.type === "opening") continue;
-      const o = ed.model[({ wall: "walls", line: "lines", dim: "dims", room: "rooms" } as const)[r.type]].find((x) => x.id === r.id);
+      if (r.type === "slab") {
+        const sl = ed.model.slabs.find((x) => x.id === r.id);
+        if (sl) poly(sl.pts.map(xf.map), null, C.accent, 1.5);
+        continue;
+      }
+      const list: { id: number }[] = ed.model[({ wall: "walls", line: "lines", dim: "dims", room: "rooms" } as const)[r.type]];
+      const o = list.find((x) => x.id === r.id) as Wall | Model["lines"][number] | Model["rooms"][number] | undefined;
       if (!o) continue;
       if ("x1" in o) {
         const a = xf.map({ x: o.x1, y: o.y1 }), b = xf.map({ x: o.x2, y: o.y2 });
@@ -147,6 +172,12 @@ export function drawPlan(ctx: CanvasRenderingContext2D, ed: Editor, C: PlanColor
       const w = { x1: last.x, y1: last.y, x2: p.x, y2: p.y }, h = ed.defaults.thick / 2, L = dir(w).L;
       if (L > 0.01) { ctx.globalAlpha = 0.45; poly(quad(w, 0, L, -h, h), C.accent); ctx.globalAlpha = 1; }
       seg(last, p, C.accent, 1, [5, 4]); lengthTag(ctx, ed, C, last, p);
+    } else if (ed.tool === "slab") {
+      ctx.globalAlpha = 0.12; poly([...draft.pts, p], C.accent); ctx.globalAlpha = 1;
+      for (let i = 0; i + 1 < draft.pts.length; i++) seg(draft.pts[i], draft.pts[i + 1], C.accent, 1.5);
+      seg(last, p, C.accent, 1.2, [5, 4]);
+      if (draft.pts.length >= 2) seg(p, draft.pts[0], C.accent, 1, [2, 4]);
+      lengthTag(ctx, ed, C, last, p);
     } else if (ed.tool === "line") {
       seg(last, p, C.accent, 1.2, [5, 4]); lengthTag(ctx, ed, C, last, p);
     } else if (ed.tool === "dim") {

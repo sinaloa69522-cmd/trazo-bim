@@ -16,6 +16,7 @@ const TOOLS: { tool: Tool; label: string; key: string; icon: JSX.Element }[] = [
   { tool: "line", label: "Línea", key: "L", icon: <path d="M2 14L14 2" /> },
   { tool: "dim", label: "Cota", key: "C", icon: <path d="M2 4v6M14 4v6M2 8h12M4 9.5l-2-1.5 2-1.5M12 6.5l2 1.5-2 1.5" /> },
   { tool: "room", label: "Habitación", key: "H", icon: <><rect x="2" y="2" width="12" height="12" /><path d="M5 7h6M5 10h4" /></> },
+  { tool: "slab", label: "Losa", key: "LO", icon: <path d="M2 6l6-3 6 3-6 3zM2 6v3l6 3 6-3V6" /> },
   { tool: "trim", label: "Recortar", key: "TR", icon: <><path d="M2 8h12M8 2v12" /><path d="M10.5 5.5l3-3" strokeDasharray="1.5 1.5" /></> },
   { tool: "extend", label: "Alargar", key: "AL", icon: <><path d="M13 2v12M2 8h7" /><path d="M9 8h4" strokeDasharray="1.5 1.5" /><path d="M7.5 6.5L9.5 8l-2 1.5" /></> },
   { tool: "offset", label: "Desfase", key: "DE", icon: <path d="M2 5h12M2 11h12" /> },
@@ -97,7 +98,7 @@ export function App() {
         <section className="work" data-view={view}>
           <div className="pane paneplan">
             <PlanView ed={ed} spaceDown={spaceDown} />
-            <span className="tag">PLANTA · Nivel 0 · 1:100</span>
+            <span className="tag">PLANTA · {ed.model.name} · 1:100</span>
           </div>
           <div className="pane pane3d">
             <View3D ref={view3d} ed={ed} />

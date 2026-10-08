@@ -95,6 +95,24 @@ export function bounds(m: Model): Bounds {
     x0 = Math.min(x0, x); y0 = Math.min(y0, y); x1 = Math.max(x1, x); y1 = Math.max(y1, y);
   };
   for (const s of [...m.walls, ...m.lines, ...m.dims]) { add(s.x1, s.y1); add(s.x2, s.y2); }
+  for (const sl of m.slabs ?? []) for (const p of sl.pts) add(p.x, p.y);
   if (!isFinite(x0)) return { x0: -5, y0: -4, x1: 5, y1: 4 };
   return { x0: x0 - 1.5, y0: y0 - 1.5, x1: x1 + 1.5, y1: y1 + 1.5 };
+}
+
+/** ¿Está el punto dentro del polígono? (regla par-impar) */
+export function pointInPolygon(p: Pt, poly: Pt[]) {
+  let inside = false;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const a = poly[i], b = poly[j];
+    if ((a.y > p.y) !== (b.y > p.y) && p.x < ((b.x - a.x) * (p.y - a.y)) / (b.y - a.y) + a.x) inside = !inside;
+  }
+  return inside;
+}
+
+/** Área de un polígono simple (fórmula del área de Gauss), siempre positiva. */
+export function polygonArea(poly: Pt[]) {
+  let a = 0;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) a += (poly[j].x + poly[i].x) * (poly[j].y - poly[i].y);
+  return Math.abs(a) / 2;
 }
