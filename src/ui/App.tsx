@@ -1,0 +1,104 @@
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { Editor, type Tool } from "../editor/Editor";
+import { CommandLine } from "./CommandLine";
+import { DxfDialog } from "./DxfDialog";
+import { PlanView } from "./PlanView";
+import { Sidebar } from "./Sidebar";
+import { View3D, type View3DHandle } from "./View3D";
+
+type ViewMode = "plan" | "split" | "3d";
+
+const TOOLS: { tool: Tool; label: string; key: string; icon: JSX.Element }[] = [
+  { tool: "select", label: "Seleccionar", key: "S", icon: <path d="M3 2l9 5-4 1.2L6.5 13z" /> },
+  { tool: "wall", label: "Muro", key: "M", icon: <rect x="1.5" y="6" width="13" height="4" /> },
+  { tool: "door", label: "Puerta", key: "P", icon: <path d="M2 13h12M4 13V4M4 4a9 9 0 0 1 9 9" /> },
+  { tool: "window", label: "Ventana", key: "V", icon: <><rect x="1.5" y="5.5" width="13" height="5" /><path d="M1.5 8h13" /></> },
+  { tool: "line", label: "Línea", key: "L", icon: <path d="M2 14L14 2" /> },
+  { tool: "dim", label: "Cota", key: "C", icon: <path d="M2 4v6M14 4v6M2 8h12M4 9.5l-2-1.5 2-1.5M12 6.5l2 1.5-2 1.5" /> },
+  { tool: "room", label: "Habitación", key: "H", icon: <><rect x="2" y="2" width="12" height="12" /><path d="M5 7h6M5 10h4" /></> },
+];
+
+function storage(): Storage | null {
+  try { return window.localStorage; } catch { return null; }
+}
+
+export function useEditorVersion(ed: Editor) {
+  return useSyncExternalStore(ed.subscribe, ed.getVersion);
+}
+
+export function App() {
+  const ed = useMemo(() => new Editor(storage()), []);
+  useEditorVersion(ed);
+  const [view, setView] = useState<ViewMode>(() => {
+    try { return (localStorage.getItem("trazo-view") as ViewMode) || (innerWidth < 760 ? "plan" : "split"); } catch { return "split"; }
+  });
+  const [dxfOpen, setDxfOpen] = useState(false);
+  const cmdRef = useRef<HTMLInputElement>(null);
+  const view3d = useRef<View3DHandle>(null);
+  const spaceDown = useRef(false);
+
+  useEffect(() => { try { localStorage.setItem("trazo-view", view); } catch { /* sin almacenamiento */ } }, [view]);
+
+  useEffect(() => {
+    const down = (e: KeyboardEvent) => {
+      const t = e.target as HTMLElement, inField = ["INPUT", "TEXTAREA", "SELECT"].includes(t.tagName);
+      if (e.key === "F8") { e.preventDefault(); ed.toggleOrtho(); }
+      else if (e.key === "F3") { e.preventDefault(); ed.toggleOsnap(); }
+      else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "z" && !inField) { e.preventDefault(); ed.undo(); }
+      else if (inField) return;
+      else if (e.key === "Escape") ed.escape();
+      else if ((e.key === "Delete" || e.key === "Backspace") && ed.sel) { e.preventDefault(); ed.deleteSel(); }
+      else if (e.key === " ") { spaceDown.current = true; e.preventDefault(); }
+      else if (e.key === "Enter") ed.runCommand("");
+      else if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) cmdRef.current?.focus();
+    };
+    const up = (e: KeyboardEvent) => { if (e.key === " ") spaceDown.current = false; };
+    document.addEventListener("keydown", down);
+    document.addEventListener("keyup", up);
+    return () => { document.removeEventListener("keydown", down); document.removeEventListener("keyup", up); };
+  }, [ed]);
+
+  return (
+    <div className="app">
+      <header className="top">
+        <div className="brand">Trazo BIM <small>v0.2</small></div>
+        <div className="group" role="toolbar" aria-label="Herramientas" id="tools">
+          {TOOLS.map((t) => (
+            <button key={t.tool} className="tb" aria-pressed={ed.tool === t.tool} title={`${t.label} (${t.key})`}
+              onClick={() => { ed.setTool(t.tool); cmdRef.current?.focus(); }}>
+              <svg viewBox="0 0 16 16">{t.icon}</svg><span className="lbl">{t.label}</span><kbd>{t.key}</kbd>
+            </button>
+          ))}
+        </div>
+        <div className="group" role="group" aria-label="Vista">
+          {([["plan", "Planta"], ["split", "Dividida"], ["3d", "3D"]] as const).map(([v, label]) => (
+            <button key={v} className="tb" aria-pressed={view === v} onClick={() => setView(v)}>{label}</button>
+          ))}
+        </div>
+        <div className="spacer" />
+        <button className="btn" onClick={() => ed.undo()} title="Deshacer (Ctrl+Z)">Deshacer</button>
+        <button className="btn" onClick={() => { ed.loadSample(); ed.fitRequest?.(); view3d.current?.fit(); }}>Ejemplo</button>
+        <button className="btn" onClick={() => ed.clear()}>Nuevo</button>
+        <button className="btn primary" onClick={() => setDxfOpen(true)}>Exportar DXF</button>
+      </header>
+
+      <div className="main">
+        <Sidebar ed={ed} onFocusCommand={() => cmdRef.current?.focus()} />
+        <section className="work" data-view={view}>
+          <div className="pane paneplan">
+            <PlanView ed={ed} spaceDown={spaceDown} />
+            <span className="tag">PLANTA · Nivel 0 · 1:100</span>
+          </div>
+          <div className="pane pane3d">
+            <View3D ref={view3d} ed={ed} />
+            <span className="tag">3D · Vista axonométrica</span>
+            <div className="paneover"><button className="btn" onClick={() => view3d.current?.fit()}>Encuadrar</button></div>
+          </div>
+        </section>
+      </div>
+
+      <CommandLine ed={ed} inputRef={cmdRef} onExport={() => setDxfOpen(true)} />
+      {dxfOpen && <DxfDialog ed={ed} onClose={() => setDxfOpen(false)} />}
+    </div>
+  );
+}
