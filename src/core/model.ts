@@ -53,6 +53,37 @@ export interface Slab {
   thick: number;
 }
 
+export type RoofKind = "flat" | "gable" | "hip";
+
+/** Cubierta rectangular definida por dos esquinas opuestas del perímetro que cubre. */
+export interface Roof {
+  id: number;
+  x1: number;
+  y1: number;
+  x2: number;
+  y2: number;
+  kind: RoofKind;
+  /** Pendiente en grados (no se usa en cubierta plana) */
+  pitch: number;
+  /** Vuelo del alero más allá del perímetro */
+  overhang: number;
+  /** Altura de arranque sobre la cota del nivel */
+  base: number;
+  thick: number;
+}
+
+/** Escalera recta: (x1,y1) arranque y (x2,y2) llegada, sobre el eje del tramo. */
+export interface Stair {
+  id: number;
+  x1: number;
+  y1: number;
+  x2: number;
+  y2: number;
+  width: number;
+  /** Desnivel que salva */
+  height: number;
+}
+
 /** Contenido de un nivel (una planta). Los identificadores son únicos dentro del nivel. */
 export interface Model {
   walls: Wall[];
@@ -61,6 +92,8 @@ export interface Model {
   dims: Dim[];
   rooms: Room[];
   slabs: Slab[];
+  roofs: Roof[];
+  stairs: Stair[];
   nid: number;
 }
 
@@ -74,7 +107,7 @@ export interface Project {
   levels: Level[];
 }
 
-export type LayerId = "muros" | "puertas" | "ventanas" | "cotas" | "anot" | "hab" | "losas";
+export type LayerId = "muros" | "puertas" | "ventanas" | "cotas" | "anot" | "hab" | "losas" | "cubiertas" | "escaleras";
 
 export interface Layer {
   id: LayerId;
@@ -93,9 +126,11 @@ export const LAYERS: Layer[] = [
   { id: "anot", name: "A-ANOTACION", label: "Anotación", tok: "--anno" },
   { id: "hab", name: "A-HABITACIONES", label: "Habitaciones", tok: "--accent" },
   { id: "losas", name: "A-LOSAS", label: "Losas", tok: "--muted" },
+  { id: "cubiertas", name: "A-CUBIERTAS", label: "Cubiertas", tok: "--door" },
+  { id: "escaleras", name: "A-ESCALERAS", label: "Escaleras", tok: "--fg" },
 ];
 
-export const emptyModel = (): Model => ({ walls: [], openings: [], lines: [], dims: [], rooms: [], slabs: [], nid: 1 });
+export const emptyModel = (): Model => ({ walls: [], openings: [], lines: [], dims: [], rooms: [], slabs: [], roofs: [], stairs: [], nid: 1 });
 
 export const newLevel = (name: string, elev: number, content: Model = emptyModel()): Level => ({ ...content, name, elev });
 
@@ -112,6 +147,8 @@ export function normalizeModel(raw: unknown): Model {
   const m = { ...emptyModel(), ...(raw as Partial<Model>) };
   m.rooms = m.rooms ?? [];
   m.slabs = m.slabs ?? [];
+  m.roofs = m.roofs ?? [];
+  m.stairs = m.stairs ?? [];
   return m;
 }
 
@@ -123,10 +160,11 @@ export function normalizeProject(raw: unknown): Project {
   return { levels: [newLevel("Planta baja", 0, normalizeModel(raw))] };
 }
 
-/** Vivienda de ejemplo: planta baja de 10 x 7 m con su losa. */
+/** Vivienda de ejemplo: planta baja de 10 x 7 m con su losa y cubierta a dos aguas. */
 export function sampleProject(): Project {
   const m = sampleModel();
   m.slabs.push({ id: nextId(m), pts: [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 7 }, { x: 0, y: 7 }], thick: 0.2 });
+  m.roofs.push({ id: nextId(m), x1: 0, y1: 0, x2: 10, y2: 7, kind: "gable", pitch: 30, overhang: 0.5, base: 2.7, thick: 0.15 });
   return { levels: [newLevel("Planta baja", 0, m)] };
 }
 

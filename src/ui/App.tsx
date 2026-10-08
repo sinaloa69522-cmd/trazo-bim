@@ -17,6 +17,8 @@ const TOOLS: { tool: Tool; label: string; key: string; icon: JSX.Element }[] = [
   { tool: "dim", label: "Cota", key: "C", icon: <path d="M2 4v6M14 4v6M2 8h12M4 9.5l-2-1.5 2-1.5M12 6.5l2 1.5-2 1.5" /> },
   { tool: "room", label: "Habitación", key: "H", icon: <><rect x="2" y="2" width="12" height="12" /><path d="M5 7h6M5 10h4" /></> },
   { tool: "slab", label: "Losa", key: "LO", icon: <path d="M2 6l6-3 6 3-6 3zM2 6v3l6 3 6-3V6" /> },
+  { tool: "roof", label: "Cubierta", key: "CU", icon: <path d="M1.5 9L8 3.5 14.5 9M3.5 7.5V13h9V7.5" /> },
+  { tool: "stair", label: "Escalera", key: "ES", icon: <path d="M2 14h3v-3h3V8h3V5h3V2" /> },
   { tool: "trim", label: "Recortar", key: "TR", icon: <><path d="M2 8h12M8 2v12" /><path d="M10.5 5.5l3-3" strokeDasharray="1.5 1.5" /></> },
   { tool: "extend", label: "Alargar", key: "AL", icon: <><path d="M13 2v12M2 8h7" /><path d="M9 8h4" strokeDasharray="1.5 1.5" /><path d="M7.5 6.5L9.5 8l-2 1.5" /></> },
   { tool: "offset", label: "Desfase", key: "DE", icon: <path d="M2 5h12M2 11h12" /> },

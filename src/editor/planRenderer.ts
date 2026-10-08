@@ -1,5 +1,5 @@
-import { dimGeom, dimOffset, dir, loc, pieces, type Pt } from "../core/geometry";
-import type { Dim, Model, Wall } from "../core/model";
+import { dimGeom, dimOffset, dir, loc, pieces, roofGeom, stairSteps, type Pt } from "../core/geometry";
+import type { Dim, Model, Roof, Stair, Wall } from "../core/model";
 import { RC } from "../core/rooms";
 import type { Editor, SelType } from "./Editor";
 
@@ -114,6 +114,14 @@ export function drawPlan(ctx: CanvasRenderingContext2D, ed: Editor, C: PlanColor
     const hl = isSel("line", l.id) || (ed.hover?.type === "line" && ed.hover.id === l.id);
     seg({ x: l.x1, y: l.y1 }, { x: l.x2, y: l.y2 }, hl ? C.accent : C.anno, hl ? 2.5 : 1.2);
   }
+  if (ed.vis.escaleras) for (const st of m.stairs) {
+    const hl = isSel("stair", st.id) || (ed.hover?.type === "stair" && ed.hover.id === st.id);
+    drawStair(ctx, ed, st, hl ? C.accent : C.fg, hl ? 2 : 1);
+  }
+  if (ed.vis.cubiertas) for (const r of m.roofs) {
+    const hl = isSel("roof", r.id) || (ed.hover?.type === "roof" && ed.hover.id === r.id);
+    drawRoof(ctx, ed, r, hl ? C.accent : C.door, hl ? 2 : 1);
+  }
   if (ed.vis.cotas) for (const d of m.dims) drawDim(ctx, ed, d, isSel("dim", d.id) ? C.accent : C.dim);
 
   // rótulos de habitación
@@ -147,7 +155,7 @@ export function drawPlan(ctx: CanvasRenderingContext2D, ed: Editor, C: PlanColor
         if (sl) poly(sl.pts.map(xf.map), null, C.accent, 1.5);
         continue;
       }
-      const list: { id: number }[] = ed.model[({ wall: "walls", line: "lines", dim: "dims", room: "rooms" } as const)[r.type]];
+      const list: { id: number }[] = ed.model[({ wall: "walls", line: "lines", dim: "dims", room: "rooms", roof: "roofs", stair: "stairs" } as const)[r.type]];
       const o = list.find((x) => x.id === r.id) as Wall | Model["lines"][number] | Model["rooms"][number] | undefined;
       if (!o) continue;
       if ("x1" in o) {
@@ -177,6 +185,13 @@ export function drawPlan(ctx: CanvasRenderingContext2D, ed: Editor, C: PlanColor
       for (let i = 0; i + 1 < draft.pts.length; i++) seg(draft.pts[i], draft.pts[i + 1], C.accent, 1.5);
       seg(last, p, C.accent, 1.2, [5, 4]);
       if (draft.pts.length >= 2) seg(p, draft.pts[0], C.accent, 1, [2, 4]);
+      lengthTag(ctx, ed, C, last, p);
+    } else if (ed.tool === "roof") {
+      const d = ed.defaults;
+      drawRoof(ctx, ed, { id: 0, x1: last.x, y1: last.y, x2: p.x, y2: p.y, kind: d.roofKind, pitch: d.pitch, overhang: d.overhang, base: d.height, thick: 0.15 }, C.accent, 1.5);
+      poly([last, { x: p.x, y: last.y }, p, { x: last.x, y: p.y }], null, C.accent, 1);
+    } else if (ed.tool === "stair") {
+      drawStair(ctx, ed, { id: 0, x1: last.x, y1: last.y, x2: p.x, y2: p.y, width: ed.defaults.stairW, height: ed.floorToFloor() }, C.accent, 1.5);
       lengthTag(ctx, ed, C, last, p);
     } else if (ed.tool === "line") {
       seg(last, p, C.accent, 1.2, [5, 4]); lengthTag(ctx, ed, C, last, p);
@@ -258,4 +273,45 @@ function drawDim(ctx: CanvasRenderingContext2D, ed: Editor, d: Dim, col: string)
   ctx.save(); ctx.translate(mid.x, mid.y); ctx.rotate(ang);
   ctx.font = MONO; ctx.fillStyle = col; ctx.textAlign = "center"; ctx.fillText(g.L.toFixed(2), 0, -5);
   ctx.restore();
+}
+
+function path(ctx: CanvasRenderingContext2D, ed: Editor, pts: Pt[], close = false) {
+  ctx.beginPath();
+  pts.forEach((p, i) => { const s = ed.toS(p.x, p.y); if (i) ctx.lineTo(s.x, s.y); else ctx.moveTo(s.x, s.y); });
+  if (close) ctx.closePath();
+  ctx.stroke();
+}
+
+/** Cubierta en planta: alero discontinuo, cumbrera y limatesas. */
+function drawRoof(ctx: CanvasRenderingContext2D, ed: Editor, r: Roof, col: string, lw: number) {
+  const g = roofGeom(r);
+  ctx.strokeStyle = col; ctx.lineWidth = lw;
+  ctx.setLineDash([10, 5]); path(ctx, ed, g.outline, true); ctx.setLineDash([]);
+  ctx.lineWidth = Math.max(1, lw - 0.5);
+  for (const [a, b] of g.ridges) path(ctx, ed, [a, b]);
+}
+
+/** Escalera en planta: contorno, peldaños y flecha de subida. */
+function drawStair(ctx: CanvasRenderingContext2D, ed: Editor, st: Stair, col: string, lw: number) {
+  const k = stairSteps(st);
+  if (k.L < 1e-6) return;
+  const h = st.width / 2;
+  ctx.strokeStyle = col; ctx.lineWidth = lw;
+  path(ctx, ed, [loc(st, 0, -h), loc(st, k.L, -h), loc(st, k.L, h), loc(st, 0, h)], true);
+  ctx.lineWidth = 1;
+  for (let i = 1; i < k.n; i++) path(ctx, ed, [loc(st, i * k.tread, -h), loc(st, i * k.tread, h)]);
+  // flecha por el eje: de arranque a llegada
+  const a = loc(st, k.tread / 2, 0), b = loc(st, k.L - 0.05, 0), ah = Math.min(0.25, h * 0.6);
+  path(ctx, ed, [a, b]);
+  path(ctx, ed, [loc(st, k.L - 0.05 - ah, -ah * 0.6), b, loc(st, k.L - 0.05 - ah, ah * 0.6)]);
+  const s = ed.toS(a.x, a.y);
+  ctx.fillStyle = col; ctx.beginPath(); ctx.arc(s.x, s.y, 3, 0, Math.PI * 2); ctx.fill();
+  if (st.width * ed.view.scale > 40) {
+    const t = ed.toS(loc(st, k.L / 2, 0).x, loc(st, k.L / 2, 0).y), { ux, uy } = dir(st);
+    let ang = Math.atan2(uy, ux);
+    if (ang > Math.PI / 2 || ang <= -Math.PI / 2) ang += Math.PI;
+    ctx.save(); ctx.translate(t.x, t.y); ctx.rotate(ang);
+    ctx.font = MONO; ctx.textAlign = "center"; ctx.fillText(`SUBE ${k.n}`, 0, -6);
+    ctx.restore();
+  }
 }

@@ -1,7 +1,7 @@
 import type { Pt } from "./geometry";
 import { nextId, type Model } from "./model";
 
-export type ElementType = "wall" | "opening" | "line" | "dim" | "room" | "slab";
+export type ElementType = "wall" | "opening" | "line" | "dim" | "room" | "slab" | "roof" | "stair";
 export interface ElementRef { type: ElementType; id: number }
 
 type Seg = { x1: number; y1: number; x2: number; y2: number };
@@ -29,7 +29,7 @@ function applySeg(s: Seg, t: Xform) {
 }
 
 const listOf = (m: Model, type: ElementType) =>
-  ({ wall: m.walls, opening: m.openings, line: m.lines, dim: m.dims, room: m.rooms, slab: m.slabs })[type] as { id: number }[];
+  ({ wall: m.walls, opening: m.openings, line: m.lines, dim: m.dims, room: m.rooms, slab: m.slabs, roof: m.roofs, stair: m.stairs })[type] as { id: number }[];
 
 export function findElement(m: Model, r: ElementRef) {
   return listOf(m, r.type).find((o) => o.id === r.id) ?? null;
@@ -76,4 +76,7 @@ export function deleteElements(m: Model, refs: ElementRef[]) {
   m.dims = m.dims.filter((d) => !dims.has(d.id));
   m.rooms = m.rooms.filter((r) => !rooms.has(r.id));
   m.slabs = m.slabs.filter((r) => !slabs.has(r.id));
+  const roofs = ids("roof"), stairs = ids("stair");
+  m.roofs = m.roofs.filter((r) => !roofs.has(r.id));
+  m.stairs = m.stairs.filter((r) => !stairs.has(r.id));
 }

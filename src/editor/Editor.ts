@@ -1,19 +1,19 @@
-import { bounds, dimOffset, dir, distSeg, dimGeom, fits, loc, pointInPolygon, polygonArea, type Pt } from "../core/geometry";
+import { bounds, dimOffset, dir, distSeg, dimGeom, fits, loc, pointInPolygon, polygonArea, roofGeom, stairSteps, type Pt } from "../core/geometry";
 import {
   cloneModel, emptyProject, newLevel, nextId, normalizeProject, sampleProject, type Level, type Project,
-  type LayerId, type Model, type Wall,
+  type LayerId, type Model, type RoofKind, type Wall,
 } from "../core/model";
 import { parseDxf } from "../core/dxfImport";
 import { extend, offset, trim, type Linear } from "../core/modify";
 import { computeRooms, roomAt, type RoomGrid } from "../core/rooms";
 import { deleteElements, reflection, transformElements, translation, type Xform } from "../core/transform";
 
-export type Tool = "select" | "wall" | "door" | "window" | "line" | "dim" | "room" | "move" | "copy" | "mirror" | "trim" | "extend" | "offset" | "slab";
+export type Tool = "select" | "wall" | "door" | "window" | "line" | "dim" | "room" | "move" | "copy" | "mirror" | "trim" | "extend" | "offset" | "slab" | "roof" | "stair";
 /** Herramientas que actúan pulsando directamente sobre un muro o una línea. */
 const PICK_TOOLS: Tool[] = ["trim", "extend", "offset"];
 /** Herramientas que actúan sobre la selección actual. */
 const MODIFY_TOOLS: Tool[] = ["move", "copy", "mirror"];
-export type SelType = "wall" | "opening" | "line" | "dim" | "room" | "slab";
+export type SelType = "wall" | "opening" | "line" | "dim" | "room" | "slab" | "roof" | "stair";
 export interface Selection { type: SelType; id: number }
 export interface SnapPt extends Pt { kind: "end" | "mid" | null }
 export interface OpeningCandidate { w: Wall; t: number; ok: boolean }
@@ -34,12 +34,15 @@ interface GripDrag {
 
 const STORAGE_KEY = "trazo-bim";
 
+export const ROOF_LABEL: Record<RoofKind, string> = { flat: "Plana", gable: "A dos aguas", hip: "A cuatro aguas" };
+
 const COMMANDS: Record<string, Tool> = {
   M: "wall", MURO: "wall", P: "door", PUERTA: "door", V: "window", VENTANA: "window",
   L: "line", LINEA: "line", "LÍNEA": "line", C: "dim", COTA: "dim", S: "select", SEL: "select",
   H: "room", HAB: "room", HABITACION: "room", "HABITACIÓN": "room",
   MO: "move", MOVER: "move", CO: "copy", COPIA: "copy", SI: "mirror", SIMETRIA: "mirror", "SIMETRÍA": "mirror",
   LO: "slab", LOSA: "slab", TR: "trim", RECORTAR: "trim", AL: "extend", ALARGAR: "extend", DE: "offset", DESFASE: "offset", EQ: "offset", EQUIDISTANCIA: "offset",
+  CU: "roof", CUBIERTA: "roof", TEJADO: "roof", ES: "stair", ESCALERA: "stair",
 };
 
 /**
@@ -54,8 +57,8 @@ export class Editor {
   get model(): Level { return this.project.levels[this.active]; }
   set model(m: Model) { this.project.levels[this.active] = { ...this.model, ...m }; }
   rooms: RoomGrid | null = null;
-  vis: Record<LayerId, boolean> = { muros: true, puertas: true, ventanas: true, cotas: true, anot: true, hab: true, losas: true };
-  defaults = { thick: 0.15, height: 2.7, doorW: 0.9, doorH: 2.1, winW: 1.2, winH: 1.2, sill: 0.9, slabThick: 0.2 };
+  vis: Record<LayerId, boolean> = { muros: true, puertas: true, ventanas: true, cotas: true, anot: true, hab: true, losas: true, cubiertas: true, escaleras: true };
+  defaults = { thick: 0.15, height: 2.7, doorW: 0.9, doorH: 2.1, winW: 1.2, winH: 1.2, sill: 0.9, slabThick: 0.2, roofKind: "gable" as RoofKind, pitch: 30, overhang: 0.5, stairW: 1 };
   tool: Tool = "select";
   /** Elementos seleccionados. */
   sels: Selection[] = [];
@@ -143,13 +146,19 @@ export class Editor {
     const hs = this.model.walls.map((w) => w.height);
     return Math.max(hs.length ? Math.max(...hs) : 2.7, 2.7) + 0.3;
   }
-  /** Crea un nivel encima del activo, vacío o como copia (muros, huecos, losas…) del activo. */
+  /** Desnivel hasta el nivel de encima, o la altura de planta si es el último. */
+  floorToFloor() {
+    const up = this.project.levels.filter((l) => l.elev > this.model.elev).map((l) => l.elev);
+    return Math.round((up.length ? Math.min(...up) - this.model.elev : this.storyHeight()) * 100) / 100;
+  }
+  /** Crea un nivel encima del activo, vacío o como copia del activo (muros, huecos, losas, escaleras…). */
   addLevel(copy: boolean) {
     this.snapshot();
     const top = Math.max(...this.project.levels.map((l) => l.elev));
     const elev = Math.round((Math.max(top, this.model.elev) + this.storyHeight()) * 100) / 100;
     const n = this.project.levels.length;
-    const content = copy ? cloneModel(this.model) : undefined;
+    // la copia no lleva cubiertas: la cubierta suele pasar a la planta de arriba
+    const content = copy ? { ...cloneModel(this.model), roofs: [] } : undefined;
     const lv = newLevel(n === 1 ? "Planta 1" : `Planta ${n}`, elev, content);
     this.project.levels.push(lv);
     this.project.levels.sort((a, b) => a.elev - b.elev);
@@ -181,17 +190,19 @@ export class Editor {
   // ---------- consultas ----------
   wallById(id: number) { return this.model.walls.find((w) => w.id === id); }
   isSelected(type: SelType, id: number) { return this.sels.some((s) => s.type === type && s.id === id); }
-  selObj(): (Seg & { id: number }) | Model["openings"][number] | Model["rooms"][number] | Model["slabs"][number] | null {
+  selObj(): (Seg & { id: number }) | Model["openings"][number] | Model["rooms"][number] | Model["slabs"][number] | Model["roofs"][number] | Model["stairs"][number] | null {
     if (!this.sel) return null;
     const m = this.model;
-    const list = { wall: m.walls, line: m.lines, dim: m.dims, opening: m.openings, room: m.rooms, slab: m.slabs }[this.sel.type] as { id: number }[];
+    const list = { wall: m.walls, line: m.lines, dim: m.dims, opening: m.openings, room: m.rooms, slab: m.slabs, roof: m.roofs, stair: m.stairs }[this.sel.type] as { id: number }[];
     return (list.find((o) => o.id === this.sel!.id) as never) ?? null;
   }
   grips(): { k: 0 | 1 | "mid"; x: number; y: number }[] {
     const o = this.selObj();
-    if (!o || !(this.sel!.type === "wall" || this.sel!.type === "line")) return [];
+    if (!o || !["wall", "line", "roof", "stair"].includes(this.sel!.type)) return [];
     const s = o as Seg;
-    return [{ k: 0, x: s.x1, y: s.y1 }, { k: 1, x: s.x2, y: s.y2 }, { k: "mid", x: (s.x1 + s.x2) / 2, y: (s.y1 + s.y2) / 2 }];
+    const g: { k: 0 | 1 | "mid"; x: number; y: number }[] = [{ k: 0, x: s.x1, y: s.y1 }, { k: 1, x: s.x2, y: s.y2 }];
+    if (this.sel!.type !== "roof") g.push({ k: "mid", x: (s.x1 + s.x2) / 2, y: (s.y1 + s.y2) / 2 });
+    return g;
   }
   prompt(): string {
     const n = this.draft ? this.draft.pts.length : 0, d = this.defaults;
@@ -207,6 +218,8 @@ export class Editor {
       case "copy": return n ? "COPIA  Precisa punto de destino [Esc termina]:" : "COPIA  Precisa punto base:";
       case "mirror": return n ? "SIMETRÍA  Segundo punto del eje:" : "SIMETRÍA  Primer punto del eje de simetría:";
       case "slab": return n < 3 ? `LOSA  Precisa ${n ? "siguiente" : "primer"} vértice del contorno:` : "LOSA  Siguiente vértice [Enter o clic en el primero cierra]:";
+      case "roof": return n ? "CUBIERTA  Esquina opuesta del perímetro:" : `CUBIERTA  Primera esquina del perímetro (${ROOF_LABEL[d.roofKind].toLowerCase()}, ${d.pitch}°):`;
+      case "stair": return n ? "ESCALERA  Punto de llegada (o longitud):" : `ESCALERA  Punto de arranque (ancho ${d.stairW.toFixed(2)} m):`;
       case "trim": return "RECORTAR  Haz clic en el tramo de muro o línea que quieres quitar:";
       case "extend": return "ALARGAR  Haz clic cerca del extremo que quieres alargar:";
       case "offset": return this.offsetTarget
@@ -231,6 +244,7 @@ export class Editor {
       muros: m.walls.length, puertas: m.openings.filter((o) => o.kind === "door").length,
       ventanas: m.openings.filter((o) => o.kind === "window").length,
       cotas: m.dims.length, anot: m.lines.length, hab: m.rooms.length, losas: m.slabs.length,
+      cubiertas: m.roofs.length, escaleras: m.stairs.length,
     };
   }
 
@@ -311,6 +325,12 @@ export class Editor {
       const edgesOf = sl.pts.map((p, i) => { const q = sl.pts[(i + 1) % sl.pts.length]; return { x1: p.x, y1: p.y, x2: q.x, y2: q.y }; });
       if (crossing ? edgesOf.some(segHit) : sl.pts.every((p) => inside(p.x, p.y))) found.push({ type: "slab", id: sl.id });
     }
+    if (this.vis.cubiertas) for (const r of m.roofs) {
+      const ol = roofGeom(r).outline;
+      const edgesOf = ol.map((p, i) => { const q = ol[(i + 1) % 4]; return { x1: p.x, y1: p.y, x2: q.x, y2: q.y }; });
+      if (crossing ? edgesOf.some(segHit) : ol.every((p) => inside(p.x, p.y))) found.push({ type: "roof", id: r.id });
+    }
+    if (this.vis.escaleras) for (const st of m.stairs) if (segHit(st)) found.push({ type: "stair", id: st.id });
     const merged = additive ? [...this.sels] : [];
     for (const f of found) if (!merged.some((x) => x.type === f.type && x.id === f.id)) merged.push(f);
     this.sels = merged;
@@ -336,7 +356,7 @@ export class Editor {
       if (r) return r;
     }
     let x = wx, y = wy;
-    const orth = from && this.ortho && (this.tool !== "dim" || this.draft?.pts.length === 1);
+    const orth = from && this.ortho && this.tool !== "roof" && (this.tool !== "dim" || this.draft?.pts.length === 1);
     if (orth) { if (Math.abs(x - from!.x) > Math.abs(y - from!.y)) y = from!.y; else x = from!.x; }
     const g = (v: number) => Math.round(v * 10) / 10;
     if (orth && y === from!.y) x = g(x);
@@ -359,7 +379,9 @@ export class Editor {
     if (this.vis.muros) for (const w of m.walls) { const r = distSeg(wx, wy, w.x1, w.y1, w.x2, w.y2); if (r.d < w.thick / 2 + tol) take(r.d, { type: "wall", id: w.id }); }
     if (this.vis.anot) for (const l of m.lines) { const r = distSeg(wx, wy, l.x1, l.y1, l.x2, l.y2); if (r.d < tol) take(r.d, { type: "line", id: l.id }); }
     if (this.vis.cotas) for (const d of m.dims) { const g = dimGeom(d), r = distSeg(wx, wy, g.a.x, g.a.y, g.b.x, g.b.y); if (r.d < tol * 2) take(r.d, { type: "dim", id: d.id }); }
+    if (this.vis.escaleras) for (const st of m.stairs) { const r = distSeg(wx, wy, st.x1, st.y1, st.x2, st.y2); if (r.d < st.width / 2) take(r.d + 0.2, { type: "stair", id: st.id }); }
     if (!best && this.vis.hab) { const r = roomAt(m, this.rooms, wx, wy); if (r) best = { type: "room", id: r.id }; }
+    if (!best && this.vis.cubiertas) for (const r of m.roofs) if (pointInPolygon({ x: wx, y: wy }, roofGeom(r).outline)) best = { type: "roof", id: r.id };
     if (!best && this.vis.losas) for (const sl of m.slabs) if (pointInPolygon({ x: wx, y: wy }, sl.pts)) best = { type: "slab", id: sl.id };
     return best;
   }
@@ -403,6 +425,31 @@ export class Editor {
       if (this.draft.pts.length >= 3 && Math.hypot(p.x - first.x, p.y - first.y) < 0.01) { this.closeSlab(); return; }
       if (Math.hypot(p.x - last.x, p.y - last.y) < 0.05) return;
       this.draft.pts.push(p); this.emit();
+      return;
+    }
+    if (this.tool === "roof" || this.tool === "stair") {
+      if (!this.draft) { this.draft = { pts: [p] }; this.emit(); return; }
+      const a = this.draft.pts[0];
+      if (this.tool === "roof" ? Math.abs(p.x - a.x) < 0.3 || Math.abs(p.y - a.y) < 0.3 : Math.hypot(p.x - a.x, p.y - a.y) < 0.5) {
+        this.log(this.tool === "roof" ? "La cubierta necesita un rectángulo: elige la esquina opuesta." : "La escalera es demasiado corta.");
+        return;
+      }
+      this.snapshot();
+      const d = this.defaults, id = nextId(m);
+      if (this.tool === "roof") {
+        m.roofs.push({ id, x1: a.x, y1: a.y, x2: p.x, y2: p.y, kind: d.roofKind, pitch: d.pitch, overhang: d.overhang, base: d.height, thick: 0.15 });
+        this.sels = [{ type: "roof", id }];
+        this.message = `Cubierta ${ROOF_LABEL[d.roofKind].toLowerCase()} creada. Cambia el tipo y la pendiente en Propiedades.`;
+      } else {
+        const st = { id, x1: a.x, y1: a.y, x2: p.x, y2: p.y, width: d.stairW, height: this.floorToFloor() };
+        m.stairs.push(st);
+        const k = stairSteps(st);
+        this.sels = [{ type: "stair", id }];
+        this.message = `Escalera de ${k.n} peldaños: huella ${(k.tread * 100).toFixed(0)} cm, contrahuella ${(k.riser * 100).toFixed(1)} cm.` +
+          (k.tread < 0.25 ? " La huella es corta: alarga el tramo." : "");
+      }
+      this.draft = null;
+      this.changed();
       return;
     }
     if (this.tool === "dim") {
@@ -606,7 +653,7 @@ export class Editor {
       return;
     }
     const lengthOk = this.draft?.pts.length &&
-      (["wall", "line", "move", "copy", "mirror", "slab"].includes(this.tool) || (this.tool === "dim" && this.draft.pts.length === 1));
+      (["wall", "line", "move", "copy", "mirror", "slab", "stair"].includes(this.tool) || (this.tool === "dim" && this.draft.pts.length === 1));
     if (/^-?\d*\.?\d+$/.test(num) && lengthOk) {
       const L = parseFloat(num), from = this.draft!.pts[this.draft!.pts.length - 1], p = this.snap ?? this.mouse;
       let dx = p.x - from.x, dy = p.y - from.y;
@@ -623,7 +670,7 @@ export class Editor {
       this.commitPoint({ x, y });
       return;
     }
-    this.log(`Comando desconocido: "${raw}". Prueba M, P, V, L, C, H, LO, MO, CO, SI, TR, AL, DE, B (borrar), U (deshacer), Z (encuadrar).`);
+    this.log(`Comando desconocido: "${raw}". Prueba M, P, V, L, C, H, LO, CU, ES, MO, CO, SI, TR, AL, DE, B (borrar), U (deshacer), Z (encuadrar).`);
   }
   /** La vista de planta registra aquí cómo encuadrar, porque conoce su tamaño. */
   fitRequest: (() => void) | null = null;
@@ -676,7 +723,8 @@ export class Editor {
   private startGrip(k: 0 | 1 | "mid", at: Pt) {
     const o = this.selObj() as Seg;
     this.snapshot();
-    const j0 = this.joined(o.x1, o.y1, o), j1 = this.joined(o.x2, o.y2, o);
+    const linear = this.sel!.type === "wall" || this.sel!.type === "line";
+    const j0 = linear ? this.joined(o.x1, o.y1, o) : [], j1 = linear ? this.joined(o.x2, o.y2, o) : [];
     const keep: GripDrag["keep"] = [];
     const track = (w: Seg, e: 0 | 1) => {
       if (!this.model.walls.includes(w as Wall)) return;
@@ -699,7 +747,7 @@ export class Editor {
       this.snap = p;
     } else {
       const fixed = g.k === 0 ? { x: O.x2, y: O.y2 } : { x: O.x1, y: O.y1 };
-      const p = this.snapPoint(w.x, w.y, fixed, g.skip);
+      const p = this.snapPoint(w.x, w.y, this.sel?.type === "roof" ? null : fixed, g.skip);
       setEnd(o, g.k, p.x, p.y);
       this.snap = p;
     }
