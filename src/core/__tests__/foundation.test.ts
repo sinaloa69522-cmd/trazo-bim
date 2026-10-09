@@ -19,7 +19,7 @@ describe("tipos de cimentación", () => {
     for (const id of ["crawl", "basement"] as const) {
       const ms = foundation({ ...sampleProject(), foundation: id });
       expect(ms.some((m) => m.kind === "foundation")).toBe(true);
-      expect(ms.some((m) => m.kind === "joist" && m.a.z < 0)).toBe(true);
+      expect(ms.some((m) => m.kind === "floorJoist" && m.a.z < 0)).toBe(true);
     }
     const bs = foundation({ ...sampleProject(), foundation: "basement" });
     expect(Math.min(...bs.map((m) => Math.min(m.a.z, m.b.z)))).toBeLessThan(-2);
