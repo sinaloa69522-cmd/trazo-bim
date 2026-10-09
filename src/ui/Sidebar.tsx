@@ -9,6 +9,7 @@ import { ROOF_LABEL, type Editor } from "../editor/Editor";
 import { fmtArea, fmtDim, fmtElev, fmtField, fmtLen, fmtSmall, imperial, lenUnit, parseLen } from "../core/units";
 import { finish, ROOFINGS, SIDINGS, type Finish } from "../core/finishes";
 import { finishSwatch } from "../editor/finishTextures";
+import { DECK_TYPES, deckGeom, deckTakeoff, deckType, RAILS, SIDE_NAME } from "../core/decks";
 import { FOUNDATIONS, foundationType, type FoundationKind } from "../core/foundation";
 import { DOOR_STYLES, elevationLines, openingStyle, WINDOW_STYLES, type OpeningStyle } from "../core/openingStyles";
 import { HATCH_PATTERNS, hatchArea, hatchPattern, hatchSegments, IMPORTED, patternLines } from "../core/hatch";
@@ -156,7 +157,7 @@ function Properties({ ed, onFocusCommand }: { ed: Editor; onFocusCommand: () => 
   let title = "Valores por defecto", body: JSX.Element | null = null;
   const n = ed.sels.length;
   const key = sel ? `${sel.type}-${sel.id}` : n > 1 ? "multi" : "def";
-  const TYPE_LABEL = { wall: "Muros", opening: "Puertas y ventanas", line: "Líneas", dim: "Cotas", room: "Habitaciones", slab: "Losas", roof: "Cubiertas", stair: "Escaleras", furniture: "Mobiliario", section: "Secciones", text: "Textos", fixture: "Instalaciones", run: "Tuberías", underlay: "Calcos", hatch: "Sombreados" } as const;
+  const TYPE_LABEL = { wall: "Muros", opening: "Puertas y ventanas", line: "Líneas", dim: "Cotas", room: "Habitaciones", slab: "Losas", roof: "Cubiertas", stair: "Escaleras", deck: "Decks y porches", furniture: "Mobiliario", section: "Secciones", text: "Textos", fixture: "Instalaciones", run: "Tuberías", underlay: "Calcos", hatch: "Sombreados" } as const;
 
   if (sel && o && sel.type === "wall") {
     const w = o as Model["walls"][number], up = ed.levelAbove();
@@ -233,6 +234,37 @@ function Properties({ ed, onFocusCommand }: { ed: Editor; onFocusCommand: () => 
       <NumberField id={`${key}-w`} label="Ancho (m)" value={st.width} onCommit={(v) => ed.edit(() => { st.width = v; })} />
       <NumberField id={`${key}-h`} label="Desnivel (m)" value={st.height} onCommit={(v) => ed.edit(() => { st.height = v; })} />
       <button className="btn full" onClick={() => ed.openAboveStair(st.id)} title="Hueco con la huella de la escalera en la losa del nivel de arriba">Abrir hueco en la losa de arriba</button>
+    </>;
+  } else if (sel && o && sel.type === "deck") {
+    const dk = o as Model["decks"][number], t = deckType(dk.kind), g = deckGeom(dk, ed.model.walls), q = deckTakeoff(dk, ed.model.walls);
+    title = t.name;
+    ro.push(["Medidas", `${fmtDim(g.x1 - g.x0)} × ${fmtDim(g.y1 - g.y0)}`], ["Área", fmtArea(q.area)], ["Superficie", t.surface],
+      ["Ledger", g.house === null ? "no (exento)" : SIDE_NAME[g.house]]);
+    if (q.guard > 0) ro.push(["Barandal", fmtLen(q.guard)]);
+    if (g.steps) ro.push(["Contrahuellas", `${g.steps.n} × ${fmtSmall(g.steps.riser)}`], ["Huella", fmtSmall(g.steps.tread)]);
+    if (g.guardRequired && dk.rail === "none") ro.push(["Aviso", "falta barandal (R312)"]);
+    if (g.steps && g.handrailRequired) ro.push(["Pasamanos", dk.rail === "none" ? "falta (R311.7.8)" : "sí, a 36\""]);
+    body = <>
+      <label htmlFor={`${key}-k`}>Tipo</label>
+      <select id={`${key}-k`} value={dk.kind} onChange={(e) => ed.setDeckKind(dk.id, e.target.value as typeof dk.kind)}>
+        {DECK_TYPES.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
+      </select>
+      <NumberField id={`${key}-h`} label="Altura sobre el terreno (m)" value={dk.height} min={0} onCommit={(v) => ed.edit(() => { dk.height = v; })} />
+      <label htmlFor={`${key}-r`}>Barandal</label>
+      <select id={`${key}-r`} value={dk.rail} onChange={(e) => ed.edit(() => { dk.rail = e.target.value as typeof dk.rail; })}>
+        {RAILS.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
+      </select>
+      <label>Escalones</label>
+      <div className="seg full">
+        {([0, 1, 2, 3] as const).map((s) => <button key={s} className={dk.stairSide === s ? "on" : ""} disabled={g.house === s}
+          onClick={() => ed.edit(() => { dk.stairSide = s; })}>{SIDE_NAME[s]}</button>)}
+        <button className={dk.stairSide == null ? "on" : ""} onClick={() => ed.edit(() => { dk.stairSide = null; })}>Sin</button>
+      </div>
+      {dk.stairSide != null && <>
+        <NumberField id={`${key}-sw`} label="Ancho de escalera (m)" value={dk.stairW ?? 0.9144} min={0.6} onCommit={(v) => ed.edit(() => { dk.stairW = v; })} />
+        <NumberField id={`${key}-sp`} label="Posición en el lado (%)" value={Math.round((dk.stairT ?? 0.5) * 100)} min={0} step={5} digits={0} len={false}
+          onCommit={(v) => ed.edit(() => { dk.stairT = Math.min(1, Math.max(0, v / 100)); })} />
+      </>}
     </>;
   } else if (sel && o && sel.type === "furniture") {
     const f = o as Model["furniture"][number], d = furnitureDef(f.kind);
@@ -433,6 +465,23 @@ function Levels({ ed }: { ed: Editor }) {
   );
 }
 
+function DeckTools({ ed }: { ed: Editor }) {
+  return (
+    <section>
+      <h2>Decks y porches</h2>
+      <div className="catalog" role="radiogroup" aria-label="Tipo de deck o porche">
+        {DECK_TYPES.map((t) => (
+          <button key={t.id} role="radio" aria-checked={ed.defaults.deckKind === t.id} className="cat" title={t.en}
+            onClick={() => { ed.defaults.deckKind = t.id; ed.emit(); }}>
+            <span className="deckchip" style={{ background: t.color }} />{t.name}<small>{t.en}</small>
+          </button>
+        ))}
+      </div>
+      <p className="hint">Clic en dos esquinas opuestas. Si un lado toca la casa lleva ledger y los escalones salen del lado contrario.</p>
+    </section>
+  );
+}
+
 function Catalog({ ed }: { ed: Editor }) {
   // grupo abierto: el de la pieza elegida, hasta que se cambie de pestaña
   const [cat, setCat] = useState(() => furnitureDef(ed.defaults.furnKind).cat);
@@ -557,6 +606,7 @@ export function Sidebar({ ed, onFocusCommand, onClose }: { ed: Editor; onFocusCo
   return (
     <aside className="side" aria-label="Capas y propiedades">
       {onClose && <button className="btn sideclose" onClick={onClose}>Cerrar</button>}
+      {ed.tool === "deck" && <DeckTools ed={ed} />}
       {ed.tool === "furniture" && <Catalog ed={ed} />}
       {ed.tool === "fixture" && <MepCatalog ed={ed} />}
       {ed.tool === "run" && <RunCatalog ed={ed} />}

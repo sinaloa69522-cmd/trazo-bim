@@ -1,8 +1,9 @@
-import { fmtArea, fmtDim, fmtLen, imperial, FT } from "../core/units";
+import { fmtArea, fmtDim, fmtLen, imperial, FT, IN } from "../core/units";
+import { deckGeom, deckType } from "../core/decks";
 import { dimGeom, dimOffset, dir, loc, pieces, roofGeom, stairSteps, textBox, type Pt } from "../core/geometry";
 import { furnitureStrokes, type Stroke } from "../core/furniture";
 import { discOfSystem, fixtureStrokes, fixtureTextAt, mepDef, systemDef, type SymStroke } from "../core/mep";
-import type { Dim, Fixture, HatchRegion, Model, Roof, Run, Section, Stair, Wall } from "../core/model";
+import type { Deck, Dim, Fixture, HatchRegion, Model, Roof, Run, Section, Stair, Wall } from "../core/model";
 import { hatchSegments, isSolid, patternLines, patternSpacing, type HatchSegments } from "../core/hatch";
 import { RC } from "../core/rooms";
 import { openingSymbol } from "../core/openingStyles";
@@ -197,6 +198,11 @@ export function drawPlan(ctx: CanvasRenderingContext2D, ed: Editor, C: PlanColor
   }
 
   // muros
+  // decks y porches debajo de los muros: el lado de la casa queda tapado por el muro
+  if (ed.vis.decks) for (const dk of m.decks) {
+    const hl = isSel("deck", dk.id) || (hover?.type === "deck" && hover.id === dk.id);
+    drawDeck(ctx, ed, dk, m.walls, hl ? C.accent : C.fg, hl ? 2 : 1, !!opts.print);
+  }
   if (ed.vis.muros) {
     const parts = m.walls.map((w) => { const h = w.thick / 2; return { w, polys: pieces(m, w).solids.map(([a, b]) => quad(w, a, b, -h, h)) }; });
     // primero el contorno grueso de todos y luego el relleno encima: así las juntas entre muros
@@ -353,7 +359,7 @@ export function drawPlan(ctx: CanvasRenderingContext2D, ed: Editor, C: PlanColor
         if (u) { const q = xf.map(u); poly([q, { x: q.x + u.w, y: q.y }, { x: q.x + u.w, y: q.y + u.h }, { x: q.x, y: q.y + u.h }], null, C.accent, 1.5); }
         continue;
       }
-      const list: { id: number }[] = ed.model[({ wall: "walls", line: "lines", dim: "dims", room: "rooms", roof: "roofs", stair: "stairs", section: "sections", text: "texts" } as const)[r.type]];
+      const list: { id: number }[] = ed.model[({ wall: "walls", line: "lines", dim: "dims", room: "rooms", roof: "roofs", stair: "stairs", deck: "decks", section: "sections", text: "texts" } as const)[r.type as "wall"]];
       const o = list.find((x) => x.id === r.id) as Wall | Model["lines"][number] | Model["rooms"][number] | undefined;
       if (!o) continue;
       if ("x1" in o) {
@@ -388,6 +394,10 @@ export function drawPlan(ctx: CanvasRenderingContext2D, ed: Editor, C: PlanColor
       const d = ed.defaults;
       drawRoof(ctx, ed, { id: 0, x1: last.x, y1: last.y, x2: p.x, y2: p.y, kind: d.roofKind, pitch: d.pitch, overhang: d.overhang, base: d.height, thick: 0.15 }, C.accent, 1.5);
       poly([last, { x: p.x, y: last.y }, p, { x: last.x, y: p.y }], null, C.accent, 1);
+    } else if (ed.tool === "deck") {
+      const t = deckType(ed.defaults.deckKind);
+      drawDeck(ctx, ed, { id: 0, x1: last.x, y1: last.y, x2: p.x, y2: p.y, kind: t.id, height: t.height, rail: t.rail }, ed.model.walls, C.accent, 1.5, false);
+      lengthTag(ctx, ed, C, last, { x: p.x, y: last.y }); lengthTag(ctx, ed, C, { x: p.x, y: last.y }, p);
     } else if (ed.tool === "stair") {
       drawStair(ctx, ed, { id: 0, x1: last.x, y1: last.y, x2: p.x, y2: p.y, width: ed.defaults.stairW, height: ed.floorToFloor() }, C.accent, 1.5);
       lengthTag(ctx, ed, C, last, p);
@@ -500,6 +510,66 @@ function path(ctx: CanvasRenderingContext2D, ed: Editor, pts: Pt[], close = fals
   pts.forEach((p, i) => { const s = ed.toS(p.x, p.y); if (i) ctx.lineTo(s.x, s.y); else ctx.moveTo(s.x, s.y); });
   if (close) ctx.closePath();
   ctx.stroke();
+}
+
+/** Deck o porche en planta: tablas, barandal doble, escalones con flecha de bajada, columnas y alero del porche. */
+function drawDeck(ctx: CanvasRenderingContext2D, ed: Editor, dk: Deck, walls: Wall[], col: string, lw: number, print: boolean) {
+  const g = deckGeom(dk, walls), t = deckType(dk.kind), sc = ed.view.scale;
+  const box = [g.edges[0][0], g.edges[1][0], g.edges[2][0], g.edges[3][0]];
+  ctx.save();
+  // relleno del color del material
+  ctx.beginPath(); box.forEach((p, i) => { const s = ed.toS(p.x, p.y); if (i) ctx.lineTo(s.x, s.y); else ctx.moveTo(s.x, s.y); }); ctx.closePath();
+  ctx.globalAlpha = print ? 0.12 : 0.22; ctx.fillStyle = t.color; ctx.fill(); ctx.globalAlpha = 1;
+  // tablas paralelas a la casa (a 5 1/2"), o rayado de concreto
+  ctx.strokeStyle = col; ctx.lineWidth = 0.5; ctx.globalAlpha = 0.45;
+  const alongX = g.house === null ? g.x1 - g.x0 >= g.y1 - g.y0 : g.house % 2 === 0;
+  const step = t.concrete ? 0 : Math.max(5.5 * IN, 4 / sc);
+  if (step) {
+    if (alongX) for (let y = g.y0 + step; y < g.y1 - 1e-6; y += step) path(ctx, ed, [{ x: g.x0, y }, { x: g.x1, y }]);
+    else for (let x = g.x0 + step; x < g.x1 - 1e-6; x += step) path(ctx, ed, [{ x, y: g.y0 }, { x, y: g.y1 }]);
+  }
+  ctx.globalAlpha = 1;
+  ctx.strokeStyle = col; ctx.lineWidth = lw;
+  path(ctx, ed, box, true);
+  // barandal: dos líneas a 2" y 4" del borde hacia dentro
+  ctx.lineWidth = Math.max(1, lw);
+  const inside = (p: Pt, k: number) => ({ x: Math.min(Math.max(p.x, g.x0 + k), g.x1 - k), y: Math.min(Math.max(p.y, g.y0 + k), g.y1 - k) });
+  for (const [a, b] of g.guards) for (const k of [1 * IN, 3.5 * IN]) path(ctx, ed, [inside(a, k), inside(b, k)]);
+  // escalones
+  if (g.steps) {
+    const s = g.steps;
+    ctx.lineWidth = 1;
+    s.treads.slice(0, -1).forEach((q) => path(ctx, ed, q, true));
+    for (const [hi, lo] of g.handrails) path(ctx, ed, [hi, lo]);
+    const m0 = { x: (s.a.x + s.b.x) / 2, y: (s.a.y + s.b.y) / 2 }, r = Math.max(0, s.run - s.tread * 0.5);
+    const m1 = { x: m0.x + s.out.x * r, y: m0.y + s.out.y * r }, ah = Math.min(0.2, s.width * 0.2);
+    path(ctx, ed, [m0, m1]);
+    path(ctx, ed, [{ x: m1.x - s.out.x * ah + s.along.x * ah * 0.6, y: m1.y - s.out.y * ah + s.along.y * ah * 0.6 }, m1, { x: m1.x - s.out.x * ah - s.along.x * ah * 0.6, y: m1.y - s.out.y * ah - s.along.y * ah * 0.6 }]);
+  }
+  // porche: columnas y alero discontinuo de la cubierta
+  if (t.roof) {
+    const os = (((g.house ?? 0) + 2) % 4), [a, b] = g.edges[os], L = Math.hypot(b.x - a.x, b.y - a.y), u = { x: (b.x - a.x) / L, y: (b.y - a.y) / L };
+    const o = [{ x: 0, y: -1 }, { x: 1, y: 0 }, { x: 0, y: 1 }, { x: -1, y: 0 }][os], k = 4 * IN, c = 3.5 * IN;
+    const n = Math.max(1, Math.ceil(L / (8 * FT) - 1e-9));
+    for (let i = 0; i <= n; i++) {
+      const s = k + ((L - 2 * k) * i) / n, p = { x: a.x + u.x * s - o.x * k, y: a.y + u.y * s - o.y * k };
+      path(ctx, ed, [{ x: p.x - c, y: p.y - c }, { x: p.x + c, y: p.y - c }, { x: p.x + c, y: p.y + c }, { x: p.x - c, y: p.y + c }], true);
+    }
+    const ov = 12 * IN;
+    const eb = { x0: g.x0 - (g.house === 3 ? 0 : ov), x1: g.x1 + (g.house === 1 ? 0 : ov), y0: g.y0 - (g.house === 0 ? 0 : ov), y1: g.y1 + (g.house === 2 ? 0 : ov) };
+    ctx.setLineDash([10, 5]);
+    path(ctx, ed, [{ x: eb.x0, y: eb.y0 }, { x: eb.x1, y: eb.y0 }, { x: eb.x1, y: eb.y1 }, { x: eb.x0, y: eb.y1 }], true);
+    ctx.setLineDash([]);
+  }
+  // rótulo
+  const cw = (g.x1 - g.x0) * sc;
+  if (cw > 70) {
+    const c = ed.toS((g.x0 + g.x1) / 2, (g.y0 + g.y1) / 2);
+    ctx.fillStyle = col; ctx.font = MONO; ctx.textAlign = "center";
+    ctx.fillText(t.en.toUpperCase(), c.x, c.y - 3);
+    ctx.fillText(`T.O. ${fmtLen(dk.height)}${g.steps ? ` · ${g.steps.n}R` : ""}`, c.x, c.y + 10);
+  }
+  ctx.restore();
 }
 
 /** Cubierta en planta: alero discontinuo, cumbrera y limatesas. */

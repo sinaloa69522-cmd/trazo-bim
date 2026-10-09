@@ -4,6 +4,7 @@ import { fmtArea, fmtDim, IN, unitSystem, type UnitSystem } from "./units";
 import { furnitureStrokes } from "./furniture";
 import { fixtureStrokes, fixtureTextAt, mepDef } from "./mep";
 import { dimGeom, dir, loc, pieces, roofGeom, stairSteps, type Pt } from "./geometry";
+import { deckGeom } from "./decks";
 import { hatchSegments, isSolid, patternLines, solidTrapezoids } from "./hatch";
 import type { Model } from "./model";
 import type { RoomGrid } from "./rooms";
@@ -58,6 +59,12 @@ export function toDxf(m: Model, rooms: RoomGrid | null, u: UnitSystem = unitSyst
     rect("A-ESCALERAS", [loc(st, 0, -h), loc(st, k.L, -h), loc(st, k.L, h), loc(st, 0, h)]);
     for (let i = 1; i < k.n; i++) line("A-ESCALERAS", loc(st, i * k.tread, -h), loc(st, i * k.tread, h));
     line("A-ESCALERAS", loc(st, 0, 0), loc(st, k.L, 0));
+  }
+  for (const dk of m.decks ?? []) {
+    const g = deckGeom(dk, m.walls);
+    for (const [a, b] of g.edges) line("A-DECKS", a, b);
+    for (const [a, b] of g.guards) line("A-DECKS", a, b);
+    for (const t of g.steps?.treads ?? []) for (let i = 0; i < t.length; i++) line("A-DECKS", t[i], t[(i + 1) % t.length]);
   }
   for (const fu of m.furniture ?? []) for (const k of furnitureStrokes(fu)) {
     const n = k.closed ? k.pts.length : k.pts.length - 1;
