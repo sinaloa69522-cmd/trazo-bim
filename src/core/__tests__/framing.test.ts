@@ -74,3 +74,24 @@ describe("pisos y techos", () => {
     for (const m of c) expect(m.a.z).toBeCloseTo(m.b.z, 6);
   });
 });
+
+describe("ceiling joists, sill plates y rim joists", () => {
+  it("los ceiling joists son 2x10 y apoyan en el top plate de los muros donde acaban", () => {
+    const p = sampleProject(), lv = p.levels[0];
+    // muros interiores más bajos que los de fachada: cada habitación apoya en los suyos, sin quedar flotando
+    for (const w of lv.walls) if (w.thick < 0.2) w.height = 2.4;
+    const ms = framing(p), cj = ms.filter((m) => m.kind === "ceilingJoist");
+    expect(cj.length).toBeGreaterThan(10);
+    expect(cj.every((m) => m.size === "2x10")).toBe(true);
+    const tops = new Set(ms.filter((m) => m.kind === "plate").map((m) => (m.a.z + m.h / 2).toFixed(3)));
+    for (const m of cj) expect(tops.has((m.a.z - m.h / 2).toFixed(3))).toBe(true);
+  });
+
+  it("sobre losa la solera inferior es un sill plate P.T. y el techo lleva rim joists", () => {
+    const ms = framing(sampleProject());
+    const sill = ms.filter((m) => m.kind === "sill");
+    expect(sill.length).toBe(sampleProject().levels[0].walls.length);
+    expect(sill.every((m) => /P\.T\./.test(m.size))).toBe(true);
+    expect(ms.filter((m) => m.kind === "rim").length).toBeGreaterThan(0);
+  });
+});

@@ -59,7 +59,7 @@ export function useEditorVersion(ed: Editor) {
 }
 
 const FRAME_LABEL: Record<MemberKind, string> = {
-  footing: "Zapatas", foundation: "Muros de cimentación", pier: "Pilares", girder: "Vigas y columnas", slab: "Losa de sótano",
+  footing: "Zapatas", foundation: "Muros de cimentación", pier: "Pilares", girder: "Vigas y columnas", slab: "Losa de sótano", sill: "Sill plates (P.T.)",
   rim: "Rim joists", floorJoist: "Floor joists", blocking: "Blocking", subfloor: "Subpiso",
   plate: "Plates (soleras)", stud: "Studs", header: "Headers", ceilingJoist: "Ceiling joists",
   rafter: "Rafters", collar: "Collar ties", ridge: "Ridge y hips", fascia: "Fascia",
