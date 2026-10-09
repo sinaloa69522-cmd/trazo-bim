@@ -3,6 +3,7 @@
 import type { UnitSystem } from "./units";
 import { defaultBudget, type BudgetSettings } from "./budget";
 import type { PatLine } from "./hatch";
+import type { FoundationKind } from "./foundation";
 import { autoRoute, mepDef, sanitaryPoints } from "./mep";
 import { typeForThick } from "./wallTypes";
 
@@ -238,6 +239,8 @@ export interface Project {
   budget: BudgetSettings;
   /** Cómo se escriben las medidas; el modelo siempre va en metros. Sin valor: métrico. */
   units?: UnitSystem;
+  /** Tipo de cimentación (foundation.ts); sin valor: losa sobre terreno con zapatas */
+  foundation?: FoundationKind;
 }
 
 export const defaultInfo = (): ProjectInfo => ({ name: "Vivienda unifamiliar", author: "", client: "", date: new Date().toISOString().slice(0, 10) });
@@ -306,7 +309,7 @@ export function normalizeProject(raw: unknown): Project {
   const r = raw as Partial<Project> & Partial<Model>;
   const info = { ...defaultInfo(), ...(r?.info ?? {}) };
   const budget = { ...defaultBudget(), ...(r?.budget ?? {}) };
-  const units = r?.units === "imperial" ? { units: "imperial" as const } : {};
+  const units = { ...(r?.units === "imperial" ? { units: "imperial" as const } : {}), ...(r?.foundation ? { foundation: r.foundation } : {}) };
   if (Array.isArray(r?.levels) && r.levels.length)
     return { levels: r.levels.map((l, i) => ({ ...normalizeModel(l), name: l.name ?? `Nivel ${i}`, elev: l.elev ?? 0 })), info, budget, ...units };
   return { levels: [newLevel("Planta baja", 0, normalizeModel(raw))], info, budget, ...units };

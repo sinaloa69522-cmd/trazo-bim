@@ -1,11 +1,12 @@
-// Estructura de madera (wood framing) en 3D a partir del modelo: zapatas, soleras, montantes, dinteles,
+// Estructura de madera (wood framing) en 3D a partir del modelo: cimentación, soleras, montantes, dinteles,
 // viguetas, cabios, limatesas y cumbrera, con los tamaños de predimensionado de permit.ts (tablas del IRC).
 import { dir, loc, roofGeom, type P3 } from "./geometry";
 import type { Project, Roof, Wall } from "./model";
-import { floorJoist, FOOTING_TYPES, headerSize, isExterior, joistBays, rafterSize } from "./permit";
+import { foundation } from "./foundation";
+import { floorJoist, headerSize, isExterior, joistBays, rafterSize } from "./permit";
 import { IN } from "./units";
 
-export type MemberKind = "footing" | "plate" | "stud" | "header" | "joist" | "rafter" | "ridge";
+export type MemberKind = "footing" | "foundation" | "pier" | "girder" | "slab" | "plate" | "stud" | "header" | "joist" | "rafter" | "ridge";
 
 /**
  * Pieza recta entre los centros de sus extremos a y b. w es su ancho horizontal y h su canto
@@ -13,6 +14,12 @@ export type MemberKind = "footing" | "plate" | "stud" | "header" | "joist" | "ra
  * del muro, a lo largo de la cual se mide w.
  */
 export interface Member { kind: MemberKind; a: P3; b: P3; w: number; h: number; along?: { x: number; y: number }; size: string }
+
+/** Color de cada tipo de pieza en el 3D y en su leyenda. */
+export const MEMBER_COLOR: Record<MemberKind, string> = {
+  footing: "#b3b0a8", foundation: "#a7a49c", pier: "#9d9a92", girder: "#8f6436", slab: "#c4c1b9",
+  plate: "#c99b62", stud: "#e2c08f", header: "#a8763f", joist: "#d6ad74", rafter: "#d9b27c", ridge: "#9c6c3a",
+};
 
 const T = 1.5 * IN;
 /** Canto real de una escuadría nominal ("2x8" → 7 1/4"). */
@@ -25,14 +32,10 @@ const nominal = (size: string) => /2x\d+/.exec(size)?.[0] ?? (/TJI/.test(size) ?
 
 /** Todas las piezas del proyecto. */
 export function framing(p: Project): Member[] {
-  const out: Member[] = [];
+  // la cimentación (y el piso de madera si lo lleva) bajo la planta baja
+  const out: Member[] = foundation(p);
   p.levels.forEach((lv, li) => {
     const e = lv.elev, above = p.levels[li + 1];
-    // zapatas corridas bajo los muros de la planta baja
-    if (li === 0) for (const w of lv.walls) {
-      const f = FOOTING_TYPES[isExterior(w) ? "F1" : "F2"], { L } = dir(w), z = e - 0.3 - f.depth / 2;
-      out.push({ kind: "footing", a: { ...loc(w, -f.width / 2, 0), z }, b: { ...loc(w, L + f.width / 2, 0), z }, w: f.width, h: f.depth, size: isExterior(w) ? "F1" : "F2" });
-    }
     for (const w of lv.walls) out.push(...wallFrame(w, lv.openings.filter((o) => o.wallId === w.id), e));
     // viguetas de piso (si hay planta encima) o de techo, apoyadas sobre la doble solera
     const H = lv.walls.length ? Math.max(...lv.walls.map((w) => w.height)) : 2.7;

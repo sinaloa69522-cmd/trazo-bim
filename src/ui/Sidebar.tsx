@@ -9,6 +9,7 @@ import { ROOF_LABEL, type Editor } from "../editor/Editor";
 import { fmtArea, fmtDim, fmtElev, fmtField, fmtLen, fmtSmall, imperial, lenUnit, parseLen } from "../core/units";
 import { finish, ROOFINGS, SIDINGS, type Finish } from "../core/finishes";
 import { finishSwatch } from "../editor/finishTextures";
+import { FOUNDATIONS, foundationType, type FoundationKind } from "../core/foundation";
 import { DOOR_STYLES, elevationLines, openingStyle, WINDOW_STYLES, type OpeningStyle } from "../core/openingStyles";
 import { HATCH_PATTERNS, hatchArea, hatchPattern, hatchSegments, IMPORTED, patternLines } from "../core/hatch";
 
@@ -72,6 +73,25 @@ function OpeningIcon({ st }: { st: OpeningStyle }) {
       {elevationLines({ kind: st.kind, style: st.id }).map((l, i) => <polyline key={i} fill="none" stroke="currentColor" strokeWidth={0.7} strokeDasharray={l.dash ? "2 1.4" : undefined}
         points={l.pts.map(([u, v]) => `${x + u * w},${y + (1 - v) * h}`).join(" ")} />)}
       {st.kind === "door" && <path d="M1 33h32" stroke="currentColor" strokeWidth={1} />}
+    </svg>
+  );
+}
+
+/** Corte esquemático de cada tipo de cimentación: terreno, concreto en gris y madera en ocre. */
+function FoundationIcon({ id }: { id: FoundationKind }) {
+  const C = "#b9b6ae", W = "#d6ad74", I = "currentColor";
+  const parts: Record<FoundationKind, JSX.Element> = {
+    slab: <><rect x={4} y={14} width={36} height={4} fill={C} /><rect x={4} y={18} width={8} height={6} fill={C} /></>,
+    monolithic: <><path d="M4 14h36v4H12v9H4z" fill={C} /></>,
+    stemwall: <><rect x={4} y={12} width={36} height={4} fill={C} /><rect x={5} y={16} width={5} height={10} fill={C} /><rect x={3} y={26} width={9} height={3} fill={C} /></>,
+    crawl: <><rect x={4} y={9} width={36} height={3} fill={W} /><rect x={5} y={12} width={5} height={14} fill={C} /><rect x={3} y={26} width={9} height={3} fill={C} /><rect x={22} y={14} width={4} height={12} fill={C} /></>,
+    basement: <><rect x={4} y={6} width={36} height={3} fill={W} /><rect x={5} y={9} width={4} height={21} fill={C} /><rect x={9} y={28} width={31} height={2} fill={C} /><rect x={3} y={30} width={9} height={2} fill={C} /></>,
+    pier: <><rect x={4} y={9} width={36} height={3} fill={W} /><rect x={4} y={12} width={36} height={2} fill="#8f6436" />{[7, 20, 33].map((x) => <g key={x}><rect x={x} y={14} width={4} height={11} fill={C} /><rect x={x - 2} y={25} width={8} height={3} fill={C} /></g>)}</>,
+  };
+  return (
+    <svg viewBox="0 0 44 34" width={44} height={34} aria-hidden="true">
+      {parts[id]}
+      <path d="M0 18h44" stroke={I} strokeWidth={0.8} strokeDasharray="3 2" />
     </svg>
   );
 }
@@ -392,6 +412,16 @@ function Levels({ ed }: { ed: Editor }) {
           onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
           onBlur={(e) => { const v = e.target.value.trim(); if (v && v !== cur.name) ed.renameLevel(v); }} />
         <NumberField id="lv-elev" label="Cota (m)" value={cur.elev} onCommit={(v) => ed.setLevelElevation(v)} />
+        <div className="full finpick">
+          <label>Cimentación: <b>{foundationType(ed.project).name}</b></label>
+          <div className="fingrid fdn" role="radiogroup" aria-label="Cimentación">
+            {FOUNDATIONS.map((f) => (
+              <button key={f.id} type="button" role="radio" aria-checked={foundationType(ed.project).id === f.id} className={foundationType(ed.project).id === f.id ? "on" : ""} title={f.name} onClick={() => ed.setFoundation(f.id)}>
+                <FoundationIcon id={f.id} />
+              </button>
+            ))}
+          </div>
+        </div>
         <div className="full" style={{ display: "flex", gap: 6 }}>
           <button className="btn" style={{ flex: 1 }} onClick={() => ed.addLevel(false)} title="Nivel vacío encima, con el de abajo en gris como referencia">Nuevo nivel</button>
           <button className="btn" style={{ flex: 1 }} onClick={() => ed.addLevel(true)} title="Copia muros, huecos, losas y escaleras del nivel activo">Duplicar</button>

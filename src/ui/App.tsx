@@ -10,7 +10,7 @@ import { BudgetView } from "./BudgetView";
 import { SheetView } from "./SheetView";
 import { Sidebar } from "./Sidebar";
 import { View3D, type View3DHandle } from "./View3D";
-import { framing, framingTakeoff, type MemberKind } from "../core/framing";
+import { framing, framingTakeoff, MEMBER_COLOR, type MemberKind } from "../core/framing";
 import { FT, imperial } from "../core/units";
 
 type ViewMode = "plan" | "split" | "3d" | "sheet" | "budget";
@@ -58,9 +58,9 @@ export function useEditorVersion(ed: Editor) {
   return useSyncExternalStore(ed.subscribe, ed.getVersion);
 }
 
-const FRAME_LABEL: Record<MemberKind, [string, string]> = {
-  footing: ["Zapatas", "#b3b0a8"], plate: ["Soleras", "#c99b62"], stud: ["Montantes", "#e2c08f"], header: ["Dinteles", "#a8763f"],
-  joist: ["Viguetas", "#d6ad74"], rafter: ["Cabios", "#d9b27c"], ridge: ["Cumbrera y limatesas", "#9c6c3a"],
+const FRAME_LABEL: Record<MemberKind, string> = {
+  footing: "Zapatas", foundation: "Muros de cimentación", pier: "Pilares", girder: "Vigas y columnas", slab: "Losa de sótano",
+  plate: "Soleras", stud: "Montantes", header: "Dinteles", joist: "Viguetas", rafter: "Cabios", ridge: "Cumbrera y limatesas",
 };
 
 /** Leyenda de colores de la vista de estructura, con piezas y metros lineales por escuadría. */
@@ -71,7 +71,7 @@ function FramingLegend({ ed }: { ed: Editor }) {
     <div className="framelegend">
       <b>Estructura de madera (predimensionado IRC)</b>
       <table><tbody>{rows.map((r) => (
-        <tr key={`${r.kind}${r.size}`}><td><i style={{ background: FRAME_LABEL[r.kind][1] }} /> {FRAME_LABEL[r.kind][0]}</td><td>{r.size}</td>
+        <tr key={`${r.kind}${r.size}`}><td><i style={{ background: MEMBER_COLOR[r.kind] }} /> {FRAME_LABEL[r.kind]}</td><td>{r.size}</td>
           <td className="r">{r.count} pzas</td><td className="r">{imperial() ? `${Math.round(r.length / FT)} ft` : `${r.length.toFixed(1)} m`}</td></tr>
       ))}</tbody></table>
     </div>
