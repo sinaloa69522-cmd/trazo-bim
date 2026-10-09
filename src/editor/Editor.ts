@@ -1,3 +1,4 @@
+import type { MemberKind } from "../core/framing";
 import { bounds, dimOffset, dir, distSeg, dimGeom, fits, loc, onSlab, pointInPolygon, polygonArea, roofGeom, stairSteps, textBox, type Pt } from "../core/geometry";
 import {
   attachWalls, liftBuriedRoofs, cloneModel, emptyProject, newLevel, nextId, nextSectionName, normalizeProject, sampleProject, type Level, type Project, type ProjectInfo,
@@ -161,9 +162,15 @@ export class Editor {
 
   /** El 3D muestra la estructura de madera (framing) en lugar de los acabados. */
   framing = false;
+  /** Tipos de pieza ocultos en la vista de estructura (se eligen en su leyenda). */
+  hiddenMembers = new Set<MemberKind>();
+  toggleMember(k: MemberKind) {
+    if (!this.hiddenMembers.delete(k)) this.hiddenMembers.add(k);
+    this.refresh3d();
+  }
   toggleFraming() {
     this.framing = !this.framing;
-    this.message = this.framing ? "3D: estructura de framing (montantes a 16\", dinteles, viguetas y cabios)." : "3D: modelo completo.";
+    this.message = this.framing ? "3D: estructura de framing. En la leyenda puedes ocultar o mostrar cada tipo de pieza." : "3D: modelo completo.";
     this.refresh3d();
   }
   /** Cambios visuales que también afectan al 3D (capas, selección). */

@@ -11,7 +11,7 @@ describe("estructura de framing", () => {
 
   it("genera todas las piezas del ejemplo", () => {
     const p = sampleProject(), ms = framing(p), kinds = new Set(ms.map((m) => m.kind));
-    for (const k of ["footing", "plate", "stud", "header", "joist", "rafter", "ridge"]) expect(kinds.has(k as never)).toBe(true);
+    for (const k of ["footing", "plate", "stud", "header", "ceilingJoist", "blocking", "rafter", "collar", "ridge", "fascia"]) expect(kinds.has(k as never)).toBe(true);
     // un dintel por hueco y montantes a 16" en 47 m de muro
     expect(ms.filter((m) => m.kind === "header").length).toBe(p.levels[0].openings.length);
     expect(ms.filter((m) => m.kind === "stud").length).toBeGreaterThan(47 / 0.4064);
@@ -47,5 +47,30 @@ describe("cabios sobre la doble solera", () => {
     const { z, plateTop } = heelBottom(p);
     expect(plateTop).toBeCloseTo(9 * 12 * 0.0254, 3);
     expect(z).toBeCloseTo(plateTop, 3);
+  });
+});
+
+describe("pisos y techos", () => {
+  it("con una planta encima, sobre la doble solera va el piso: floor joists, rim joists, bloqueo y subpiso", async () => {
+    const { Editor } = await import("../../editor/Editor");
+    const ed = new Editor();
+    ed.addLevel(true);
+    const ms = framing(ed.project), up = ed.project.levels[1].elev;
+    const fj = ms.filter((m) => m.kind === "floorJoist" && m.a.z < up);
+    expect(fj.length).toBeGreaterThan(10);
+    // apoyadas sobre la doble solera de la planta baja, con el subpiso enrasado con la cota de la planta de arriba
+    const plateTop = Math.max(...ms.filter((m) => m.kind === "plate" && m.a.z < up).map((m) => m.a.z + m.h / 2));
+    for (const m of fj) expect(m.a.z - m.h / 2).toBeCloseTo(plateTop, 3);
+    const sf = ms.filter((m) => m.kind === "subfloor" && m.a.z < up + 0.1);
+    for (const m of sf) expect(m.a.z + m.h / 2).toBeCloseTo(up, 3);
+    for (const k of ["rim", "blocking", "subfloor"]) expect(ms.some((m) => m.kind === k)).toBe(true);
+    // los ceiling joists solo en la última planta
+    expect(ms.filter((m) => m.kind === "ceilingJoist").every((m) => m.a.z > ed.project.levels[1].elev)).toBe(true);
+  });
+
+  it("las collar ties van entre cabios opuestos, a 48\"", () => {
+    const ms = framing(sampleProject()), c = ms.filter((m) => m.kind === "collar");
+    expect(c.length).toBeGreaterThan(5);
+    for (const m of c) expect(m.a.z).toBeCloseTo(m.b.z, 6);
   });
 });

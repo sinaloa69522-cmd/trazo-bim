@@ -3,10 +3,12 @@
 import { dir, loc, roofGeom, type P3 } from "./geometry";
 import type { Project, Roof, Wall } from "./model";
 import { foundation } from "./foundation";
-import { floorJoist, headerSize, isExterior, joistBays, rafterSize } from "./permit";
+import { ceilingSystem, depthOf, floorJoistDepth, floorSystem, SUBFLOOR } from "./joists";
+import { floorJoist, headerSize, isExterior, rafterSize } from "./permit";
 import { IN } from "./units";
 
-export type MemberKind = "footing" | "foundation" | "pier" | "girder" | "slab" | "plate" | "stud" | "header" | "joist" | "rafter" | "ridge";
+export type MemberKind = "footing" | "foundation" | "pier" | "girder" | "slab" | "rim" | "floorJoist" | "subfloor" | "blocking"
+  | "plate" | "stud" | "header" | "ceilingJoist" | "rafter" | "collar" | "ridge" | "fascia";
 
 /**
  * Pieza recta entre los centros de sus extremos a y b. w es su ancho horizontal y h su canto
@@ -18,16 +20,14 @@ export interface Member { kind: MemberKind; a: P3; b: P3; w: number; h: number; 
 /** Color de cada tipo de pieza en el 3D y en su leyenda. */
 export const MEMBER_COLOR: Record<MemberKind, string> = {
   footing: "#b3b0a8", foundation: "#a7a49c", pier: "#9d9a92", girder: "#8f6436", slab: "#c4c1b9",
-  plate: "#c99b62", stud: "#e2c08f", header: "#a8763f", joist: "#d6ad74", rafter: "#d9b27c", ridge: "#9c6c3a",
+  rim: "#b9844a", floorJoist: "#d6ad74", subfloor: "#c8b48c", blocking: "#c08f55",
+  plate: "#c99b62", stud: "#e2c08f", header: "#a8763f", ceilingJoist: "#e4c79a", rafter: "#d9b27c", collar: "#b98d58",
+  ridge: "#9c6c3a", fascia: "#8a5f33",
 };
 
 const T = 1.5 * IN;
 /** Canto real de una escuadría nominal ("2x8" → 7 1/4"). */
-export function actualDepth(size: string) {
-  if (/TJI/.test(size)) return 11.875 * IN;
-  const n = Number(/2x(\d+)/.exec(size)?.[1] ?? 6);
-  return (n <= 6 ? n - 0.5 : n - 0.75) * IN;
-}
+export const actualDepth = depthOf;
 const nominal = (size: string) => /2x\d+/.exec(size)?.[0] ?? (/TJI/.test(size) ? "TJI" : "2x6");
 
 /** Todas las piezas del proyecto. */
@@ -36,13 +36,14 @@ export function framing(p: Project): Member[] {
   const out: Member[] = foundation(p);
   p.levels.forEach((lv, li) => {
     const e = lv.elev, above = p.levels[li + 1];
-    for (const w of lv.walls) out.push(...wallFrame(w, lv.openings.filter((o) => o.wallId === w.id), e));
-    // viguetas de piso (si hay planta encima) o de techo, apoyadas sobre la doble solera
-    const H = lv.walls.length ? Math.max(...lv.walls.map((w) => w.height)) : 2.7;
-    for (const bay of joistBays(lv, above ? "floor" : "ceiling")) {
-      const d = actualDepth(bay.member), z = e + H + d / 2;
-      for (const [a, b] of bay.segs) out.push({ kind: "joist", a: { ...a, z }, b: { ...b, z }, w: T, h: d, size: nominal(bay.member) });
-    }
+    // con una planta encima, su piso (viguetas, viga de borde, bloqueo y subpiso) acaba a la cota de esa planta
+    // y los muros que llegan hasta ella se entraman solo hasta la cara inferior de las viguetas
+    const D = above ? floorJoistDepth(lv) : 0, zb = above ? above.elev - SUBFLOOR - D : 0;
+    const frameH = (w: Wall) => (above && w.height > zb - e - 0.15 ? zb - e : w.height);
+    for (const w of lv.walls) out.push(...wallFrame({ ...w, height: frameH(w) }, lv.openings.filter((o) => o.wallId === w.id), e));
+    // sobre la doble solera: el piso de la planta de arriba o, en la última planta, las viguetas de techo
+    const H = lv.walls.length ? Math.max(...lv.walls.map(frameH)) : 2.7;
+    out.push(...(above ? floorSystem(lv, zb, D) : ceilingSystem(lv, e + H)));
     for (const r of lv.roofs) out.push(...roofFrame(r, e, lv.walls));
   });
   return out;
@@ -124,6 +125,19 @@ function roofFrame(r: Roof, e: number, walls: Wall[]): Member[] {
     rafter(P(U0, v, Z(0)), P(U0 + reach, v, Z(reach)));
     rafter(P(U1, v, Z(0)), P(U1 - reach, v, Z(reach)));
   }
+  // collar ties a 48" (un par de cabios sí y otro no), en el tercio superior, junto a la cara del cabio
+  const cd = depthOf("2x6"), dvc = (half * 2) / 3;
+  let k = 0;
+  for (let u = U0 + s / 2; u < U1; u += s, k++) {
+    if (k % 2 || (hip && Math.min(u - U0, U1 - u) < half)) continue;
+    const z = Z(dvc) - drop + cd / 2, uc = u + T;
+    out.push({ kind: "collar", a: P(uc, V0 + dvc, z), b: P(uc, V1 - dvc, z), w: T, h: cd, size: "2x6" });
+  }
+  // fascia en la punta de los cabios del alero (en los cuatro lados si es a cuatro aguas)
+  const ft = Z(0), fz = ft + drop - d / 2;
+  const fascia = (p: P3, q: P3) => out.push({ kind: "fascia", a: p, b: q, w: T, h: d, size: `${nominal(m)} FASCIA` });
+  fascia(P(U0, V0, fz), P(U1, V0, fz)); fascia(P(U0, V1, fz), P(U1, V1, fz));
+  if (hip) { fascia(P(U0, V0, fz), P(U0, V1, fz)); fascia(P(U1, V0, fz), P(U1, V1, fz)); }
   // montantes del hastial, sobre la línea del muro, hasta la cara inferior de los cabios
   if (!hip) {
     const along = alongX ? { x: 0, y: 1 } : { x: 1, y: 0 }, o = r.overhang, zb = e + seat;

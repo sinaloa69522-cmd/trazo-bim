@@ -60,7 +60,9 @@ export function useEditorVersion(ed: Editor) {
 
 const FRAME_LABEL: Record<MemberKind, string> = {
   footing: "Zapatas", foundation: "Muros de cimentación", pier: "Pilares", girder: "Vigas y columnas", slab: "Losa de sótano",
-  plate: "Soleras", stud: "Montantes", header: "Dinteles", joist: "Viguetas", rafter: "Cabios", ridge: "Cumbrera y limatesas",
+  rim: "Rim joists", floorJoist: "Floor joists", blocking: "Blocking", subfloor: "Subpiso",
+  plate: "Plates (soleras)", stud: "Studs", header: "Headers", ceilingJoist: "Ceiling joists",
+  rafter: "Rafters", collar: "Collar ties", ridge: "Ridge y hips", fascia: "Fascia",
 };
 
 /** Leyenda de colores de la vista de estructura, con piezas y metros lineales por escuadría. */
@@ -70,10 +72,15 @@ function FramingLegend({ ed }: { ed: Editor }) {
   return (
     <div className="framelegend">
       <b>Estructura de madera (predimensionado IRC)</b>
-      <table><tbody>{rows.map((r) => (
-        <tr key={`${r.kind}${r.size}`}><td><i style={{ background: MEMBER_COLOR[r.kind] }} /> {FRAME_LABEL[r.kind]}</td><td>{r.size}</td>
-          <td className="r">{r.count} pzas</td><td className="r">{imperial() ? `${Math.round(r.length / FT)} ft` : `${r.length.toFixed(1)} m`}</td></tr>
-      ))}</tbody></table>
+      <small>Clic en una fila para ocultar o mostrar ese tipo de pieza</small>
+      <table><tbody>{rows.map((r) => {
+        const off = ed.hiddenMembers.has(r.kind);
+        return (
+          <tr key={`${r.kind}${r.size}`} className={off ? "off" : ""} onClick={() => ed.toggleMember(r.kind)} title={off ? "Mostrar" : "Ocultar"}>
+            <td><i style={{ background: MEMBER_COLOR[r.kind] }} /> {FRAME_LABEL[r.kind]}</td><td>{r.size}</td>
+            <td className="r">{r.count} pzas</td><td className="r">{imperial() ? `${Math.round(r.length / FT)} ft` : `${r.length.toFixed(1)} m`}</td></tr>
+        );
+      })}</tbody></table>
     </div>
   );
 }

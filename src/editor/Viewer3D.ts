@@ -140,7 +140,7 @@ export class Viewer3D {
       mesh.rotation.x = Math.PI / 2; mesh.position.y = lv.elev;
       this.group.add(mesh);
     }
-    this.members(framing(this.ed.project));
+    this.members(framing(this.ed.project).filter((m) => !this.ed.hiddenMembers.has(m.kind)));
   }
 
   /** Piezas como cajas orientadas: las verticales según su muro, las demás apuntando de a a b. */
@@ -285,7 +285,7 @@ export class Viewer3D {
       this.buildFraming(); this.dirty = true; return;
     }
     // la cimentación se ve donde asoma sobre el terreno (block del crawl space, pilares)
-    if (vis.losas) this.members(foundation(project).filter((m) => m.kind !== "joist" && m.kind !== "plate" && m.kind !== "slab"));
+    if (vis.losas) this.members(foundation(project).filter((m) => ["footing", "foundation", "pier", "girder"].includes(m.kind)));
 
     project.levels.forEach((m, li) => {
       base = m.elev;

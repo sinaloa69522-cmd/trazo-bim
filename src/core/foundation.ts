@@ -3,6 +3,7 @@
 // cuando lo hay) y los datos del plano de cimentación S-101.
 import { dir, loc } from "./geometry";
 import type { Member } from "./framing";
+import { floorSystem, SUBFLOOR } from "./joists";
 import type { Level, Project, Wall } from "./model";
 import { floorJoist, isExterior, joistBays, wallBox } from "./permit";
 import { FT, IN } from "./units";
@@ -114,7 +115,7 @@ const T = 1.5 * IN;
 export function gradeLevel(p: Project) {
   const lv = p.levels[0], ft = foundationType(p);
   if (!lv || !ft.framedFloor) return (lv?.elev ?? 0) - 0.27;
-  const top = lv.elev - floorDepth(lv).d - T;
+  const top = lv.elev - floorDepth(lv).d - SUBFLOOR - T;
   return top - (ft.id === "pier" ? 24 : ft.id === "crawl" ? 16 : 8) * IN;
 }
 const BASEMENT_H = 8 * FT;
@@ -131,7 +132,7 @@ export function foundation(p: Project): Member[] {
     out.push({ kind, a: { ...loc(w, s0, 0), z }, b: { ...loc(w, s1, 0), z }, w: wd, h, size });
   const fl = ft.framedFloor ? floorDepth(lv) : null;
   // cara superior del muro de cimentación: bajo el piso de madera, o a la cota de la losa
-  const top = e - (fl ? fl.d + T : 0);
+  const top = e - (fl ? fl.d + SUBFLOOR + T : 0);
   const exts = lv.walls.filter(isExterior), ints = lv.walls.filter((w) => !isExterior(w));
   const placed: { x: number; y: number }[] = [];
   const onWall = (x: Wall, c: { x: number; y: number }) => {
@@ -194,15 +195,11 @@ export function foundation(p: Project): Member[] {
       out.push({ kind: "slab", a: { x: b.x0, y: (b.y0 + b.y1) / 2, z: bottom + h / 2 }, b: { x: b.x1, y: (b.y0 + b.y1) / 2, z: bottom + h / 2 }, w: b.y1 - b.y0, h, size: "4\" SLAB" });
     }
   }
-  // piso de madera: solera de asiento y viga de borde sobre el perímetro, y viguetas por habitación
+  // piso de madera: solera de asiento sobre el muro de cimentación y, encima, viguetas, viga de borde,
+  // bloqueo y subpiso (su cara superior a la cota del nivel)
   if (fl) {
-    for (const w of exts) {
-      const { L } = dir(w);
-      if (ft.id !== "pier") along(w, -0.05, L + 0.05, top + T / 2, 5.5 * IN, T, "plate", "P.T. 2x6 SILL");
-      along(w, 0, L, e - fl.d / 2, T, fl.d, "joist", "RIM " + (/2x\d+/.exec(fl.member)?.[0] ?? "2x10"));
-    }
-    for (const bay of joistBays(lv, "floor")) for (const [a, b] of bay.segs)
-      out.push({ kind: "joist", a: { ...a, z: e - fl.d / 2 }, b: { ...b, z: e - fl.d / 2 }, w: T, h: fl.d, size: /2x\d+/.exec(bay.member)?.[0] ?? "TJI" });
+    if (ft.id !== "pier") for (const w of exts) { const { L } = dir(w); along(w, -0.05, L + 0.05, top + T / 2, 5.5 * IN, T, "plate", "P.T. 2x6 SILL"); }
+    out.push(...floorSystem(lv, e - SUBFLOOR - fl.d, fl.d));
   }
   return out;
 }
