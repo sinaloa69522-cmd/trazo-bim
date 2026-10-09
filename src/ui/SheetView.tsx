@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { allSections, elevation, FACADES, section, type Elevation } from "../core/elevation";
 import { bounds } from "../core/geometry";
-import { levelMarks, openingSchedule, roomSchedule } from "../core/schedules";
+import { levelMarks, openingSchedule, roomSchedule, wallSchedule } from "../core/schedules";
 import type { Editor } from "../editor/Editor";
 import { drawElevation } from "../editor/elevationRenderer";
 import { drawPlan, type PlanColors } from "../editor/planRenderer";
@@ -69,7 +69,7 @@ export function SheetView({ ed }: { ed: Editor }) {
   const autoScale = content === "plan" ? fitScale(ed) : fitElevScale(views.map((e) => e.el));
   const scale = den ?? autoScale;
   const p = ed.project, info = p.info, lv = ed.model;
-  const doors = openingSchedule(p, "door").types, windows = openingSchedule(p, "window").types, rooms = roomSchedule(p);
+  const doors = openingSchedule(p, "door").types, windows = openingSchedule(p, "window").types, rooms = roomSchedule(p), walls = wallSchedule(p);
   const sheetNo = `A-${String(content === "elev" ? p.levels.length + 1 : content === "sec" ? p.levels.length + 2 : ed.active + 1).padStart(2, "0")}`;
 
   // dibujo de la planta a escala, con la vista del editor cambiada solo mientras se dibuja
@@ -163,6 +163,13 @@ export function SheetView({ ed }: { ed: Editor }) {
                 <ScheduleTable rows={doors} kind="door" />
                 <h4>Ventanas</h4>
                 <ScheduleTable rows={windows} kind="window" />
+                <h4>Muros</h4>
+                {walls.length ? (
+                  <table>
+                    <thead><tr><th>Tipo</th><th className="r">Long. m</th><th className="r">Sup. m²</th></tr></thead>
+                    <tbody>{walls.map((r) => <tr key={r.type}><td>{r.type}</td><td className="r">{n2(r.length)}</td><td className="r">{n2(r.area)}</td></tr>)}</tbody>
+                  </table>
+                ) : <p className="empty">Sin muros.</p>}
                 <h4>Superficies útiles</h4>
                 {rooms.length ? (
                   <table>

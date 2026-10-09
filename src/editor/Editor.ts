@@ -6,6 +6,7 @@ import {
 import { parseDxf } from "../core/dxfImport";
 import { FURNITURE, furnitureDef, furnitureOutline } from "../core/furniture";
 import { extend, offset, trim, type Linear } from "../core/modify";
+import { GENERIC, wallType } from "../core/wallTypes";
 import { computeRooms, roomAt, type RoomGrid } from "../core/rooms";
 import { deleteElements, reflection, transformElements, translation, type Xform } from "../core/transform";
 
@@ -60,7 +61,7 @@ export class Editor {
   set model(m: Model) { this.project.levels[this.active] = { ...this.model, ...m }; }
   rooms: RoomGrid | null = null;
   vis: Record<LayerId, boolean> = { muros: true, puertas: true, ventanas: true, cotas: true, anot: true, hab: true, losas: true, cubiertas: true, escaleras: true, mobiliario: true, secciones: true };
-  defaults = { thick: 0.15, height: 2.7, doorW: 0.9, doorH: 2.1, winW: 1.2, winH: 1.2, sill: 0.9, slabThick: 0.2, roofKind: "gable" as RoofKind, pitch: 30, overhang: 0.5, stairW: 1, furnKind: "bed2", furnRot: 0 };
+  defaults = { wallType: GENERIC, thick: 0.15, height: 2.7, doorW: 0.9, doorH: 2.1, winW: 1.2, winH: 1.2, sill: 0.9, slabThick: 0.2, roofKind: "gable" as RoofKind, pitch: 30, overhang: 0.5, stairW: 1, furnKind: "bed2", furnRot: 0 };
   tool: Tool = "select";
   /** Elementos seleccionados. */
   sels: Selection[] = [];
@@ -426,7 +427,7 @@ export class Editor {
       if (Math.hypot(p.x - last.x, p.y - last.y) < 0.05) return;
       this.snapshot();
       if (this.tool === "wall") {
-        const w: Wall = { id: nextId(m), x1: last.x, y1: last.y, x2: p.x, y2: p.y, thick: this.defaults.thick, height: this.defaults.height, attach: true };
+        const w: Wall = { id: nextId(m), type: this.defaults.wallType, x1: last.x, y1: last.y, x2: p.x, y2: p.y, thick: this.defaults.thick, height: this.defaults.height, attach: true };
         m.walls.push(w);
         this.message = `Muro de ${dir(w).L.toFixed(2)} m creado.`;
       } else {
@@ -551,7 +552,7 @@ export class Editor {
     this.snapshot();
     const m = this.model, ids = new Set(lines.map((s) => s.id)), made: Selection[] = [];
     for (const l of m.lines.filter((l) => ids.has(l.id))) {
-      const w: Wall = { id: nextId(m), x1: l.x1, y1: l.y1, x2: l.x2, y2: l.y2, thick: this.defaults.thick, height: this.defaults.height, attach: true };
+      const w: Wall = { id: nextId(m), type: this.defaults.wallType, x1: l.x1, y1: l.y1, x2: l.x2, y2: l.y2, thick: this.defaults.thick, height: this.defaults.height, attach: true };
       m.walls.push(w);
       made.push({ type: "wall", id: w.id });
     }
@@ -864,6 +865,15 @@ export class Editor {
   clearHoles(id: number) {
     const sl = this.model.slabs.find((x) => x.id === id);
     if (sl?.holes.length) this.edit(() => { sl.holes = []; });
+  }
+
+  /** Cambia el tipo de los muros indicados; los tipos del catálogo fijan el espesor. */
+  setWallType(ids: number[], type: string) {
+    const ws = this.model.walls.filter((w) => ids.includes(w.id));
+    if (!ws.length) return;
+    this.edit(() => { for (const w of ws) { w.type = type; if (type !== GENERIC) w.thick = wallType(type).thick; } });
+    this.message = `${ws.length > 1 ? `${ws.length} muros cambiados` : "Muro cambiado"} a ${wallType(type).name.toLowerCase()}.`;
+    this.emit();
   }
 
   /** Invierte el sentido de una sección: se ve el otro lado del corte. */

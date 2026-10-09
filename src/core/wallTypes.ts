@@ -1,0 +1,39 @@
+/** Trama con la que se dibuja la sección del muro en planta. */
+export type Hatch = "brick" | "block" | "concrete" | "drywall" | "solid";
+
+/** Tipo de muro del catálogo, como los tipos de familia de Revit. */
+export interface WallType {
+  id: string;
+  name: string;
+  /** Espesor del tipo; el genérico admite cualquiera */
+  thick: number;
+  hatch: Hatch;
+  /** Material principal (va al IFC) */
+  material: string;
+}
+
+export const GENERIC = "generico";
+
+export const WALL_TYPES: WallType[] = [
+  { id: "fachada-ladrillo", name: "Fachada de ladrillo 25", thick: 0.25, hatch: "brick", material: "Ladrillo cerámico" },
+  { id: "fachada-bloque", name: "Bloque de hormigón 20", thick: 0.2, hatch: "block", material: "Bloque de hormigón" },
+  { id: "muro-hormigon", name: "Muro de hormigón 30", thick: 0.3, hatch: "concrete", material: "Hormigón armado" },
+  { id: "tabique-ladrillo", name: "Tabique de ladrillo 12", thick: 0.12, hatch: "brick", material: "Ladrillo cerámico" },
+  { id: "tabique-yeso", name: "Tabique de placa de yeso 10", thick: 0.1, hatch: "drywall", material: "Placa de yeso laminado" },
+  { id: GENERIC, name: "Muro genérico", thick: 0.15, hatch: "solid", material: "Genérico" },
+];
+
+export function wallType(id: string): WallType {
+  return WALL_TYPES.find((t) => t.id === id) ?? WALL_TYPES[WALL_TYPES.length - 1];
+}
+
+/** Tipo para un muro guardado sin tipo: el del catálogo con su espesor, o el genérico. */
+export function typeForThick(thick: number): string {
+  return WALL_TYPES.find((t) => t.id !== GENERIC && Math.abs(t.thick - thick) < 1e-6)?.id ?? GENERIC;
+}
+
+/** Nombre que se muestra: el genérico lleva su espesor. */
+export function wallTypeLabel(w: { type: string; thick: number }) {
+  const t = wallType(w.type);
+  return t.id === GENERIC ? `${t.name} ${Math.round(w.thick * 100)}` : t.name;
+}

@@ -1,5 +1,7 @@
+import { dir } from "./geometry";
 import type { OpeningKind, Project } from "./model";
 import { computeRooms } from "./rooms";
+import { wallType, wallTypeLabel } from "./wallTypes";
 
 /** Un tipo de puerta o ventana: huecos con las mismas medidas comparten marca. */
 export interface OpeningType {
@@ -58,4 +60,19 @@ export function roomSchedule(p: Project): RoomRow[] {
     }
   }
   return out;
+}
+
+export interface WallRow { type: string; material: string; count: number; length: number; area: number }
+
+/** Medición de muros por tipo en todo el proyecto: longitud por el eje y superficie descontando huecos. */
+export function wallSchedule(p: Project): WallRow[] {
+  const rows = new Map<string, WallRow>();
+  for (const lv of p.levels) for (const w of lv.walls) {
+    const name = wallTypeLabel(w), L = dir(w).L;
+    const holes = lv.openings.filter((o) => o.wallId === w.id).reduce((s, o) => s + o.width * Math.max(0, Math.min(o.height, w.height - o.sill)), 0);
+    let r = rows.get(name);
+    if (!r) { r = { type: name, material: wallType(w.type).material, count: 0, length: 0, area: 0 }; rows.set(name, r); }
+    r.count++; r.length += L; r.area += Math.max(0, L * w.height - holes);
+  }
+  return [...rows.values()].sort((a, b) => a.type.localeCompare(b.type, "es"));
 }

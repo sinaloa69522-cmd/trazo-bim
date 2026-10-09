@@ -2,6 +2,7 @@ import { dimGeom, dimOffset, dir, loc, pieces, roofGeom, stairSteps, type Pt } f
 import { furnitureStrokes, type Stroke } from "../core/furniture";
 import type { Dim, Model, Roof, Section, Stair, Wall } from "../core/model";
 import { RC } from "../core/rooms";
+import { wallType, type Hatch } from "../core/wallTypes";
 import type { Editor, SelType } from "./Editor";
 
 export type PlanColors = Record<
@@ -116,9 +117,16 @@ export function drawPlan(ctx: CanvasRenderingContext2D, ed: Editor, C: PlanColor
   }
 
   // muros
-  if (ed.vis.muros) for (const w of m.walls) {
-    const h = w.thick / 2, hl = isSel("wall", w.id) || (hover?.type === "wall" && hover.id === w.id);
-    for (const [a, b] of pieces(m, w).solids) poly(quad(w, a, b, -h, h), C.wall, hl ? C.accent : C.wall, isSel("wall", w.id) ? 2.5 : 1);
+  if (ed.vis.muros) {
+    const parts = m.walls.map((w) => { const h = w.thick / 2; return { w, polys: pieces(m, w).solids.map(([a, b]) => quad(w, a, b, -h, h)) }; });
+    // primero el contorno grueso de todos y luego el relleno encima: así las juntas entre muros
+    // quedan tapadas y solo se ve la mitad exterior del trazo
+    for (const { polys } of parts) for (const q of polys) poly(q, null, C.wall, 2);
+    for (const { w, polys } of parts) hatchWall(ctx, ed, polys, wallType(w.type).hatch, C);
+    for (const { w, polys } of parts) {
+      const hl = isSel("wall", w.id) || (hover?.type === "wall" && hover.id === w.id);
+      if (hl) for (const q of polys) poly(q, null, C.accent, isSel("wall", w.id) ? 2.5 : 1.5);
+    }
   }
 
   // puertas y ventanas
@@ -404,5 +412,35 @@ function drawSection(ctx: CanvasRenderingContext2D, ed: Editor, se: Section, col
     ctx.beginPath(); ctx.moveTo(t.x + vx * 6, t.y + vy * 6); ctx.lineTo(t.x + ux * 4, t.y + uy * 4); ctx.lineTo(t.x - ux * 4, t.y - uy * 4); ctx.closePath(); ctx.fill();
     ctx.fillText(label, p.x - ux * sg * 10 + vx * 8, p.y - uy * sg * 10 + vy * 8);
   }
+  ctx.restore();
+}
+
+/** Relleno de la sección del muro según su tipo: ladrillo rayado, bloque cruzado, hormigón, yeso o macizo. */
+function hatchWall(ctx: CanvasRenderingContext2D, ed: Editor, polys: Pt[][], hatch: Hatch, C: PlanColors) {
+  if (!polys.length) return;
+  ctx.save();
+  ctx.beginPath();
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  for (const q of polys) q.forEach((p, i) => {
+    const s = ed.toS(p.x, p.y);
+    x0 = Math.min(x0, s.x); y0 = Math.min(y0, s.y); x1 = Math.max(x1, s.x); y1 = Math.max(y1, s.y);
+    if (i) ctx.lineTo(s.x, s.y); else ctx.moveTo(s.x, s.y);
+    if (i === q.length - 1) ctx.closePath();
+  });
+  if (hatch === "solid") { ctx.fillStyle = C.wall; ctx.fill(); ctx.restore(); return; }
+  ctx.fillStyle = C["plan-bg"]; ctx.fill();
+  if (hatch === "concrete" || hatch === "drywall") { ctx.globalAlpha = hatch === "concrete" ? 0.3 : 0.16; ctx.fillStyle = C.wall; ctx.fill(); ctx.globalAlpha = 1; }
+  ctx.clip();
+  // rayado en coordenadas de pantalla para que siga continuo de un muro a otro
+  const lines = (step: number, dirn: 1 | -1, dash: number[] = []) => {
+    ctx.beginPath(); ctx.setLineDash(dash);
+    for (let k = Math.floor((dirn > 0 ? x0 + y0 : x0 - y1) / step) * step; k <= (dirn > 0 ? x1 + y1 : x1 - y0); k += step) {
+      if (dirn > 0) { ctx.moveTo(k - y0, y0); ctx.lineTo(k - y1, y1); } else { ctx.moveTo(k + y0, y0); ctx.lineTo(k + y1, y1); }
+    }
+    ctx.strokeStyle = C.wall; ctx.lineWidth = 0.6; ctx.stroke(); ctx.setLineDash([]);
+  };
+  if (hatch === "brick") lines(4, 1);
+  else if (hatch === "block") { lines(6, 1); lines(6, -1); }
+  else if (hatch === "concrete") lines(7, 1, [3, 2, 1, 2]);
   ctx.restore();
 }
