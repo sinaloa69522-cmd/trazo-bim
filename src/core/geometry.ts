@@ -88,20 +88,38 @@ export interface Bounds {
   y1: number;
 }
 
-/** Extensión del dibujo con 1.5 m de margen. */
-export function bounds(m: Model, extra: Pt[] = []): Bounds {
-  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
-  const add = (x: number, y: number) => {
-    x0 = Math.min(x0, x); y0 = Math.min(y0, y); x1 = Math.max(x1, x); y1 = Math.max(y1, y);
-  };
+/**
+ * Extensión del dibujo con 1.5 m de margen. Con robust=true no cuenta los puntos sueltos que quedan
+ * lejos del resto (para encuadrar un plano importado con restos olvidados a kilómetros).
+ */
+export function bounds(m: Model, extra: Pt[] = [], robust = false): Bounds {
+  const pts: Pt[] = [];
+  const add = (x: number, y: number) => { pts.push({ x, y }); };
   for (const s of [...m.walls, ...m.lines, ...m.dims, ...(m.roofs ?? []), ...(m.stairs ?? [])]) { add(s.x1, s.y1); add(s.x2, s.y2); }
   for (const sl of m.slabs ?? []) for (const p of sl.pts) add(p.x, p.y);
   for (const h of m.hatches ?? []) for (const q of h.loops) for (const p of q) add(p.x, p.y);
   for (const f of m.furniture ?? []) add(f.x, f.y);
   for (const t of m.texts ?? []) for (const p of textBox(t)) add(p.x, p.y);
   for (const p of extra) add(p.x, p.y);
-  if (!isFinite(x0)) return { x0: -5, y0: -4, x1: 5, y1: 4 };
-  return { x0: x0 - 1.5, y0: y0 - 1.5, x1: x1 + 1.5, y1: y1 + 1.5 };
+  let b = robust ? robustBox(pts) : null;
+  if (!robust && pts.length) {
+    b = { x0: Infinity, y0: Infinity, x1: -Infinity, y1: -Infinity };
+    for (const p of pts) { b.x0 = Math.min(b.x0, p.x); b.y0 = Math.min(b.y0, p.y); b.x1 = Math.max(b.x1, p.x); b.y1 = Math.max(b.y1, p.y); }
+  }
+  if (!b || !isFinite(b.x0)) return { x0: -5, y0: -4, x1: 5, y1: 4 };
+  const mg = robust ? Math.max(0.05, Math.min(1.5, Math.max(b.x1 - b.x0, b.y1 - b.y0) * 0.05)) : 1.5;
+  return { x0: b.x0 - mg, y0: b.y0 - mg, x1: b.x1 + mg, y1: b.y1 + mg };
+}
+
+/**
+ * Extensión del dibujo sin los puntos sueltos que quedan lejos (el 2 % de cada lado):
+ * en muchos DWG hay restos olvidados a kilómetros que harían ver el plano diminuto.
+ */
+export function robustBox(pts: Pt[]): { x0: number; y0: number; x1: number; y1: number } | null {
+  if (!pts.length) return null;
+  const xs = pts.map((p) => p.x).sort((a, b) => a - b), ys = pts.map((p) => p.y).sort((a, b) => a - b);
+  const k = pts.length >= 50 ? Math.floor(pts.length * 0.02) : 0, n = pts.length - 1 - k;
+  return { x0: xs[k], y0: ys[k], x1: xs[n], y1: ys[n] };
 }
 
 /** Rectángulo aproximado que ocupa un texto (ancho medio de letra 0.6 de la altura), girado. */
