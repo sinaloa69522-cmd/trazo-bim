@@ -1,3 +1,4 @@
+import { fmtDim } from "../core/units";
 import type { RefObject } from "react";
 import type { Editor } from "../editor/Editor";
 
@@ -24,7 +25,7 @@ export function CommandLine({ ed, inputRef, onExport }: { ed: Editor; inputRef: 
       <div className="status">
         <button className="pill" aria-pressed={ed.ortho} title="F8" onClick={() => ed.toggleOrtho()}>ORTO</button>
         <button className="pill" aria-pressed={ed.osnap} title="F3" onClick={() => ed.toggleOsnap()}>REFENT</button>
-        <span className="coords">X {p.x.toFixed(2)}  Y {(-p.y).toFixed(2)}</span>
+        <span className="coords">X {fmtDim(p.x)}  Y {fmtDim(-p.y)}</span>
       </div>
     </footer>
   );

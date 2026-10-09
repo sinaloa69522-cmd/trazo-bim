@@ -1,3 +1,4 @@
+import { imperial } from "./units";
 import type { Dim, Model, Opening, Roof, Stair, Wall } from "./model";
 
 export interface Pt {
@@ -219,6 +220,7 @@ export function roofGeom(r: Roof): RoofGeom {
 /** Peldaños de una escalera recta: número, huella y contrahuella. */
 export function stairSteps(s: Stair) {
   const L = Math.hypot(s.x2 - s.x1, s.y2 - s.y1);
-  const n = Math.max(2, Math.round(s.height / 0.175));
+  // contrahuella de unos 17,5 cm; en EE.UU. el código (IRC) pide 7 3/4" como máximo, se busca 7 1/2"
+  const n = Math.max(2, Math.round(s.height / (imperial() ? 0.1905 : 0.175)));
   return { n, L, tread: L / n, riser: s.height / n };
 }

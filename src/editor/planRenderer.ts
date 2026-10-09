@@ -1,3 +1,4 @@
+import { fmtArea, fmtDim, fmtLen, imperial, FT } from "../core/units";
 import { dimGeom, dimOffset, dir, loc, pieces, roofGeom, stairSteps, textBox, type Pt } from "../core/geometry";
 import { furnitureStrokes, type Stroke } from "../core/furniture";
 import { discOfSystem, fixtureStrokes, fixtureTextAt, mepDef, systemDef, type SymStroke } from "../core/mep";
@@ -96,8 +97,9 @@ export function drawPlan(ctx: CanvasRenderingContext2D, ed: Editor, C: PlanColor
     ctx.stroke();
   };
   if (!P) {
-    grid(0.1, C.grid);
-    grid(1, C["grid-major"]);
+    // métrico: 10 cm y 1 m; pies: 1' y 10'
+    if (imperial()) { grid(FT, C.grid); grid(10 * FT, C["grid-major"]); }
+    else { grid(0.1, C.grid); grid(1, C["grid-major"]); }
     // origen
     const o = toS(0, 0);
     ctx.strokeStyle = C.muted; ctx.lineWidth = 1; ctx.beginPath();
@@ -271,7 +273,7 @@ export function drawPlan(ctx: CanvasRenderingContext2D, ed: Editor, C: PlanColor
     ctx.textAlign = "center";
     ctx.font = "600 12px 'IBM Plex Sans', system-ui, sans-serif"; ctx.fillStyle = c.ok ? C.fg : C.danger; ctx.fillText(r.name, s.x, s.y - 2);
     ctx.font = MONO; ctx.fillStyle = c.ok ? C.muted : C.danger;
-    ctx.fillText(c.ok ? `${c.area.toFixed(2)} m²` : "espacio sin cerrar", s.x, s.y + 13);
+    ctx.fillText(c.ok ? fmtArea(c.area) : "espacio sin cerrar", s.x, s.y + 13);
     ctx.textAlign = "left";
   }
 
@@ -318,7 +320,7 @@ export function drawPlan(ctx: CanvasRenderingContext2D, ed: Editor, C: PlanColor
     seg(a, b, C.danger, 2, [8, 4]);
     for (const q of [a, b]) { const s = toS(q.x, q.y); ctx.strokeStyle = C.danger; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.moveTo(s.x - 6, s.y - 6); ctx.lineTo(s.x + 6, s.y + 6); ctx.moveTo(s.x + 6, s.y - 6); ctx.lineTo(s.x - 6, s.y + 6); ctx.stroke(); }
     const mid = toS((a.x + b.x) / 2, (a.y + b.y) / 2);
-    ctx.font = MONO; ctx.fillStyle = C.danger; ctx.fillText(`${Math.hypot(b.x - a.x, b.y - a.y).toFixed(3)}`, mid.x + 8, mid.y - 8);
+    ctx.font = MONO; ctx.fillStyle = C.danger; ctx.fillText(fmtLen(Math.hypot(b.x - a.x, b.y - a.y)), mid.x + 8, mid.y - 8);
   }
   const xf = ed.previewXform();
   if (xf && draft) {
@@ -467,7 +469,7 @@ function lengthTag(ctx: CanvasRenderingContext2D, ed: Editor, C: PlanColors, a: 
   const L = Math.hypot(b.x - a.x, b.y - a.y);
   let ang = (Math.atan2(-(b.y - a.y), b.x - a.x) * 180) / Math.PI;
   if (ang < 0) ang += 360;
-  const s = ed.toS(b.x, b.y), txt = `${L.toFixed(2)} m  ∠${ang.toFixed(0)}°`;
+  const s = ed.toS(b.x, b.y), txt = `${fmtLen(L)}  ∠${ang.toFixed(0)}°`;
   ctx.font = MONO;
   const tw = ctx.measureText(txt).width;
   ctx.fillStyle = C.panel; ctx.fillRect(s.x + 12, s.y + 10, tw + 10, 18);
@@ -493,7 +495,7 @@ function drawDim(ctx: CanvasRenderingContext2D, ed: Editor, d: Dim, col: string)
   let ang = Math.atan2(uy, ux);
   if (ang > Math.PI / 2 || ang <= -Math.PI / 2) ang += Math.PI;
   ctx.save(); ctx.translate(mid.x, mid.y); ctx.rotate(ang);
-  ctx.font = MONO; ctx.fillStyle = col; ctx.textAlign = "center"; ctx.fillText(g.L.toFixed(2), 0, -5);
+  ctx.font = MONO; ctx.fillStyle = col; ctx.textAlign = "center"; ctx.fillText(fmtDim(g.L), 0, -5);
   ctx.restore();
 }
 

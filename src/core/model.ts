@@ -1,5 +1,6 @@
 // Modelo del proyecto. Coordenadas en metros; el eje Y crece hacia abajo en planta.
 
+import type { UnitSystem } from "./units";
 import { defaultBudget, type BudgetSettings } from "./budget";
 import type { PatLine } from "./hatch";
 import { autoRoute, mepDef, sanitaryPoints } from "./mep";
@@ -229,6 +230,8 @@ export interface Project {
   info: ProjectInfo;
   /** Moneda, porcentajes y precios propios del presupuesto */
   budget: BudgetSettings;
+  /** Cómo se escriben las medidas; el modelo siempre va en metros. Sin valor: métrico. */
+  units?: UnitSystem;
 }
 
 export const defaultInfo = (): ProjectInfo => ({ name: "Vivienda unifamiliar", author: "", client: "", date: new Date().toISOString().slice(0, 10) });
@@ -297,9 +300,10 @@ export function normalizeProject(raw: unknown): Project {
   const r = raw as Partial<Project> & Partial<Model>;
   const info = { ...defaultInfo(), ...(r?.info ?? {}) };
   const budget = { ...defaultBudget(), ...(r?.budget ?? {}) };
+  const units = r?.units === "imperial" ? { units: "imperial" as const } : {};
   if (Array.isArray(r?.levels) && r.levels.length)
-    return { levels: r.levels.map((l, i) => ({ ...normalizeModel(l), name: l.name ?? `Nivel ${i}`, elev: l.elev ?? 0 })), info, budget };
-  return { levels: [newLevel("Planta baja", 0, normalizeModel(raw))], info, budget };
+    return { levels: r.levels.map((l, i) => ({ ...normalizeModel(l), name: l.name ?? `Nivel ${i}`, elev: l.elev ?? 0 })), info, budget, ...units };
+  return { levels: [newLevel("Planta baja", 0, normalizeModel(raw))], info, budget, ...units };
 }
 
 /** Vivienda de ejemplo: planta baja de 10 x 7 m con su losa y cubierta a dos aguas. */

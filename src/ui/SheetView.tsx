@@ -9,17 +9,17 @@ import { circuitSchedule, levelMarks, mepSchedule, openingSchedule, roomSchedule
 import type { Editor } from "../editor/Editor";
 import { drawElevation } from "../editor/elevationRenderer";
 import { drawPlan, type PlanColors } from "../editor/planRenderer";
+import { areaNum, areaUnit, fmtDim, fmtElev, FT, imperial, lenUnit, scaleLabel, scalesFor } from "../core/units";
 import { SymbolIcon, SystemIcon } from "./MepIcons";
 
-/** Lámina A3 apaisada, en milímetros. */
-const SHEET = { w: 420, h: 297 };
+/** Lámina apaisada, en milímetros: A3, o en EE.UU. Tabloid (ANSI B, 11" × 17"). */
+const sheetSize = () => (imperial() ? { w: 431.8, h: 279.4 } : { w: 420, h: 297 });
 const FRAME = 10;
 const SIDE = 112;
 /** Zona del dibujo dentro del marco, dejando sitio al rótulo de la vista. */
-const PLAN = { x: FRAME, y: FRAME, w: SHEET.w - 2 * FRAME - SIDE, h: SHEET.h - 2 * FRAME - 16 };
+const planBox = () => { const S = sheetSize(); return { x: FRAME, y: FRAME, w: S.w - 2 * FRAME - SIDE, h: S.h - 2 * FRAME - 16 }; };
 const PX_MM = 96 / 25.4;
 const OVERSAMPLE = 3;
-export const SCALES = [20, 25, 50, 75, 100, 125, 150, 200, 250, 500, 1000];
 
 /** El papel siempre es blanco, aunque la interfaz esté en modo oscuro. */
 const PAPER: PlanColors = {
@@ -33,18 +33,18 @@ const HALF: PlanColors = { ...PAPER, wall: "#8f8f8f", door: "#a3a3a3", window: "
 /** Escala normalizada más grande en la que cabe la planta. */
 export function fitScale(m: Model) {
   const b = bounds(m), wm = b.x1 - b.x0, hm = b.y1 - b.y0;
-  return SCALES.find((d) => (wm * 1000) / d <= PLAN.w - 8 && (hm * 1000) / d <= PLAN.h - 8) ?? 1000;
+  return scalesFor().find((d) => (wm * 1000) / d <= planBox().w - 8 && (hm * 1000) / d <= planBox().h - 8) ?? 1000;
 }
 
-const n2 = (v: number) => v.toFixed(2);
+const n2 = (v: number) => fmtDim(v);
 
 /** Rejilla de vistas: hasta cuatro, en 1×1, 2×1 o 2×2; las fachadas van una encima de otra. */
 export const grid = (n: number, stacked = false) => (stacked ? { cols: 1, rows: n } : { cols: n > 1 ? 2 : 1, rows: n > 2 ? 2 : 1 });
 /** Cada vista ocupa su celda; a la derecha quedan unos 22 mm para las cotas de nivel y a la izquierda sitio para las de altura. */
-const cell = (n: number, stacked = false) => { const g = grid(n, stacked); return { w: PLAN.w / g.cols - (stacked ? 34 : 22), h: PLAN.h / g.rows - 16 }; };
+const cell = (n: number, stacked = false) => { const g = grid(n, stacked); return { w: planBox().w / g.cols - (stacked ? 34 : 22), h: planBox().h / g.rows - 16 }; };
 export function fitElevScale(els: Elevation[], stacked = false) {
   const c = cell(els.length, stacked);
-  return SCALES.find((d) => els.every((e) => ((e.u1 - e.u0) * 1000) / d <= c.w && ((e.z1 - e.z0) * 1000) / d <= c.h)) ?? 1000;
+  return scalesFor().find((d) => els.every((e) => ((e.u1 - e.u0) * 1000) / d <= c.w && ((e.z1 - e.z0) * 1000) / d <= c.h)) ?? 1000;
 }
 
 /** plan, elec y plum son plantas de un nivel; fach son dos fachadas (part 0: sur y norte, 1: este y oeste). */
@@ -54,8 +54,9 @@ const FACH_PARTS: Facade[][] = [["S", "N"], ["E", "O"]];
 const facadeLabel = (f: Facade) => FACADES.find((x) => x.id === f)!.label.replace("Alzado", "Fachada");
 
 function ScaleBar({ den }: { den: number }) {
-  // tramos de 1 m (o 5 m en escalas pequeñas) hasta unos 50 mm de largo
-  const step = den >= 250 ? 5 : 1, mm = (step * 1000) / den, k = Math.max(1, Math.min(5, Math.floor(50 / mm)));
+  // tramos de 1 m (o 5 m en escalas pequeñas) hasta unos 50 mm de largo; en pies, de 1', 5', 10' o 20'
+  const ft = imperial(), step = ft ? (den <= 24 ? 1 : den <= 64 ? 5 : den <= 128 ? 10 : 20) : den >= 250 ? 5 : 1;
+  const mm = (step * (ft ? FT : 1) * 1000) / den, k = Math.max(1, Math.min(5, Math.floor(50 / mm)));
   return (
     <svg className="scalebar" width={`${k * mm + 12}mm`} height="7mm" viewBox={`0 0 ${k * mm + 12} 7`}>
       {Array.from({ length: k }, (_, i) => (
@@ -64,7 +65,7 @@ function ScaleBar({ den }: { den: number }) {
       {Array.from({ length: k + 1 }, (_, i) => (
         <text key={i} x={i * mm + 1} y={5.6} fontSize={2.2} textAnchor="middle">{i * step}</text>
       ))}
-      <text x={k * mm + 3} y={5.6} fontSize={2.2}>m</text>
+      <text x={k * mm + 3} y={5.6} fontSize={2.2}>{ft ? "ft" : "m"}</text>
     </svg>
   );
 }
@@ -135,7 +136,7 @@ function Sheet({ ed, content, level, scale, zoom = 1 }: { ed: Editor; content: C
   useEffect(() => {
     const cv = canvas.current;
     if (!cv) return;
-    const W = PLAN.w * PX_MM, H = PLAN.h * PX_MM;
+    const W = planBox().w * PX_MM, H = planBox().h * PX_MM;
     cv.width = Math.round(W * OVERSAMPLE); cv.height = Math.round(H * OVERSAMPLE);
     const ctx = cv.getContext("2d")!;
     ctx.setTransform(OVERSAMPLE, 0, 0, OVERSAMPLE, 0, 0);
@@ -167,14 +168,14 @@ function Sheet({ ed, content, level, scale, zoom = 1 }: { ed: Editor; content: C
   });
 
   return (
-    <article className="sheet" style={{ transform: `scale(${zoom})` }} aria-label={`Lámina ${sheetNo}`}>
-      <canvas ref={canvas} className="sheetplan" style={{ left: `${PLAN.x}mm`, top: `${PLAN.y}mm`, width: `${PLAN.w}mm`, height: `${PLAN.h}mm` }} />
-      <div className="viewtitle" style={{ left: `${PLAN.x + 6}mm`, top: `${PLAN.y + PLAN.h + 1}mm` }}>
+    <article className="sheet" style={{ transform: `scale(${zoom})`, width: `${sheetSize().w}mm`, height: `${sheetSize().h}mm` }} aria-label={`Lámina ${sheetNo}`}>
+      <canvas ref={canvas} className="sheetplan" style={{ left: `${planBox().x}mm`, top: `${planBox().y}mm`, width: `${planBox().w}mm`, height: `${planBox().h}mm` }} />
+      <div className="viewtitle" style={{ left: `${planBox().x + 6}mm`, top: `${planBox().y + planBox().h + 1}mm` }}>
         <span className="vt-n">{content === "elev" ? "ALZADOS" : content === "fach" ? views.map((v) => v.label).join(" y ").toUpperCase() : content === "sec" ? "SECCIONES" : planName ? `${lv.name} · ${planName}`.toUpperCase() : lv.name.toUpperCase()}</span>
-        <span className="vt-s">E 1:{scale}{isPlan(content) && ` · cota ${lv.elev >= 0 ? "+" : ""}${n2(lv.elev)}`}</span>
+        <span className="vt-s">{imperial() ? "Escala " : "E "}{scaleLabel(scale)}{isPlan(content) && ` · cota ${fmtElev(lv.elev)}`}</span>
         <ScaleBar den={scale} />
       </div>
-      <aside className="sheetside" style={{ left: `${SHEET.w - FRAME - SIDE}mm`, top: `${FRAME}mm`, width: `${SIDE}mm`, height: `${SHEET.h - 2 * FRAME}mm` }}>
+      <aside className="sheetside" style={{ left: `${sheetSize().w - FRAME - SIDE}mm`, top: `${FRAME}mm`, width: `${SIDE}mm`, height: `${sheetSize().h - 2 * FRAME}mm` }}>
         {content === "elec" || content === "plum" ? <MepTables p={p} disc={content} level={level} /> : <div className="tables">
           {content === "fach" && <>
             <h4>Acabados de fachada</h4>
@@ -187,17 +188,17 @@ function Sheet({ ed, content, level, scale, zoom = 1 }: { ed: Editor; content: C
           <h4>Muros</h4>
           {walls.length ? (
             <table>
-              <thead><tr><th>Tipo</th><th className="r">Long. m</th><th className="r">Sup. m²</th></tr></thead>
-              <tbody>{walls.map((r) => <tr key={r.type}><td>{r.type}</td><td className="r">{n2(r.length)}</td><td className="r">{n2(r.area)}</td></tr>)}</tbody>
+              <thead><tr><th>Tipo</th><th className="r">Long. {lenUnit()}</th><th className="r">Sup. {areaUnit()}</th></tr></thead>
+              <tbody>{walls.map((r) => <tr key={r.type}><td>{r.type}</td><td className="r">{n2(r.length)}</td><td className="r">{areaNum(r.area)}</td></tr>)}</tbody>
             </table>
           ) : <p className="empty">Sin muros.</p>}
           <h4>Superficies útiles</h4>
           {rooms.length ? (
             <table>
-              <thead><tr><th>Nivel</th><th>Espacio</th><th className="r">m²</th></tr></thead>
+              <thead><tr><th>Nivel</th><th>Espacio</th><th className="r">{areaUnit()}</th></tr></thead>
               <tbody>
-                {rooms.map((r, i) => <tr key={i}><td>{r.level}</td><td>{r.name}</td><td className="r">{n2(r.area)}</td></tr>)}
-                <tr className="tot"><td colSpan={2}>Total</td><td className="r">{n2(rooms.reduce((s, r) => s + r.area, 0))}</td></tr>
+                {rooms.map((r, i) => <tr key={i}><td>{r.level}</td><td>{r.name}</td><td className="r">{areaNum(r.area)}</td></tr>)}
+                <tr className="tot"><td colSpan={2}>Total</td><td className="r">{areaNum(rooms.reduce((s, r) => s + r.area, 0))}</td></tr>
               </tbody>
             </table>
           ) : <p className="empty">Sin habitaciones definidas.</p>}
@@ -212,7 +213,7 @@ function Sheet({ ed, content, level, scale, zoom = 1 }: { ed: Editor; content: C
             <div><small>Cliente</small>{info.client || "—"}</div>
           </div>
           <div className="c-row">
-            <div><small>Escala</small>1:{scale}</div>
+            <div><small>Escala</small>{scaleLabel(scale)}</div>
             <div><small>Fecha</small>{info.date}</div>
             <div className="c-no"><small>Lámina</small>{sheetNo}</div>
           </div>
@@ -264,7 +265,7 @@ export function SheetView({ ed }: { ed: Editor }) {
     const el = host.current!;
     const fit = () => {
       const r = el.getBoundingClientRect();
-      setZoom(Math.max(0.1, Math.min((r.width - 32) / (SHEET.w * PX_MM), (r.height - 32) / (SHEET.h * PX_MM))));
+      setZoom(Math.max(0.1, Math.min((r.width - 32) / (sheetSize().w * PX_MM), (r.height - 32) / (sheetSize().h * PX_MM))));
     };
     const ro = new ResizeObserver(fit);
     ro.observe(el);
@@ -305,16 +306,18 @@ export function SheetView({ ed }: { ed: Editor }) {
         </label>
         <label>Escala
           <select value={den ?? "auto"} onChange={(e) => setDen(e.target.value === "auto" ? null : Number(e.target.value))}>
-            <option value="auto">Ajustar (1:{autoScale})</option>
-            {SCALES.map((d) => <option key={d} value={d}>1:{d}</option>)}
+            <option value="auto">Ajustar ({scaleLabel(autoScale)})</option>
+            {scalesFor().map((d) => <option key={d} value={d}>{scaleLabel(d)}</option>)}
           </select>
         </label>
-        <button className="btn primary" onClick={() => window.print()} title="En el diálogo de impresión elige A3 horizontal o Guardar como PDF">Imprimir / PDF</button>
+        <button className="btn primary" onClick={() => window.print()} title={`En el diálogo de impresión elige ${imperial() ? "Tabloid (11 × 17)" : "A3"} horizontal o Guardar como PDF`}>Imprimir / PDF</button>
         <button className="btn" onClick={() => setPrintSet(true)} disabled={printSet}
           title="Plantas, fachadas, secciones, electricidad y plomería en un solo PDF, una lámina por página">Juego completo</button>
       </div>
+      {/* papel Tabloid en EE.UU.; el CSS fijo es para A3 */}
+      {imperial() && <style>{"@page{size:17in 11in;margin:0}@media print{html,body{width:431.8mm!important;height:279.4mm!important}}"}</style>}
       <div className="sheethost" ref={host}>
-        <div className="sheetfit" style={{ width: `${SHEET.w * PX_MM * zoom}px`, height: `${SHEET.h * PX_MM * zoom}px` }}>
+        <div className="sheetfit" style={{ width: `${sheetSize().w * PX_MM * zoom}px`, height: `${sheetSize().h * PX_MM * zoom}px` }}>
           <Sheet ed={ed} content={content} level={content === "fach" ? part : ed.active} scale={scale} zoom={zoom} />
         </div>
       </div>
@@ -364,7 +367,7 @@ function MepTables({ p, disc, level }: { p: Editor["project"]; disc: Discipline;
           return cs.length ? (
             <table>
               <thead><tr><th>Circ.</th><th>Uso</th><th className="r">Puntos</th><th className="r">m</th></tr></thead>
-              <tbody>{cs.map((c) => <tr key={c.circuit}><td><b>{c.circuit}</b></td><td>{c.name}</td><td className="r">{c.points}</td><td className="r">{c.length ? c.length.toFixed(1) : "—"}</td></tr>)}</tbody>
+              <tbody>{cs.map((c) => <tr key={c.circuit}><td><b>{c.circuit}</b></td><td>{c.name}</td><td className="r">{c.points}</td><td className="r">{c.length ? fmtDim(c.length) : "—"}</td></tr>)}</tbody>
             </table>
           ) : <p className="empty">Sin circuitos asignados.</p>;
         })()}
@@ -380,7 +383,7 @@ function MepTables({ p, disc, level }: { p: Editor["project"]; disc: Discipline;
       <h4>{disc === "elec" ? "Canalizaciones" : "Tuberías"}</h4>
       {runs.length ? (
         <table className="legend">
-          <thead><tr><th>Trazo</th><th>Red</th><th className="r">m</th></tr></thead>
+          <thead><tr><th>Trazo</th><th>Red</th><th className="r">{lenUnit()}</th></tr></thead>
           <tbody>{runs.map((r) => <tr key={r.system}><td><SystemIcon sys={r.system} w={26} /></td><td>{r.label}</td><td className="r">{n2(r.length)}</td></tr>)}</tbody>
         </table>
       ) : <p className="empty">Sin recorridos dibujados.</p>}

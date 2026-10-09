@@ -47,7 +47,7 @@ describe("DXF", () => {
   it("exporta entidades en sus capas", () => {
     const m = sampleModel();
     const dxf = toDxf(m, computeRooms(m));
-    expect(dxf.startsWith("0\nSECTION\n2\nENTITIES")).toBe(true);
+    expect(dxf.startsWith("0\nSECTION\n2\nHEADER\n9\n$INSUNITS\n70\n6\n0\nENDSEC\n0\nSECTION\n2\nENTITIES")).toBe(true);
     expect(dxf.endsWith("0\nEOF")).toBe(true);
     for (const layer of ["A-MUROS", "A-PUERTAS", "A-VENTANAS", "A-COTAS", "A-HABITACIONES"]) expect(dxf).toContain(layer);
   });

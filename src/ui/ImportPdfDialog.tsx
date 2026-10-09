@@ -1,3 +1,4 @@
+import { fmtLen, imperial, US_SCALES } from "../core/units";
 import { useEffect, useRef, useState } from "react";
 import { metersPerPoint, PDF_SCALES } from "../core/pdfImport";
 import type { Editor } from "../editor/Editor";
@@ -11,7 +12,7 @@ export function ImportPdfDialog({ ed, file, onClose }: { ed: Editor; file: File;
   const [pdf, setPdf] = useState<Awaited<ReturnType<typeof openPdf>> | null>(null);
   const [error, setError] = useState("");
   const [page, setPage] = useState(1);
-  const [scale, setScale] = useState(100);
+  const [scale, setScale] = useState(() => (imperial() ? 48 : 100));
   const [mode, setMode] = useState<Mode>("lines");
   const [busy, setBusy] = useState(false);
 
@@ -23,7 +24,7 @@ export function ImportPdfDialog({ ed, file, onClose }: { ed: Editor; file: File;
   }, [file]);
 
   const pg: PdfPage | undefined = pdf?.pages.find((p) => p.index === page);
-  const size = pg ? `${(pg.w * metersPerPoint(scale)).toFixed(2)} × ${(pg.h * metersPerPoint(scale)).toFixed(2)} m` : "";
+  const size = pg ? `${fmtLen(pg.w * metersPerPoint(scale))} × ${fmtLen(pg.h * metersPerPoint(scale))}` : "";
 
   const run = async () => {
     if (!pdf) return;
@@ -61,7 +62,8 @@ export function ImportPdfDialog({ ed, file, onClose }: { ed: Editor; file: File;
           <div className="opts">
             <label>Escala del plano
               <select value={scale} onChange={(e) => setScale(+e.target.value)}>
-                {PDF_SCALES.map((n) => <option key={n} value={n}>1:{n}</option>)}
+                <optgroup label="Métricas">{PDF_SCALES.map((n) => <option key={n} value={n}>1:{n}</option>)}</optgroup>
+                <optgroup label="EE.UU. (pies y pulgadas)">{US_SCALES.map((u) => <option key={u.den} value={u.den}>{u.label}</option>)}</optgroup>
               </select>
             </label>
             <fieldset>

@@ -168,6 +168,11 @@ export function App() {
           e.target.value = "";
           if (f) void openAny(f);
         }} />
+        <div className="group" role="group" aria-label="Unidades" title="Cómo se escriben y se teclean las medidas. El dibujo no cambia.">
+          <span className="glbl">Unidades</span>
+          <button className="tb" aria-pressed={ed.project.units !== "imperial"} onClick={() => ed.setUnits("metric")}>m</button>
+          <button className="tb" aria-pressed={ed.project.units === "imperial"} onClick={() => ed.setUnits("imperial")} title="Pies y pulgadas, como en Estados Unidos">ft-in</button>
+        </div>
         <div className="group exp" role="group" aria-label="Exportar">
           <span className="glbl">Exportar</span>
           <button className="tb" onClick={() => setExporting("dxf")} title="Planta del nivel activo para AutoCAD">DXF</button>
@@ -182,7 +187,7 @@ export function App() {
         <section className="work" data-view={view}>
           <div className="pane paneplan">
             <PlanView ed={ed} spaceDown={spaceDown} />
-            <span className="tag">PLANTA · {ed.model.name} · 1:100</span>
+            <span className="tag">PLANTA · {ed.model.name}{ed.project.units === "imperial" ? "" : " · 1:100"}</span>
           </div>
           {view === "sheet" && <SheetView ed={ed} />}
           {view === "budget" && <BudgetView ed={ed} />}
