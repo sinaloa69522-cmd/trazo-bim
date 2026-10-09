@@ -167,3 +167,5 @@ dialog .acts span{margin-right:auto;color:var(--muted);font-size:12px}
   .sheet,.sheet *{visibility:visible}
   .sheet{position:fixed;left:0;top:0;transform:none!important;box-shadow:none}
 }
+.group.exp{align-items:center}
+.group .glbl{padding:0 4px 0 8px;font-size:12px;color:var(--muted)}
