@@ -1,3 +1,4 @@
+import { furnitureDef, furnitureSolids } from "./furniture";
 import { dir, endExt, roofGeom, stairSteps, type P3 } from "./geometry";
 import type { Project } from "./model";
 import { computeRooms } from "./rooms";
@@ -118,6 +119,14 @@ export function toIfc(p: Project, opts: { now?: Date; random?: () => number } = 
       const items = Array.from({ length: k.n }, (_, i) => box((i + 0.5) * k.tread, 0, k.tread, st.width, 0, (i + 1) * k.riser));
       const rep = shape("SweptSolid", items);
       contained.push(add(`IFCSTAIR('${id()}',$,${str(`Escalera ${k.n} peldaños`)},$,$,${place(stPl, st.x1, -st.y1, 0, ux, -uy)},${rep},$,.STRAIGHT_RUN_STAIR.)`));
+    }
+
+    // mobiliario y aparatos sanitarios
+    for (const fu of lv.furniture) {
+      const d = furnitureDef(fu.kind), a = (fu.rot * Math.PI) / 180;
+      const rep = shape("SweptSolid", furnitureSolids(fu.kind).map((s) => box(s.x, -s.y, s.w, s.d, s.z0, s.h)));
+      const pl = place(stPl, fu.x, -fu.y, 0, Math.cos(a), -Math.sin(a));
+      contained.push(add(`${d.ifc.cls}('${id()}',$,${str(d.label)},$,$,${pl},${rep},$,.${d.ifc.type}.)`));
     }
 
     if (contained.length) add(`IFCRELCONTAINEDINSPATIALSTRUCTURE('${id()}',$,$,$,${list(contained)},${storey})`);

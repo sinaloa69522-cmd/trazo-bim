@@ -1,7 +1,7 @@
 import type { Pt } from "./geometry";
 import { nextId, type Model } from "./model";
 
-export type ElementType = "wall" | "opening" | "line" | "dim" | "room" | "slab" | "roof" | "stair";
+export type ElementType = "wall" | "opening" | "line" | "dim" | "room" | "slab" | "roof" | "stair" | "furniture";
 export interface ElementRef { type: ElementType; id: number }
 
 type Seg = { x1: number; y1: number; x2: number; y2: number };
@@ -29,7 +29,7 @@ function applySeg(s: Seg, t: Xform) {
 }
 
 const listOf = (m: Model, type: ElementType) =>
-  ({ wall: m.walls, opening: m.openings, line: m.lines, dim: m.dims, room: m.rooms, slab: m.slabs, roof: m.roofs, stair: m.stairs })[type] as { id: number }[];
+  ({ wall: m.walls, opening: m.openings, line: m.lines, dim: m.dims, room: m.rooms, slab: m.slabs, roof: m.roofs, stair: m.stairs, furniture: m.furniture })[type] as { id: number }[];
 
 export function findElement(m: Model, r: ElementRef) {
   return listOf(m, r.type).find((o) => o.id === r.id) ?? null;
@@ -49,6 +49,12 @@ export function transformElements(m: Model, refs: ElementRef[], t: Xform, copy: 
     const el = copy ? JSON.parse(JSON.stringify(src)) : src;
     if (copy) el.id = nextId(m);
     if (r.type === "room") { const p = t.map(el); el.x = p.x; el.y = p.y; if (copy) el.name = `${el.name} (copia)`; }
+    else if (r.type === "furniture") {
+      // el giro sale de transformar el frente de la pieza (+y local); las piezas son simétricas de izquierda a derecha
+      const a = (el.rot * Math.PI) / 180, c = t.map(el), u = t.map({ x: el.x - Math.sin(a), y: el.y + Math.cos(a) });
+      const deg = (Math.atan2(-(u.x - c.x), u.y - c.y) * 180) / Math.PI;
+      el.x = c.x; el.y = c.y; el.rot = (Math.round(deg * 1000) / 1000 + 360) % 360;
+    }
     else if (r.type === "slab") { el.pts = el.pts.map(t.map); if (t.reflects) el.pts.reverse(); }
     else applySeg(el, t);
     // la simetría invierte el lado de la normal: la cota cambia de lado y las puertas abren al lado contrario
@@ -79,4 +85,6 @@ export function deleteElements(m: Model, refs: ElementRef[]) {
   const roofs = ids("roof"), stairs = ids("stair");
   m.roofs = m.roofs.filter((r) => !roofs.has(r.id));
   m.stairs = m.stairs.filter((r) => !stairs.has(r.id));
+  const furn = ids("furniture");
+  m.furniture = m.furniture.filter((r) => !furn.has(r.id));
 }

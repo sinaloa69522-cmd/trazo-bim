@@ -84,6 +84,16 @@ export interface Stair {
   height: number;
 }
 
+/** Pieza de mobiliario o aparato sanitario de la biblioteca, colocada por su centro. */
+export interface Furniture {
+  id: number;
+  kind: string;
+  x: number;
+  y: number;
+  /** Giro en grados, en sentido horario en planta */
+  rot: number;
+}
+
 /** Contenido de un nivel (una planta). Los identificadores son únicos dentro del nivel. */
 export interface Model {
   walls: Wall[];
@@ -94,6 +104,7 @@ export interface Model {
   slabs: Slab[];
   roofs: Roof[];
   stairs: Stair[];
+  furniture: Furniture[];
   nid: number;
 }
 
@@ -118,7 +129,7 @@ export interface Project {
 
 export const defaultInfo = (): ProjectInfo => ({ name: "Vivienda unifamiliar", author: "", client: "", date: new Date().toISOString().slice(0, 10) });
 
-export type LayerId = "muros" | "puertas" | "ventanas" | "cotas" | "anot" | "hab" | "losas" | "cubiertas" | "escaleras";
+export type LayerId = "muros" | "puertas" | "ventanas" | "cotas" | "anot" | "hab" | "losas" | "cubiertas" | "escaleras" | "mobiliario";
 
 export interface Layer {
   id: LayerId;
@@ -139,9 +150,10 @@ export const LAYERS: Layer[] = [
   { id: "losas", name: "A-LOSAS", label: "Losas", tok: "--muted" },
   { id: "cubiertas", name: "A-CUBIERTAS", label: "Cubiertas", tok: "--door" },
   { id: "escaleras", name: "A-ESCALERAS", label: "Escaleras", tok: "--fg" },
+  { id: "mobiliario", name: "A-MOBILIARIO", label: "Mobiliario", tok: "--anno" },
 ];
 
-export const emptyModel = (): Model => ({ walls: [], openings: [], lines: [], dims: [], rooms: [], slabs: [], roofs: [], stairs: [], nid: 1 });
+export const emptyModel = (): Model => ({ walls: [], openings: [], lines: [], dims: [], rooms: [], slabs: [], roofs: [], stairs: [], furniture: [], nid: 1 });
 
 export const newLevel = (name: string, elev: number, content: Model = emptyModel()): Level => ({ ...content, name, elev });
 
@@ -160,6 +172,7 @@ export function normalizeModel(raw: unknown): Model {
   m.slabs = m.slabs ?? [];
   m.roofs = m.roofs ?? [];
   m.stairs = m.stairs ?? [];
+  m.furniture = m.furniture ?? [];
   return m;
 }
 
@@ -176,6 +189,16 @@ export function normalizeProject(raw: unknown): Project {
 export function sampleProject(): Project {
   const m = sampleModel();
   m.slabs.push({ id: nextId(m), pts: [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 7 }, { x: 0, y: 7 }], thick: 0.2 });
+  m.furniture.push(
+    { id: nextId(m), kind: "bed2", x: 3, y: 1.13, rot: 0 },
+    { id: nextId(m), kind: "wardrobe", x: 5.0, y: 3.57, rot: 180 },
+    { id: nextId(m), kind: "wc", x: 0.48, y: 6.4, rot: 270 },
+    { id: nextId(m), kind: "basin", x: 3.2, y: 6.65, rot: 180 },
+    { id: nextId(m), kind: "bath", x: 4.9, y: 6.5, rot: 0 },
+    { id: nextId(m), kind: "sofa", x: 9.43, y: 2.2, rot: 90 },
+    { id: nextId(m), kind: "dining", x: 7.6, y: 5.2, rot: 0 },
+    { id: nextId(m), kind: "kitchen", x: 7.8, y: 0.43, rot: 0 },
+  );
   m.roofs.push({ id: nextId(m), x1: 0, y1: 0, x2: 10, y2: 7, kind: "gable", pitch: 30, overhang: 0.5, base: 2.7, thick: 0.15 });
   return { levels: [newLevel("Planta baja", 0, m)], info: defaultInfo() };
 }

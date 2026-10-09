@@ -4,16 +4,17 @@ import {
   type LayerId, type Model, type RoofKind, type Wall,
 } from "../core/model";
 import { parseDxf } from "../core/dxfImport";
+import { FURNITURE, furnitureDef, furnitureOutline } from "../core/furniture";
 import { extend, offset, trim, type Linear } from "../core/modify";
 import { computeRooms, roomAt, type RoomGrid } from "../core/rooms";
 import { deleteElements, reflection, transformElements, translation, type Xform } from "../core/transform";
 
-export type Tool = "select" | "wall" | "door" | "window" | "line" | "dim" | "room" | "move" | "copy" | "mirror" | "trim" | "extend" | "offset" | "slab" | "roof" | "stair";
+export type Tool = "select" | "wall" | "door" | "window" | "line" | "dim" | "room" | "move" | "copy" | "mirror" | "trim" | "extend" | "offset" | "slab" | "roof" | "stair" | "furniture";
 /** Herramientas que actúan pulsando directamente sobre un muro o una línea. */
 const PICK_TOOLS: Tool[] = ["trim", "extend", "offset"];
 /** Herramientas que actúan sobre la selección actual. */
 const MODIFY_TOOLS: Tool[] = ["move", "copy", "mirror"];
-export type SelType = "wall" | "opening" | "line" | "dim" | "room" | "slab" | "roof" | "stair";
+export type SelType = "wall" | "opening" | "line" | "dim" | "room" | "slab" | "roof" | "stair" | "furniture";
 export interface Selection { type: SelType; id: number }
 export interface SnapPt extends Pt { kind: "end" | "mid" | null }
 export interface OpeningCandidate { w: Wall; t: number; ok: boolean }
@@ -42,7 +43,7 @@ const COMMANDS: Record<string, Tool> = {
   H: "room", HAB: "room", HABITACION: "room", "HABITACIÓN": "room",
   MO: "move", MOVER: "move", CO: "copy", COPIA: "copy", SI: "mirror", SIMETRIA: "mirror", "SIMETRÍA": "mirror",
   LO: "slab", LOSA: "slab", TR: "trim", RECORTAR: "trim", AL: "extend", ALARGAR: "extend", DE: "offset", DESFASE: "offset", EQ: "offset", EQUIDISTANCIA: "offset",
-  CU: "roof", CUBIERTA: "roof", TEJADO: "roof", ES: "stair", ESCALERA: "stair",
+  CU: "roof", CUBIERTA: "roof", TEJADO: "roof", ES: "stair", ESCALERA: "stair", MB: "furniture", MOBILIARIO: "furniture", MUEBLE: "furniture",
 };
 
 /**
@@ -57,8 +58,8 @@ export class Editor {
   get model(): Level { return this.project.levels[this.active]; }
   set model(m: Model) { this.project.levels[this.active] = { ...this.model, ...m }; }
   rooms: RoomGrid | null = null;
-  vis: Record<LayerId, boolean> = { muros: true, puertas: true, ventanas: true, cotas: true, anot: true, hab: true, losas: true, cubiertas: true, escaleras: true };
-  defaults = { thick: 0.15, height: 2.7, doorW: 0.9, doorH: 2.1, winW: 1.2, winH: 1.2, sill: 0.9, slabThick: 0.2, roofKind: "gable" as RoofKind, pitch: 30, overhang: 0.5, stairW: 1 };
+  vis: Record<LayerId, boolean> = { muros: true, puertas: true, ventanas: true, cotas: true, anot: true, hab: true, losas: true, cubiertas: true, escaleras: true, mobiliario: true };
+  defaults = { thick: 0.15, height: 2.7, doorW: 0.9, doorH: 2.1, winW: 1.2, winH: 1.2, sill: 0.9, slabThick: 0.2, roofKind: "gable" as RoofKind, pitch: 30, overhang: 0.5, stairW: 1, furnKind: "bed2", furnRot: 0 };
   tool: Tool = "select";
   /** Elementos seleccionados. */
   sels: Selection[] = [];
@@ -193,10 +194,10 @@ export class Editor {
   // ---------- consultas ----------
   wallById(id: number) { return this.model.walls.find((w) => w.id === id); }
   isSelected(type: SelType, id: number) { return this.sels.some((s) => s.type === type && s.id === id); }
-  selObj(): (Seg & { id: number }) | Model["openings"][number] | Model["rooms"][number] | Model["slabs"][number] | Model["roofs"][number] | Model["stairs"][number] | null {
+  selObj(): (Seg & { id: number }) | Model["openings"][number] | Model["rooms"][number] | Model["slabs"][number] | Model["roofs"][number] | Model["stairs"][number] | Model["furniture"][number] | null {
     if (!this.sel) return null;
     const m = this.model;
-    const list = { wall: m.walls, line: m.lines, dim: m.dims, opening: m.openings, room: m.rooms, slab: m.slabs, roof: m.roofs, stair: m.stairs }[this.sel.type] as { id: number }[];
+    const list = { wall: m.walls, line: m.lines, dim: m.dims, opening: m.openings, room: m.rooms, slab: m.slabs, roof: m.roofs, stair: m.stairs, furniture: m.furniture }[this.sel.type] as { id: number }[];
     return (list.find((o) => o.id === this.sel!.id) as never) ?? null;
   }
   grips(): { k: 0 | 1 | "mid"; x: number; y: number }[] {
@@ -223,6 +224,7 @@ export class Editor {
       case "slab": return n < 3 ? `LOSA  Precisa ${n ? "siguiente" : "primer"} vértice del contorno:` : "LOSA  Siguiente vértice [Enter o clic en el primero cierra]:";
       case "roof": return n ? "CUBIERTA  Esquina opuesta del perímetro:" : `CUBIERTA  Primera esquina del perímetro (${ROOF_LABEL[d.roofKind].toLowerCase()}, ${d.pitch}°):`;
       case "stair": return n ? "ESCALERA  Punto de llegada (o longitud):" : `ESCALERA  Punto de arranque (ancho ${d.stairW.toFixed(2)} m):`;
+      case "furniture": return `MOBILIARIO  Haz clic para colocar ${furnitureDef(d.furnKind).label.toLowerCase()} [R gira 90°, Esc termina]:`;
       case "trim": return "RECORTAR  Haz clic en el tramo de muro o línea que quieres quitar:";
       case "extend": return "ALARGAR  Haz clic cerca del extremo que quieres alargar:";
       case "offset": return this.offsetTarget
@@ -247,7 +249,7 @@ export class Editor {
       muros: m.walls.length, puertas: m.openings.filter((o) => o.kind === "door").length,
       ventanas: m.openings.filter((o) => o.kind === "window").length,
       cotas: m.dims.length, anot: m.lines.length, hab: m.rooms.length, losas: m.slabs.length,
-      cubiertas: m.roofs.length, escaleras: m.stairs.length,
+      cubiertas: m.roofs.length, escaleras: m.stairs.length, mobiliario: m.furniture.length,
     };
   }
 
@@ -333,6 +335,10 @@ export class Editor {
       const edgesOf = ol.map((p, i) => { const q = ol[(i + 1) % 4]; return { x1: p.x, y1: p.y, x2: q.x, y2: q.y }; });
       if (crossing ? edgesOf.some(segHit) : ol.every((p) => inside(p.x, p.y))) found.push({ type: "roof", id: r.id });
     }
+    if (this.vis.mobiliario) for (const f of m.furniture) {
+      const ol = furnitureOutline(f);
+      if (crossing ? inside(f.x, f.y) || ol.some((p) => inside(p.x, p.y)) : ol.every((p) => inside(p.x, p.y))) found.push({ type: "furniture", id: f.id });
+    }
     if (this.vis.escaleras) for (const st of m.stairs) if (segHit(st)) found.push({ type: "stair", id: st.id });
     const merged = additive ? [...this.sels] : [];
     for (const f of found) if (!merged.some((x) => x.type === f.type && x.id === f.id)) merged.push(f);
@@ -383,6 +389,8 @@ export class Editor {
     if (this.vis.anot) for (const l of m.lines) { const r = distSeg(wx, wy, l.x1, l.y1, l.x2, l.y2); if (r.d < tol) take(r.d, { type: "line", id: l.id }); }
     if (this.vis.cotas) for (const d of m.dims) { const g = dimGeom(d), r = distSeg(wx, wy, g.a.x, g.a.y, g.b.x, g.b.y); if (r.d < tol * 2) take(r.d, { type: "dim", id: d.id }); }
     if (this.vis.escaleras) for (const st of m.stairs) { const r = distSeg(wx, wy, st.x1, st.y1, st.x2, st.y2); if (r.d < st.width / 2) take(r.d + 0.2, { type: "stair", id: st.id }); }
+    if (this.vis.mobiliario) for (const f of m.furniture)
+      if (pointInPolygon({ x: wx, y: wy }, furnitureOutline(f))) take(0.15 + Math.hypot(wx - f.x, wy - f.y) * 0.01, { type: "furniture", id: f.id });
     if (!best && this.vis.hab) { const r = roomAt(m, this.rooms, wx, wy); if (r) best = { type: "room", id: r.id }; }
     if (!best && this.vis.cubiertas) for (const r of m.roofs) if (pointInPolygon({ x: wx, y: wy }, roofGeom(r).outline)) best = { type: "roof", id: r.id };
     if (!best && this.vis.losas) for (const sl of m.slabs) if (pointInPolygon({ x: wx, y: wy }, sl.pts)) best = { type: "slab", id: sl.id };
@@ -452,6 +460,14 @@ export class Editor {
           (k.tread < 0.25 ? " La huella es corta: alarga el tramo." : "");
       }
       this.draft = null;
+      this.changed();
+      return;
+    }
+    if (this.tool === "furniture") {
+      this.snapshot();
+      const f = { id: nextId(m), kind: this.defaults.furnKind, x: p.x, y: p.y, rot: this.defaults.furnRot };
+      m.furniture.push(f);
+      this.message = `${furnitureDef(f.kind).label} colocado. Haz clic para otro, R para girar o Esc para terminar.`;
       this.changed();
       return;
     }
@@ -559,6 +575,16 @@ export class Editor {
     this.changed();
   }
 
+  /** Elige la pieza de la biblioteca que se colocará y activa la herramienta. */
+  pickFurniture(kind: string) {
+    this.defaults.furnKind = kind;
+    if (this.tool !== "furniture") this.setTool("furniture"); else this.emit();
+  }
+  /** Gira 90° la pieza que se va a colocar. */
+  rotateFurniturePreview() { this.defaults.furnRot = (this.defaults.furnRot + 90) % 360; this.log(`Giro ${this.defaults.furnRot}°.`); }
+  /** Lista de piezas de la biblioteca. */
+  get furnitureCatalog() { return FURNITURE; }
+
   /** Cierra el contorno de la losa en curso y la crea. */
   closeSlab() {
     const pts = this.draft?.pts ?? [];
@@ -649,6 +675,7 @@ export class Editor {
     if (s === "B" || s === "BORRAR") return this.deleteSel();
     if (s === "U" || s === "DESHACER") return this.undo();
     if (s === "Z" || s === "ZOOM" || s === "ENCUADRAR") { this.fitRequest?.(); return; }
+    if (this.tool === "furniture" && (s === "R" || s === "GIRAR")) { this.rotateFurniturePreview(); return; }
     const num = s.replace(",", ".");
     if (this.tool === "offset" && /^\d*\.?\d+$/.test(num)) {
       const v = parseFloat(num);
@@ -673,7 +700,7 @@ export class Editor {
       this.commitPoint({ x, y });
       return;
     }
-    this.log(`Comando desconocido: "${raw}". Prueba M, P, V, L, C, H, LO, CU, ES, MO, CO, SI, TR, AL, DE, B (borrar), U (deshacer), Z (encuadrar).`);
+    this.log(`Comando desconocido: "${raw}". Prueba M, P, V, L, C, H, LO, CU, ES, MB, MO, CO, SI, TR, AL, DE, B (borrar), U (deshacer), Z (encuadrar).`);
   }
   /** La vista de planta registra aquí cómo encuadrar, porque conoce su tamaño. */
   fitRequest: (() => void) | null = null;
