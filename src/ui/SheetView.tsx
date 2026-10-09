@@ -1,7 +1,9 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { elevation, FACADES, type Elevation } from "../core/elevation";
 import { bounds } from "../core/geometry";
 import { levelMarks, openingSchedule, roomSchedule } from "../core/schedules";
 import type { Editor } from "../editor/Editor";
+import { drawElevation } from "../editor/elevationRenderer";
 import { drawPlan, type PlanColors } from "../editor/planRenderer";
 
 /** Lámina A3 apaisada, en milímetros. */
@@ -28,6 +30,12 @@ export function fitScale(ed: Editor) {
 
 const n2 = (v: number) => v.toFixed(2);
 
+/** Cada alzado ocupa un cuarto de la zona de dibujo; a la derecha quedan unos 16 mm para las cotas de nivel. */
+const CELL = { w: PLAN.w / 2 - 22, h: PLAN.h / 2 - 16 };
+export function fitElevScale(els: Elevation[]) {
+  return SCALES.find((d) => els.every((e) => ((e.u1 - e.u0) * 1000) / d <= CELL.w && ((e.z1 - e.z0) * 1000) / d <= CELL.h)) ?? 1000;
+}
+
 function ScaleBar({ den }: { den: number }) {
   // tramos de 1 m (o 5 m en escalas pequeñas) hasta unos 50 mm de largo
   const step = den >= 250 ? 5 : 1, mm = (step * 1000) / den, k = Math.max(1, Math.min(5, Math.floor(50 / mm)));
@@ -49,10 +57,13 @@ export function SheetView({ ed }: { ed: Editor }) {
   const host = useRef<HTMLDivElement>(null);
   const [zoom, setZoom] = useState(1);
   const [den, setDen] = useState<number | null>(null);
-  const scale = den ?? fitScale(ed);
+  const [content, setContent] = useState<"plan" | "elev">("plan");
+  const elevs = content === "elev" ? FACADES.map((f) => ({ ...f, el: elevation(ed.project, f.id) })) : [];
+  const autoScale = content === "elev" ? fitElevScale(elevs.map((e) => e.el)) : fitScale(ed);
+  const scale = den ?? autoScale;
   const p = ed.project, info = p.info, lv = ed.model;
   const doors = openingSchedule(p, "door").types, windows = openingSchedule(p, "window").types, rooms = roomSchedule(p);
-  const sheetNo = `A-${String(ed.active + 1).padStart(2, "0")}`;
+  const sheetNo = `A-${String(content === "elev" ? p.levels.length + 1 : ed.active + 1).padStart(2, "0")}`;
 
   // dibujo de la planta a escala, con la vista del editor cambiada solo mientras se dibuja
   useEffect(() => {
@@ -62,6 +73,18 @@ export function SheetView({ ed }: { ed: Editor }) {
     cv.width = Math.round(W * OVERSAMPLE); cv.height = Math.round(H * OVERSAMPLE);
     const ctx = cv.getContext("2d")!;
     ctx.setTransform(OVERSAMPLE, 0, 0, OVERSAMPLE, 0, 0);
+    if (content === "elev") {
+      const s = (1000 / scale) * PX_MM;
+      ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, W, H);
+      elevs.forEach((e, i) => {
+        // celdas 2×2, cada dibujo centrado en su celda
+        const cx = (i % 2) * (W / 2), cy = Math.floor(i / 2) * (H / 2);
+        const w = (e.el.u1 - e.el.u0) * s, h = (e.el.z1 - e.el.z0) * s;
+        const ox = cx + (W / 2 - 22 * PX_MM - w) / 2 + 6 * PX_MM, oy = cy + (H / 2 - 16 * PX_MM + h) / 2 + 4 * PX_MM;
+        drawElevation(ctx, e.el, ox, oy, s, e.label);
+      });
+      return;
+    }
     const b = bounds(lv), s = (1000 / scale) * PX_MM, saved = { ...ed.view };
     ed.view.scale = s;
     ed.view.ox = W / 2 - ((b.x0 + b.x1) / 2) * s;
@@ -98,9 +121,15 @@ export function SheetView({ ed }: { ed: Editor }) {
         {field("author", "Autor")}
         {field("client", "Cliente")}
         {field("date", "Fecha", "date")}
+        <label>Contenido
+          <select value={content} onChange={(e) => { setContent(e.target.value as "plan" | "elev"); setDen(null); }}>
+            <option value="plan">Planta del nivel activo</option>
+            <option value="elev">Alzados (4 fachadas)</option>
+          </select>
+        </label>
         <label>Escala
           <select value={den ?? "auto"} onChange={(e) => setDen(e.target.value === "auto" ? null : Number(e.target.value))}>
-            <option value="auto">Ajustar (1:{fitScale(ed)})</option>
+            <option value="auto">Ajustar (1:{autoScale})</option>
             {SCALES.map((d) => <option key={d} value={d}>1:{d}</option>)}
           </select>
         </label>
@@ -111,8 +140,8 @@ export function SheetView({ ed }: { ed: Editor }) {
           <article className="sheet" style={{ transform: `scale(${zoom})` }} aria-label={`Lámina ${sheetNo}`}>
             <canvas ref={canvas} className="sheetplan" style={{ left: `${PLAN.x}mm`, top: `${PLAN.y}mm`, width: `${PLAN.w}mm`, height: `${PLAN.h}mm` }} />
             <div className="viewtitle" style={{ left: `${PLAN.x + 6}mm`, top: `${PLAN.y + PLAN.h + 1}mm` }}>
-              <span className="vt-n">{lv.name.toUpperCase()}</span>
-              <span className="vt-s">E 1:{scale} · cota {lv.elev >= 0 ? "+" : ""}{n2(lv.elev)}</span>
+              <span className="vt-n">{content === "elev" ? "ALZADOS" : lv.name.toUpperCase()}</span>
+              <span className="vt-s">E 1:{scale}{content === "plan" && ` · cota ${lv.elev >= 0 ? "+" : ""}${n2(lv.elev)}`}</span>
               <ScaleBar den={scale} />
             </div>
             <aside className="sheetside" style={{ left: `${SHEET.w - FRAME - SIDE}mm`, top: `${FRAME}mm`, width: `${SIDE}mm`, height: `${SHEET.h - 2 * FRAME}mm` }}>
@@ -135,7 +164,7 @@ export function SheetView({ ed }: { ed: Editor }) {
               <div className="cajetin">
                 <div className="c-proj"><small>Proyecto</small>{info.name || "—"}</div>
                 <div className="c-row">
-                  <div><small>Plano</small>{lv.name}</div>
+                  <div><small>Plano</small>{content === "elev" ? "Alzados norte, sur, este y oeste" : lv.name}</div>
                 </div>
                 <div className="c-row">
                   <div><small>Autor</small>{info.author || "—"}</div>
