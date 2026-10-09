@@ -2,12 +2,12 @@
 // viguetas, cabios, limatesas y cumbrera, con los tamaños de predimensionado de permit.ts (tablas del IRC).
 import { dir, loc, roofGeom, type P3 } from "./geometry";
 import type { Project, Roof, Wall } from "./model";
-import { foundation } from "./foundation";
+import { foundation, foundationType } from "./foundation";
 import { ceilingSystem, depthOf, floorJoistDepth, floorSystem, SUBFLOOR } from "./joists";
 import { floorJoist, headerSize, isExterior, rafterSize } from "./permit";
 import { IN } from "./units";
 
-export type MemberKind = "footing" | "foundation" | "pier" | "girder" | "slab" | "rim" | "floorJoist" | "subfloor" | "blocking"
+export type MemberKind = "footing" | "foundation" | "pier" | "girder" | "slab" | "sill" | "rim" | "floorJoist" | "subfloor" | "blocking"
   | "plate" | "stud" | "header" | "ceilingJoist" | "rafter" | "collar" | "ridge" | "fascia";
 
 /**
@@ -19,7 +19,7 @@ export interface Member { kind: MemberKind; a: P3; b: P3; w: number; h: number; 
 
 /** Color de cada tipo de pieza en el 3D y en su leyenda. */
 export const MEMBER_COLOR: Record<MemberKind, string> = {
-  footing: "#b3b0a8", foundation: "#a7a49c", pier: "#9d9a92", girder: "#8f6436", slab: "#c4c1b9",
+  footing: "#b3b0a8", foundation: "#a7a49c", pier: "#9d9a92", girder: "#8f6436", slab: "#c4c1b9", sill: "#7f9a6a",
   rim: "#b9844a", floorJoist: "#d6ad74", subfloor: "#c8b48c", blocking: "#c08f55",
   plate: "#c99b62", stud: "#e2c08f", header: "#a8763f", ceilingJoist: "#e4c79a", rafter: "#d9b27c", collar: "#b98d58",
   ridge: "#9c6c3a", fascia: "#8a5f33",
@@ -40,21 +40,27 @@ export function framing(p: Project): Member[] {
     // y los muros que llegan hasta ella se entraman solo hasta la cara inferior de las viguetas
     const D = above ? floorJoistDepth(lv) : 0, zb = above ? above.elev - SUBFLOOR - D : 0;
     const frameH = (w: Wall) => (above && w.height > zb - e - 0.15 ? zb - e : w.height);
-    for (const w of lv.walls) out.push(...wallFrame({ ...w, height: frameH(w) }, lv.openings.filter((o) => o.wallId === w.id), e));
-    // sobre la doble solera: el piso de la planta de arriba o, en la última planta, las viguetas de techo
-    const H = lv.walls.length ? Math.max(...lv.walls.map(frameH)) : 2.7;
-    out.push(...(above ? floorSystem(lv, zb, D) : ceilingSystem(lv, e + H)));
-    for (const r of lv.roofs) out.push(...roofFrame(r, e, lv.walls));
+    // sobre la losa (sin piso de madera) la solera inferior de la planta baja es un sill plate tratado (P.T.)
+    const onSlab = li === 0 && !foundationType(p).framedFloor;
+    for (const w of lv.walls) out.push(...wallFrame({ ...w, height: frameH(w) }, lv.openings.filter((o) => o.wallId === w.id), e, onSlab));
+    // sobre la doble solera: el piso de la planta de arriba o, en la última planta, los ceiling joists
+    const ceil = above ? [] : ceilingSystem(lv, e, frameH);
+    out.push(...(above ? floorSystem(lv, zb, D) : ceil));
+    // en los hastiales, los montantes arrancan sobre el rim joist del techo
+    const rimH = Math.max(0, ...ceil.filter((m) => m.kind === "rim").map((m) => m.h));
+    for (const r of lv.roofs) out.push(...roofFrame(r, e, lv.walls, rimH));
   });
   return out;
 }
 
 /** Entramado de un muro: solera inferior, doble solera superior, montantes a 16" y huecos con dintel. */
-function wallFrame(w: Wall, ops: { t: number; width: number; height: number; sill: number; kind: string }[], e: number): Member[] {
+function wallFrame(w: Wall, ops: { t: number; width: number; height: number; sill: number; kind: string }[], e: number, onSlab = false): Member[] {
   const out: Member[] = [], { L, ux, uy } = dir(w), H = w.height, ext = isExterior(w);
   const D = Math.min(w.thick, ext ? 5.5 * IN : 3.5 * IN), size = ext ? "2x6" : "2x4", along = { x: ux, y: uy };
   const plate = (z: number) => out.push({ kind: "plate", a: { ...loc(w, 0, 0), z }, b: { ...loc(w, L, 0), z }, w: D, h: T, size });
-  plate(e + T / 2); plate(e + H - T / 2); plate(e + H - 1.5 * T);
+  if (onSlab) out.push({ kind: "sill", a: { ...loc(w, 0, 0), z: e + T / 2 }, b: { ...loc(w, L, 0), z: e + T / 2 }, w: D, h: T, size: `P.T. ${size} SILL` });
+  else plate(e + T / 2);
+  plate(e + H - T / 2); plate(e + H - 1.5 * T);
   const stud = (s: number, z0: number, z1: number) => {
     if (z1 - z0 > 0.02) out.push({ kind: "stud", a: { ...loc(w, s, 0), z: z0 }, b: { ...loc(w, s, 0), z: z1 }, w: T, h: D, along, size });
   };
@@ -86,7 +92,7 @@ function wallFrame(w: Wall, ops: { t: number; width: number; height: number; sil
 }
 
 /** Cabios a 24", cumbrera y limatesas (o viguetas de cubierta plana), bajo la cara superior del faldón. */
-function roofFrame(r: Roof, e: number, walls: Wall[]): Member[] {
+function roofFrame(r: Roof, e: number, walls: Wall[], gableBase = 0): Member[] {
   const out: Member[] = [], g = roofGeom(r);
   // apoyo: la cara superior de la doble solera de los muros exteriores bajo la cubierta (si los hay), para que
   // los cabios queden siempre encima aunque el arranque de la cubierta no coincida con la altura de los muros
@@ -140,7 +146,7 @@ function roofFrame(r: Roof, e: number, walls: Wall[]): Member[] {
   if (hip) { fascia(P(U0, V0, fz), P(U0, V1, fz)); fascia(P(U1, V0, fz), P(U1, V1, fz)); }
   // montantes del hastial, sobre la línea del muro, hasta la cara inferior de los cabios
   if (!hip) {
-    const along = alongX ? { x: 0, y: 1 } : { x: 1, y: 0 }, o = r.overhang, zb = e + seat;
+    const along = alongX ? { x: 0, y: 1 } : { x: 1, y: 0 }, o = r.overhang, zb = e + seat + gableBase;
     for (const u of [U0 + o, U1 - o]) for (let v = V0 + o + 16 * IN; v < V1 - o - 0.05; v += 16 * IN) {
       const top = Z(Math.min(v - V0, V1 - v)) - drop;
       if (top - zb > 0.05) out.push({ kind: "stud", a: P(u, v, zb), b: P(u, v, top), w: T, h: 3.5 * IN, along, size: "2x4" });

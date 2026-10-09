@@ -198,7 +198,7 @@ export function foundation(p: Project): Member[] {
   // piso de madera: solera de asiento sobre el muro de cimentación y, encima, viguetas, viga de borde,
   // bloqueo y subpiso (su cara superior a la cota del nivel)
   if (fl) {
-    if (ft.id !== "pier") for (const w of exts) { const { L } = dir(w); along(w, -0.05, L + 0.05, top + T / 2, 5.5 * IN, T, "plate", "P.T. 2x6 SILL"); }
+    if (ft.id !== "pier") for (const w of exts) { const { L } = dir(w); along(w, -0.05, L + 0.05, top + T / 2, 5.5 * IN, T, "sill", "P.T. 2x6 SILL"); }
     out.push(...floorSystem(lv, e - SUBFLOOR - fl.d, fl.d));
   }
   return out;
