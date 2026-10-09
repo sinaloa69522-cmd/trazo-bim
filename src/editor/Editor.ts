@@ -4,6 +4,7 @@ import {
   type LayerId, type Model, type RoofKind, type RunSystem, type Wall,
 } from "../core/model";
 import { parseDxf } from "../core/dxfImport";
+import { parseProjectFile, projectFileName, serializeProject } from "../core/projectFile";
 import { FURNITURE, furnitureDef, furnitureOutline } from "../core/furniture";
 import { autoRoute, discOfSystem, isElectric, MEP, mepDef, mepOf, runLength, sanitaryPoints, systemDef, type Discipline } from "../core/mep";
 import { extend, offset, trim, type Linear } from "../core/modify";
@@ -113,7 +114,10 @@ export class Editor {
   onModel(fn: () => void) { this.modelListeners.add(fn); return () => { this.modelListeners.delete(fn); }; }
   getVersion = () => this.version;
   emit() { this.version++; this.listeners.forEach((f) => f()); }
+  /** Hay cambios desde la última vez que se guardó o abrió el archivo del proyecto. */
+  dirty = false;
   private changed() {
+    this.dirty = true;
     attachWalls(this.project);
     this.rooms = computeRooms(this.model);
     this.save();
@@ -140,6 +144,28 @@ export class Editor {
 
   loadSample() { this.snapshot(); this.project = { ...sampleProject(), info: this.project.info, budget: this.project.budget }; this.active = 0; this.sel = null; this.log("Vivienda de ejemplo cargada."); this.changed(); }
   clear() { this.snapshot(); this.project = { ...emptyProject(), info: this.project.info, budget: this.project.budget }; this.active = 0; this.sel = null; this.log("Dibujo nuevo. Usa Deshacer si te equivocaste."); this.changed(); this.setTool("wall"); }
+
+  // ---------- archivo del proyecto ----------
+  /** Contenido y nombre del archivo .trazo del proyecto; lo marca como guardado. */
+  saveFile(): { name: string; text: string } {
+    const f = { name: projectFileName(this.project.info.name), text: serializeProject(this.project) };
+    this.dirty = false;
+    this.log(`Proyecto guardado como ${f.name}.`);
+    return f;
+  }
+  /** Abre un archivo .trazo; si no es válido, no toca el proyecto actual y lo explica. Se puede deshacer. */
+  openFile(text: string, fileName = "archivo"): boolean {
+    let p: Project;
+    try { p = parseProjectFile(text); } catch (e) { this.log(`${fileName}: ${(e as Error).message}`); return false; }
+    this.snapshot();
+    this.project = p; this.active = 0; this.sels = []; this.draft = null; this.tool = "select";
+    const n = p.levels.length;
+    this.message = `${p.info.name || fileName} abierto: ${n} nivel${n > 1 ? "es" : ""}. Deshacer vuelve al proyecto anterior.`;
+    this.changed();
+    this.dirty = false;
+    this.fitRequest?.();
+    return true;
+  }
 
   /** Cambia los datos del cajetín. */
   setInfo(patch: Partial<ProjectInfo>) { this.edit(() => { this.project.info = { ...this.project.info, ...patch }; }); }

@@ -166,6 +166,9 @@ dialog .acts span{margin-right:auto;color:var(--muted);font-size:12px}
 .cajetin .c-no{font-family:var(--f-display);font-weight:600;font-size:12pt}
 
 @page{size:A3 landscape;margin:0}
+/* abrir arrastrando un archivo */
+.btn .dot{display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--accent);margin-left:6px;vertical-align:middle}
+.dropzone{position:fixed;inset:12px;z-index:50;display:grid;place-items:center;border:2px dashed var(--accent);border-radius:12px;background:color-mix(in srgb,var(--panel) 88%,transparent);font-size:18px;font-weight:600;pointer-events:none}
 /* presupuesto: documento A4 */
 .budgetpane{display:grid;grid-template-rows:auto 1fr;min-width:0;min-height:0;background:var(--view-bg)}
 .budgetpane .sheetbar input{width:70px}
