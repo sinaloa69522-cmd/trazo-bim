@@ -7,6 +7,7 @@ import type { Opening, Wall } from "../core/model";
 import { openingStyle } from "../core/openingStyles";
 import { finish, gableWall, outward, roofFinish, type Finish } from "../core/finishes";
 import { finishTile } from "./finishTextures";
+import { framing, type MemberKind } from "../core/framing";
 import type { Editor } from "./Editor";
 
 /** Modelo 3D generado a partir de la planta. Se reconstruye en cada cambio. */
@@ -128,6 +129,40 @@ export class Viewer3D {
     }
   }
 
+  /** Vista de la estructura: solo las piezas de madera y las zapatas, sobre las losas en transparencia. */
+  private buildFraming() {
+    const COLOR: Record<MemberKind, string> = { footing: "#b3b0a8", plate: "#c99b62", stud: "#e2c08f", header: "#a8763f", joist: "#d6ad74", rafter: "#d9b27c", ridge: "#9c6c3a" };
+    const ghost = new THREE.MeshStandardMaterial({ color: 0xb9b6ae, transparent: true, opacity: 0.25, roughness: 1, depthWrite: false });
+    for (const lv of this.ed.project.levels) for (const sl of lv.slabs) {
+      if (sl.pts.length < 3) continue;
+      const g = new THREE.ExtrudeGeometry(new THREE.Shape(sl.pts.map((p) => new THREE.Vector2(p.x, p.y))), { depth: sl.thick, bevelEnabled: false });
+      const mesh = new THREE.Mesh(g, ghost);
+      mesh.rotation.x = Math.PI / 2; mesh.position.y = lv.elev;
+      this.group.add(mesh);
+    }
+    const unit = new THREE.BoxGeometry(1, 1, 1), edges = new THREE.EdgesGeometry(unit), tmp = new THREE.Vector3();
+    for (const m of framing(this.ed.project)) {
+      const A = new THREE.Vector3(m.a.x, m.a.z, m.a.y), B = new THREE.Vector3(m.b.x, m.b.z, m.b.y), L = A.distanceTo(B);
+      if (L < 1e-3) continue;
+      const mesh = new THREE.Mesh(unit, this.mepMat(COLOR[m.kind]));
+      mesh.position.copy(A).add(B).multiplyScalar(0.5);
+      if (m.along) {
+        // montante: alto en y, w a lo largo del muro y h a través
+        mesh.scale.set(m.w, L, m.h);
+        mesh.rotation.y = -Math.atan2(m.along.y, m.along.x);
+      } else {
+        // pieza tumbada o inclinada: el largo en z local apuntando a B, el canto en y
+        mesh.scale.set(m.w, m.h, L);
+        mesh.lookAt(tmp.copy(B));
+      }
+      mesh.castShadow = mesh.receiveShadow = true;
+      this.group.add(mesh);
+      const e = new THREE.LineSegments(edges, this.mat.edge);
+      e.position.copy(mesh.position); e.rotation.copy(mesh.rotation); e.scale.copy(mesh.scale);
+      this.group.add(e);
+    }
+  }
+
   constructor(private host: HTMLElement, private ed: Editor, private background: () => string) {
     this.ren = new THREE.WebGLRenderer({ antialias: true });
     this.ren.setPixelRatio(Math.min(2, devicePixelRatio || 1));
@@ -238,6 +273,8 @@ export class Viewer3D {
     floor.position.set((b.x0 + b.x1) / 2, -0.32, (b.y0 + b.y1) / 2);
     floor.receiveShadow = true;
     this.group.add(floor);
+    // en la vista de estructura el terreno baja para que se vean las zapatas
+    if (this.ed.framing) { floor.position.y = -0.75; this.buildFraming(); this.dirty = true; return; }
 
     project.levels.forEach((m, li) => {
       base = m.elev;

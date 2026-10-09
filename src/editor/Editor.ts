@@ -149,6 +149,13 @@ export class Editor {
     this.modelListeners.forEach((f) => f());
     this.emit();
   }
+  /** El 3D muestra la estructura de madera (framing) en lugar de los acabados. */
+  framing = false;
+  toggleFraming() {
+    this.framing = !this.framing;
+    this.message = this.framing ? "3D: estructura de framing (montantes a 16\", dinteles, viguetas y cabios)." : "3D: modelo completo.";
+    this.refresh3d();
+  }
   /** Cambios visuales que también afectan al 3D (capas, selección). */
   refresh3d() { this.modelListeners.forEach((f) => f()); this.emit(); }
 
