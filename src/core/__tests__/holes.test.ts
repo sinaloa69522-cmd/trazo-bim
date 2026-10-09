@@ -95,3 +95,26 @@ describe("duplicar la planta de arriba", () => {
     expect(up.roofs[0].base).toBeCloseTo(Math.max(...up.walls.map((w) => w.height)));
   });
 });
+
+describe("cubiertas enterradas", () => {
+  it("una cubierta que quedó bajo la planta de arriba sube sola al abrir el proyecto", async () => {
+    const { normalizeProject } = await import("../model");
+    const ed = new Editor();
+    ed.addLevel(true);
+    const [l0, l1] = ed.project.levels;
+    l0.roofs.push(l1.roofs.pop()!);
+    const p = normalizeProject(JSON.parse(JSON.stringify(ed.project)));
+    expect(p.levels[0].roofs).toHaveLength(0);
+    expect(p.levels[1].roofs).toHaveLength(1);
+  });
+
+  it("un tejadillo fuera de la huella de la planta de arriba se queda donde está", async () => {
+    const { liftBuriedRoofs } = await import("../model");
+    const ed = new Editor();
+    ed.addLevel(true);
+    const l0 = ed.project.levels[0];
+    l0.roofs.push({ id: 999, x1: 10, y1: 0, x2: 13, y2: 3, kind: "gable", pitch: 15, overhang: 0.3, base: 2.4, thick: 0.1 });
+    expect(liftBuriedRoofs(ed.project)).toBe(0);
+    expect(l0.roofs).toHaveLength(1);
+  });
+});
