@@ -28,6 +28,7 @@ const TOOLS: { tool: Tool; label: string; key: string; icon: JSX.Element; disc?:
   { tool: "hole", label: "Hueco en losa", key: "HL", icon: <><path d="M2 5l6-3 6 3-6 3z" /><path d="M6 4.5l4 1.5M10 4.5l-4 1.5" /><path d="M2 5v3l6 3 6-3V5" /></> },
   { tool: "roof", label: "Cubierta", key: "CU", icon: <path d="M1.5 9L8 3.5 14.5 9M3.5 7.5V13h9V7.5" /> },
   { tool: "stair", label: "Escalera", key: "ES", icon: <path d="M2 14h3v-3h3V8h3V5h3V2" /> },
+  { tool: "deck", label: "Deck/Porche", key: "DK", icon: <path d="M2 9h12M2 9v5M14 9v5M2 12h12M4 9V4h8v5M3 4h10" /> },
   { tool: "furniture", label: "Mobiliario", key: "MB", icon: <path d="M4 2v12M4 8h8v6M12 8V5M2 14h2" /> },
   { tool: "section", label: "Sección", key: "SE", icon: <path d="M2 8h12M2 8v-4M14 8V4M2 4l-1 2M2 4l1 2M14 4l-1 2M14 4l1 2" strokeDasharray="0" /> },
   { tool: "text", label: "Texto", key: "TX", icon: <path d="M3 3h10M8 3v10M6 13h4" /> },
@@ -62,7 +63,7 @@ const FRAME_LABEL: Record<MemberKind, string> = {
   footing: "Zapatas", foundation: "Muros de cimentación", pier: "Pilares", girder: "Vigas y columnas", slab: "Losa de sótano", sill: "Sill plates (P.T.)",
   rim: "Rim joists", floorJoist: "Floor joists", blocking: "Blocking", subfloor: "Subpiso",
   plate: "Plates (soleras)", stud: "Studs", header: "Headers", ceilingJoist: "Ceiling joists",
-  rafter: "Rafters", collar: "Collar ties", ridge: "Ridge y hips", fascia: "Fascia",
+  rafter: "Rafters", collar: "Collar ties", ridge: "Ridge y hips", fascia: "Fascia", stringer: "Stringers (zancas)",
 };
 
 /** Leyenda de colores de la vista de estructura, con piezas y metros lineales por escuadría. */

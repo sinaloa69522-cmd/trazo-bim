@@ -2,13 +2,14 @@
 // viguetas, cabios, limatesas y cumbrera, con los tamaños de predimensionado de permit.ts (tablas del IRC).
 import { dir, loc, roofGeom, type P3 } from "./geometry";
 import type { Project, Roof, Wall } from "./model";
+import { deckFraming } from "./decks";
 import { foundation, foundationType } from "./foundation";
 import { ceilingSystem, depthOf, floorJoistDepth, floorSystem, SUBFLOOR } from "./joists";
 import { floorJoist, headerSize, isExterior, rafterSize } from "./permit";
 import { IN } from "./units";
 
 export type MemberKind = "footing" | "foundation" | "pier" | "girder" | "slab" | "sill" | "rim" | "floorJoist" | "subfloor" | "blocking"
-  | "plate" | "stud" | "header" | "ceilingJoist" | "rafter" | "collar" | "ridge" | "fascia";
+  | "plate" | "stud" | "header" | "ceilingJoist" | "rafter" | "collar" | "ridge" | "fascia" | "stringer";
 
 /**
  * Pieza recta entre los centros de sus extremos a y b. w es su ancho horizontal y h su canto
@@ -22,7 +23,7 @@ export const MEMBER_COLOR: Record<MemberKind, string> = {
   footing: "#b3b0a8", foundation: "#a7a49c", pier: "#9d9a92", girder: "#8f6436", slab: "#c4c1b9", sill: "#7f9a6a",
   rim: "#b9844a", floorJoist: "#d6ad74", subfloor: "#c8b48c", blocking: "#c08f55",
   plate: "#c99b62", stud: "#e2c08f", header: "#a8763f", ceilingJoist: "#e4c79a", rafter: "#d9b27c", collar: "#b98d58",
-  ridge: "#9c6c3a", fascia: "#8a5f33",
+  ridge: "#9c6c3a", fascia: "#8a5f33", stringer: "#8e6a44",
 };
 
 const T = 1.5 * IN;
@@ -49,6 +50,7 @@ export function framing(p: Project): Member[] {
     // en los hastiales, los montantes arrancan sobre el rim joist del techo
     const rimH = Math.max(0, ...ceil.filter((m) => m.kind === "rim").map((m) => m.h));
     for (const r of lv.roofs) out.push(...roofFrame(r, e, lv.walls, rimH));
+    for (const dk of lv.decks ?? []) out.push(...deckFraming(dk, lv.walls, e));
   });
   return out;
 }

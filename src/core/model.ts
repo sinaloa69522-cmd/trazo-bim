@@ -105,6 +105,27 @@ export interface Stair {
   height: number;
 }
 
+export type DeckKind = "wood" | "composite" | "ground" | "covered" | "screened" | "stoop";
+export type RailKind = "none" | "wood" | "metal" | "cable" | "glass" | "vinyl";
+
+/** Deck o porche rectangular entre dos esquinas (decks.ts): tipo, altura del piso, barandal y escalones. */
+export interface Deck {
+  id: number;
+  x1: number;
+  y1: number;
+  x2: number;
+  y2: number;
+  kind: DeckKind;
+  /** Altura de la cara superior del piso sobre la cota del nivel */
+  height: number;
+  rail: RailKind;
+  /** Lado de los escalones (0 arriba, 1 derecha, 2 abajo, 3 izquierda en planta); sin valor: sin escalones */
+  stairSide?: 0 | 1 | 2 | 3 | null;
+  stairW?: number;
+  /** Posición del centro de los escalones a lo largo de su lado (0 a 1) */
+  stairT?: number;
+}
+
 /** Pieza de mobiliario o aparato sanitario de la biblioteca, colocada por su centro. */
 export interface Furniture {
   id: number;
@@ -208,6 +229,7 @@ export interface Model {
   slabs: Slab[];
   roofs: Roof[];
   stairs: Stair[];
+  decks: Deck[];
   furniture: Furniture[];
   sections: Section[];
   texts: Text[];
@@ -245,7 +267,7 @@ export interface Project {
 
 export const defaultInfo = (): ProjectInfo => ({ name: "Vivienda unifamiliar", author: "", client: "", date: new Date().toISOString().slice(0, 10) });
 
-export type LayerId = "muros" | "puertas" | "ventanas" | "cotas" | "anot" | "hab" | "losas" | "cubiertas" | "escaleras" | "mobiliario" | "secciones" | "electricidad" | "plomeria" | "calcos" | "sombreados";
+export type LayerId = "muros" | "puertas" | "ventanas" | "cotas" | "anot" | "hab" | "losas" | "cubiertas" | "escaleras" | "decks" | "mobiliario" | "secciones" | "electricidad" | "plomeria" | "calcos" | "sombreados";
 
 export interface Layer {
   id: LayerId;
@@ -267,6 +289,7 @@ export const LAYERS: Layer[] = [
   { id: "losas", name: "A-LOSAS", label: "Losas", tok: "--muted" },
   { id: "cubiertas", name: "A-CUBIERTAS", label: "Cubiertas", tok: "--door" },
   { id: "escaleras", name: "A-ESCALERAS", label: "Escaleras", tok: "--fg" },
+  { id: "decks", name: "A-DECKS", label: "Decks y porches", tok: "--door" },
   { id: "mobiliario", name: "A-MOBILIARIO", label: "Mobiliario", tok: "--anno" },
   { id: "secciones", name: "A-SECCIONES", label: "Secciones", tok: "--fg" },
   { id: "electricidad", name: "E-ELECTRICIDAD", label: "Electricidad", tok: "--elec" },
@@ -274,7 +297,7 @@ export const LAYERS: Layer[] = [
   { id: "calcos", name: "A-CALCOS", label: "Calcos", tok: "--muted" },
 ];
 
-export const emptyModel = (): Model => ({ walls: [], openings: [], lines: [], dims: [], rooms: [], slabs: [], roofs: [], stairs: [], furniture: [], sections: [], texts: [], fixtures: [], runs: [], underlays: [], hatches: [], nid: 1 });
+export const emptyModel = (): Model => ({ walls: [], openings: [], lines: [], dims: [], rooms: [], slabs: [], roofs: [], stairs: [], decks: [], furniture: [], sections: [], texts: [], fixtures: [], runs: [], underlays: [], hatches: [], nid: 1 });
 
 export const newLevel = (name: string, elev: number, content: Model = emptyModel()): Level => ({ ...content, name, elev });
 
@@ -294,6 +317,7 @@ export function normalizeModel(raw: unknown): Model {
   m.slabs = (m.slabs ?? []).map((s) => ({ ...s, holes: s.holes ?? [] }));
   m.roofs = m.roofs ?? [];
   m.stairs = m.stairs ?? [];
+  m.decks = m.decks ?? [];
   m.furniture = m.furniture ?? [];
   m.sections = m.sections ?? [];
   m.texts = m.texts ?? [];

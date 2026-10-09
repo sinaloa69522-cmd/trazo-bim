@@ -1,4 +1,5 @@
 import { DOOR_STYLES, openingStyle } from "./openingStyles";
+import { deckTakeoff, deckType } from "./decks";
 import { furnitureDef } from "./furniture";
 import { dir, polygonArea, roofGeom, slabArea, stairSteps } from "./geometry";
 import { MEP, runLength, SYSTEMS } from "./mep";
@@ -106,6 +107,14 @@ export function budget(p: Project, s: BudgetSettings = defaultBudget()): Budget 
 
   // escaleras por metro de tramo
   add("05.01", "Escalera de concreto armado con peldaños forjados", "m", lv.reduce((t, l) => t + l.stairs.reduce((u, st) => u + stairSteps(st).L, 0), 0), 9500);
+
+  // decks y porches: superficie por tipo, barandal y escalones
+  const decks = lv.flatMap((l) => (l.decks ?? []).map((d) => ({ d, q: deckTakeoff(d, l.walls) })));
+  const DECK_PRICE: Record<string, number> = { wood: 2400, composite: 3600, ground: 1900, covered: 5200, screened: 6400, stoop: 1700 };
+  for (const k of Object.keys(DECK_PRICE))
+    add(`05.1${Object.keys(DECK_PRICE).indexOf(k)}`, deckType(k as never).name, "m²", decks.filter((x) => x.d.kind === k).reduce((t, x) => t + x.q.area, 0), DECK_PRICE[k]);
+  add("05.20", "Barandal de deck (guard 36\")", "m", decks.reduce((t, x) => t + x.q.guard, 0), 1800);
+  add("05.21", "Escalón de deck con zancas y pasamanos", "pza", decks.reduce((t, x) => t + x.q.risers, 0), 1400);
 
   // pisos: superficie útil de los espacios cerrados
   add("06.01", "Piso cerámico con firme y pegazulejo", "m²", roomSchedule(p).reduce((t, r) => t + r.area, 0), 650);

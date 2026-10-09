@@ -9,6 +9,7 @@ import { finish, gableWall, outward, roofFinish, type Finish } from "../core/fin
 import { finishTile } from "./finishTextures";
 import { framing, MEMBER_COLOR, type Member } from "../core/framing";
 import { foundation, gradeLevel } from "../core/foundation";
+import { deckBoxes, type Box } from "../core/decks";
 import type { Editor } from "./Editor";
 
 /** Modelo 3D generado a partir de la planta. Se reconstruye en cada cambio. */
@@ -145,11 +146,23 @@ export class Viewer3D {
 
   /** Piezas como cajas orientadas: las verticales según su muro, las demás apuntando de a a b. */
   private members(ms: Member[]) {
+    this.boxes(ms.map((m) => ({ ...m, color: MEMBER_COLOR[m.kind] })));
+  }
+
+  private glassMats = new Map<string, THREE.Material>();
+  /** Cajas orientadas de color (piezas de estructura, decks y barandales); con opacity, translúcidas y sin arista. */
+  private boxes(ms: Box[], sel = false) {
     const unit = new THREE.BoxGeometry(1, 1, 1), edges = new THREE.EdgesGeometry(unit), tmp = new THREE.Vector3();
     for (const m of ms) {
       const A = new THREE.Vector3(m.a.x, m.a.z, m.a.y), B = new THREE.Vector3(m.b.x, m.b.z, m.b.y), L = A.distanceTo(B);
       if (L < 1e-3) continue;
-      const mesh = new THREE.Mesh(unit, this.mepMat(MEMBER_COLOR[m.kind]));
+      let mat = sel ? this.mat.sel : this.mepMat(m.color);
+      if (m.opacity !== undefined && !sel) {
+        const k = `${m.color}${m.opacity}`;
+        mat = this.glassMats.get(k) ?? new THREE.MeshStandardMaterial({ color: m.color, transparent: true, opacity: m.opacity, depthWrite: false, roughness: 0.2 });
+        this.glassMats.set(k, mat);
+      }
+      const mesh = new THREE.Mesh(unit, mat);
       mesh.position.copy(A).add(B).multiplyScalar(0.5);
       if (m.along) {
         // montante: alto en y, w a lo largo del muro y h a través
@@ -160,8 +173,10 @@ export class Viewer3D {
         mesh.scale.set(m.w, m.h, L);
         mesh.lookAt(tmp.copy(B));
       }
-      mesh.castShadow = mesh.receiveShadow = true;
+      mesh.castShadow = m.opacity === undefined;
+      mesh.receiveShadow = true;
       this.group.add(mesh);
+      if (m.opacity !== undefined || Math.min(m.w, m.h) < 0.03) continue;
       const e = new THREE.LineSegments(edges, this.mat.edge);
       e.position.copy(mesh.position); e.rotation.copy(mesh.rotation); e.scale.copy(mesh.scale);
       this.group.add(e);
@@ -316,6 +331,7 @@ export class Viewer3D {
         const k = stairSteps(st), mat = isSel("stair", st.id) ? this.mat.sel : this.mat.stair;
         for (let i = 0; i < k.n; i++) box(st as unknown as Wall, i * k.tread, (i + 1) * k.tread, 0, (i + 1) * k.riser, st.width, mat);
       }
+      if (vis.decks) for (const dk of m.decks) this.boxes(deckBoxes(dk, m.walls, base), li === active && this.ed.isSelected("deck", dk.id));
       if (vis.mobiliario) for (const f of m.furniture) {
         const sel = isSel("furniture", f.id);
         for (const s of furnitureSolids(f.kind)) {

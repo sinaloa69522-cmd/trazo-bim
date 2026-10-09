@@ -1,8 +1,9 @@
 import type { MemberKind } from "../core/framing";
+import { deckGeom, deckType } from "../core/decks";
 import { bounds, dimOffset, dir, distSeg, dimGeom, fits, loc, onSlab, pointInPolygon, polygonArea, roofGeom, stairSteps, textBox, type Pt } from "../core/geometry";
 import {
   attachWalls, liftBuriedRoofs, cloneModel, emptyProject, newLevel, nextId, nextSectionName, normalizeProject, sampleProject, type Level, type Project, type ProjectInfo,
-  type LayerId, type Model, type RoofKind, type RunSystem, type Wall,
+  type Deck, type DeckKind, type LayerId, type Model, type RoofKind, type RunSystem, type Wall,
 } from "../core/model";
 import { autoDims } from "../core/autodim";
 import { fmtArea, fmtLen, fmtSmall, imperial, parseLen, setUnitSystem, FT, IN, type UnitSystem } from "../core/units";
@@ -20,12 +21,12 @@ import { computeRooms, RC, roomAt, type RoomGrid } from "../core/rooms";
 import { hatchArea, hatchPattern, inHatch, maskLoops, IMPORTED } from "../core/hatch";
 import { deleteElements, reflection, scaling, transformElements, translation, type Xform } from "../core/transform";
 
-export type Tool = "select" | "wall" | "door" | "window" | "line" | "dim" | "room" | "move" | "copy" | "mirror" | "trim" | "extend" | "offset" | "slab" | "roof" | "stair" | "furniture" | "section" | "hole" | "text" | "fixture" | "run" | "calibrate" | "hatch";
+export type Tool = "select" | "wall" | "door" | "window" | "line" | "dim" | "room" | "move" | "copy" | "mirror" | "trim" | "extend" | "offset" | "slab" | "roof" | "stair" | "deck" | "furniture" | "section" | "hole" | "text" | "fixture" | "run" | "calibrate" | "hatch";
 /** Herramientas que actúan pulsando directamente sobre un muro o una línea. */
 const PICK_TOOLS: Tool[] = ["trim", "extend", "offset"];
 /** Herramientas que actúan sobre la selección actual. */
 const MODIFY_TOOLS: Tool[] = ["move", "copy", "mirror"];
-export type SelType = "wall" | "opening" | "line" | "dim" | "room" | "slab" | "roof" | "stair" | "furniture" | "section" | "text" | "fixture" | "run" | "underlay" | "hatch";
+export type SelType = "wall" | "opening" | "line" | "dim" | "room" | "slab" | "roof" | "stair" | "deck" | "furniture" | "section" | "text" | "fixture" | "run" | "underlay" | "hatch";
 export interface Selection { type: SelType; id: number }
 export interface SnapPt extends Pt { kind: "end" | "mid" | null }
 export interface OpeningCandidate { w: Wall; t: number; ok: boolean }
@@ -56,7 +57,7 @@ const COMMANDS: Record<string, Tool> = {
   H: "room", HAB: "room", HABITACION: "room", "HABITACIÓN": "room",
   MO: "move", MOVER: "move", CO: "copy", COPIA: "copy", SI: "mirror", SIMETRIA: "mirror", "SIMETRÍA": "mirror",
   LO: "slab", LOSA: "slab", TR: "trim", RECORTAR: "trim", AL: "extend", ALARGAR: "extend", DE: "offset", DESFASE: "offset", EQ: "offset", EQUIDISTANCIA: "offset",
-  CU: "roof", CUBIERTA: "roof", TEJADO: "roof", ES: "stair", ESCALERA: "stair", MB: "furniture", MOBILIARIO: "furniture", MUEBLE: "furniture",
+  CU: "roof", CUBIERTA: "roof", TEJADO: "roof", ES: "stair", ESCALERA: "stair", DK: "deck", DECK: "deck", PORCHE: "deck", MB: "furniture", MOBILIARIO: "furniture", MUEBLE: "furniture",
   HL: "hole", HUECO: "hole", TX: "text", TEXTO: "text", SE: "section", SECCION: "section", "SECCIÓN": "section", CORTE: "section",
   SB: "hatch", SOMBREA: "hatch", SOMBREADO: "hatch", RAYADO: "hatch", TRAMA: "hatch",
   TU: "run", TUBERIA: "run", "TUBERÍA": "run", CANALIZACION: "run", "CANALIZACIÓN": "run",
@@ -94,8 +95,8 @@ export class Editor {
   get model(): Level { return this.project.levels[this.active]; }
   set model(m: Model) { this.project.levels[this.active] = { ...this.model, ...m }; }
   rooms: RoomGrid | null = null;
-  vis: Record<LayerId, boolean> = { muros: true, puertas: true, ventanas: true, cotas: true, anot: true, hab: true, losas: true, cubiertas: true, escaleras: true, mobiliario: true, secciones: true, electricidad: true, plomeria: true, calcos: true, sombreados: true };
-  defaults = { ...METRIC_DEFAULTS, roofKind: "gable" as RoofKind, furnKind: "bed2", furnRot: 0, mepKind: "enchufe", mepRot: 0, runSys: "af" as RunSystem, hatchPattern: "diagonal", hatchScale: 1, hatchAngle: 0, hatchMode: "room" as "room" | "poly", doorStyle: "single", winStyle: "fixed" };
+  vis: Record<LayerId, boolean> = { muros: true, puertas: true, ventanas: true, cotas: true, anot: true, hab: true, losas: true, cubiertas: true, escaleras: true, decks: true, mobiliario: true, secciones: true, electricidad: true, plomeria: true, calcos: true, sombreados: true };
+  defaults = { ...METRIC_DEFAULTS, roofKind: "gable" as RoofKind, furnKind: "bed2", furnRot: 0, mepKind: "enchufe", mepRot: 0, runSys: "af" as RunSystem, hatchPattern: "diagonal", hatchScale: 1, hatchAngle: 0, hatchMode: "room" as "room" | "poly", doorStyle: "single", winStyle: "fixed", deckKind: "wood" as DeckKind };
   tool: Tool = "select";
   /** Elementos seleccionados. */
   sels: Selection[] = [];
@@ -308,18 +309,18 @@ export class Editor {
   // ---------- consultas ----------
   wallById(id: number) { return this.model.walls.find((w) => w.id === id); }
   isSelected(type: SelType, id: number) { return this.sels.some((s) => s.type === type && s.id === id); }
-  selObj(): (Seg & { id: number }) | Model["openings"][number] | Model["rooms"][number] | Model["slabs"][number] | Model["roofs"][number] | Model["stairs"][number] | Model["furniture"][number] | Model["sections"][number] | Model["texts"][number] | Model["fixtures"][number] | Model["runs"][number] | Model["underlays"][number] | Model["hatches"][number] | null {
+  selObj(): (Seg & { id: number }) | Model["openings"][number] | Model["rooms"][number] | Model["slabs"][number] | Model["roofs"][number] | Model["stairs"][number] | Model["decks"][number] | Model["furniture"][number] | Model["sections"][number] | Model["texts"][number] | Model["fixtures"][number] | Model["runs"][number] | Model["underlays"][number] | Model["hatches"][number] | null {
     if (!this.sel) return null;
     const m = this.model;
-    const list = { wall: m.walls, line: m.lines, dim: m.dims, opening: m.openings, room: m.rooms, slab: m.slabs, roof: m.roofs, stair: m.stairs, furniture: m.furniture, section: m.sections, text: m.texts, fixture: m.fixtures, run: m.runs, underlay: m.underlays, hatch: m.hatches }[this.sel.type] as { id: number }[];
+    const list = { wall: m.walls, line: m.lines, dim: m.dims, opening: m.openings, room: m.rooms, slab: m.slabs, roof: m.roofs, stair: m.stairs, deck: m.decks, furniture: m.furniture, section: m.sections, text: m.texts, fixture: m.fixtures, run: m.runs, underlay: m.underlays, hatch: m.hatches }[this.sel.type] as { id: number }[];
     return (list.find((o) => o.id === this.sel!.id) as never) ?? null;
   }
   grips(): { k: 0 | 1 | "mid"; x: number; y: number }[] {
     const o = this.selObj();
-    if (!o || !["wall", "line", "roof", "stair", "section"].includes(this.sel!.type)) return [];
+    if (!o || !["wall", "line", "roof", "stair", "deck", "section"].includes(this.sel!.type)) return [];
     const s = o as Seg;
     const g: { k: 0 | 1 | "mid"; x: number; y: number }[] = [{ k: 0, x: s.x1, y: s.y1 }, { k: 1, x: s.x2, y: s.y2 }];
-    if (this.sel!.type !== "roof") g.push({ k: "mid", x: (s.x1 + s.x2) / 2, y: (s.y1 + s.y2) / 2 });
+    if (this.sel!.type !== "roof" && this.sel!.type !== "deck") g.push({ k: "mid", x: (s.x1 + s.x2) / 2, y: (s.y1 + s.y2) / 2 });
     return g;
   }
   prompt(): string {
@@ -337,6 +338,7 @@ export class Editor {
       case "mirror": return n ? "SIMETRÍA  Segundo punto del eje:" : "SIMETRÍA  Primer punto del eje de simetría:";
       case "slab": return n < 3 ? `LOSA  Precisa ${n ? "siguiente" : "primer"} vértice del contorno:` : "LOSA  Siguiente vértice [Enter o clic en el primero cierra]:";
       case "roof": return n ? "CUBIERTA  Esquina opuesta del perímetro:" : `CUBIERTA  Primera esquina del perímetro (${ROOF_LABEL[d.roofKind].toLowerCase()}, ${d.pitch}°):`;
+      case "deck": return n ? "DECK  Esquina opuesta:" : `DECK  Primera esquina (${deckType(d.deckKind).name.toLowerCase()}):`;
       case "stair": return n ? "ESCALERA  Punto de llegada (o longitud):" : `ESCALERA  Punto de arranque (ancho ${fmtLen(d.stairW)}):`;
       case "text": return this.textAt ? "TEXTO  Escribe el texto y pulsa Intro [Esc cancela]:" : `TEXTO  Punto de inserción (altura ${fmtLen(d.textSize)}):`;
       case "hole": return n ? "HUECO  Esquina opuesta del hueco:" : "HUECO EN LOSA  Primera esquina del hueco (dentro de una losa):";
@@ -372,7 +374,7 @@ export class Editor {
       muros: m.walls.length, puertas: m.openings.filter((o) => o.kind === "door").length,
       ventanas: m.openings.filter((o) => o.kind === "window").length,
       cotas: m.dims.length, anot: m.lines.length + m.texts.length, hab: m.rooms.length, losas: m.slabs.length,
-      cubiertas: m.roofs.length, escaleras: m.stairs.length, mobiliario: m.furniture.length, secciones: m.sections.length,
+      cubiertas: m.roofs.length, escaleras: m.stairs.length, decks: m.decks.length, mobiliario: m.furniture.length, secciones: m.sections.length,
       electricidad: m.fixtures.filter((f) => mepDef(f.kind).disc === "elec").length + m.runs.filter((r) => r.system === "elec").length,
       plomeria: m.fixtures.filter((f) => mepDef(f.kind).disc === "plum").length + m.runs.filter((r) => r.system !== "elec").length,
       calcos: m.underlays.length, sombreados: m.hatches.length,
@@ -482,6 +484,10 @@ export class Editor {
       if (crossing ? inside(f.x, f.y) || ol.some((p) => inside(p.x, p.y)) : ol.every((p) => inside(p.x, p.y))) found.push({ type: "furniture", id: f.id });
     }
     if (this.vis.escaleras) for (const st of m.stairs) if (segHit(st)) found.push({ type: "stair", id: st.id });
+    if (this.vis.decks) for (const dk of m.decks) {
+      const g = deckGeom(dk), c = g.edges.map(([a]) => a);
+      if (crossing ? g.edges.some(([a, b]) => segHit({ x1: a.x, y1: a.y, x2: b.x, y2: b.y })) : c.every((p) => inside(p.x, p.y))) found.push({ type: "deck", id: dk.id });
+    }
     if (this.vis.secciones) for (const se of m.sections) if (segHit(se)) found.push({ type: "section", id: se.id });
     for (const f of m.fixtures) if (this.fixtureVisible(f) && inside(f.x, f.y)) found.push({ type: "fixture", id: f.id });
     for (const r of m.runs) {
@@ -546,6 +552,12 @@ export class Editor {
     if (this.vis.cotas) for (const d of m.dims) { const g = dimGeom(d), r = distSeg(wx, wy, g.a.x, g.a.y, g.b.x, g.b.y); if (r.d < tol * 2) take(r.d, { type: "dim", id: d.id }); }
     if (this.vis.secciones) for (const se of m.sections) { const r = distSeg(wx, wy, se.x1, se.y1, se.x2, se.y2); if (r.d < tol) take(r.d, { type: "section", id: se.id }); }
     if (this.vis.escaleras) for (const st of m.stairs) { const r = distSeg(wx, wy, st.x1, st.y1, st.x2, st.y2); if (r.d < st.width / 2) take(r.d + 0.2, { type: "stair", id: st.id }); }
+    // el deck se elige por dentro (detrás de muros y muebles) o por sus escalones
+    if (this.vis.decks) for (const dk of m.decks) {
+      const g = deckGeom(dk, m.walls), inBox = wx >= g.x0 && wx <= g.x1 && wy >= g.y0 && wy <= g.y1;
+      const onSteps = g.steps?.treads.some((q) => pointInPolygon({ x: wx, y: wy }, q));
+      if (inBox || onSteps) take(0.35, { type: "deck", id: dk.id });
+    }
     for (const f of m.fixtures) if (this.fixtureVisible(f)) { const d = Math.hypot(wx - f.x, wy - f.y); if (d < 0.2 + tol) take(d * 0.5, { type: "fixture", id: f.id }); }
     for (const r of m.runs) if (this.vis[DISC_LAYER[discOfSystem(r.system)]]) for (let i = 1; i < r.pts.length; i++) {
       const a = r.pts[i - 1], b = r.pts[i], q = distSeg(wx, wy, a.x, a.y, b.x, b.y);
@@ -627,6 +639,23 @@ export class Editor {
       if (this.draft.pts.length >= 3 && Math.hypot(p.x - first.x, p.y - first.y) < 0.01) { this.closeHatch(); return; }
       if (Math.hypot(p.x - last.x, p.y - last.y) < 0.05) return;
       this.draft.pts.push(p); this.emit();
+      return;
+    }
+    if (this.tool === "deck") {
+      if (!this.draft) { this.draft = { pts: [p] }; this.emit(); return; }
+      const a = this.draft.pts[0];
+      if (Math.abs(p.x - a.x) < 0.6 || Math.abs(p.y - a.y) < 0.6) { this.log("El deck necesita un rectángulo: elige la esquina opuesta."); return; }
+      this.snapshot();
+      const t = deckType(this.defaults.deckKind), id = nextId(m);
+      const dk: Deck = { id, x1: a.x, y1: a.y, x2: p.x, y2: p.y, kind: t.id, height: t.height, rail: t.rail, stairW: 3 * FT, stairT: 0.5 };
+      // escalones por defecto en el lado opuesto a la casa
+      const g = deckGeom(dk, m.walls);
+      dk.stairSide = g.house !== null ? (((g.house + 2) % 4) as 0 | 1 | 2 | 3) : 2;
+      m.decks.push(dk);
+      this.sels = [{ type: "deck", id }];
+      this.message = `${t.name} creado${g.house !== null ? ", con ledger contra la casa" : ""}. Cambia el tipo, la altura, el barandal y los escalones en Propiedades.`;
+      this.draft = null;
+      this.changed();
       return;
     }
     if (this.tool === "roof" || this.tool === "stair") {
@@ -1321,6 +1350,19 @@ export class Editor {
     this.sels = [];
     this.message = `Cubierta movida a ${up.name}.`;
     this.changed();
+  }
+
+  /** Cambia el tipo de un deck o porche; si el barandal era el del tipo anterior, toma el del nuevo. */
+  setDeckKind(id: number, k: DeckKind) {
+    const dk = this.model.decks.find((x) => x.id === id);
+    if (!dk) return;
+    this.edit(() => {
+      const was = deckType(dk.kind), to = deckType(k);
+      if (dk.rail === was.rail) dk.rail = to.rail;
+      if (Math.abs(dk.height - was.height) < 1e-6) dk.height = to.height;
+      dk.kind = k;
+    });
+    this.defaults.deckKind = k;
   }
 
   /** Abre en la losa del nivel de arriba un hueco con la huella de la escalera. */

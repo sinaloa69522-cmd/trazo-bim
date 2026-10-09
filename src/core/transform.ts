@@ -2,7 +2,7 @@ import type { Pt } from "./geometry";
 import { mapLines } from "./hatch";
 import { nextId, type Model } from "./model";
 
-export type ElementType = "wall" | "opening" | "line" | "dim" | "room" | "slab" | "roof" | "stair" | "furniture" | "section" | "text" | "fixture" | "run" | "underlay" | "hatch";
+export type ElementType = "wall" | "opening" | "line" | "dim" | "room" | "slab" | "roof" | "stair" | "deck" | "furniture" | "section" | "text" | "fixture" | "run" | "underlay" | "hatch";
 export interface ElementRef { type: ElementType; id: number }
 
 type Seg = { x1: number; y1: number; x2: number; y2: number };
@@ -33,7 +33,7 @@ function applySeg(s: Seg, t: Xform) {
 }
 
 const listOf = (m: Model, type: ElementType) =>
-  ({ wall: m.walls, opening: m.openings, line: m.lines, dim: m.dims, room: m.rooms, slab: m.slabs, roof: m.roofs, stair: m.stairs, furniture: m.furniture, section: m.sections, text: m.texts, fixture: m.fixtures, run: m.runs, underlay: m.underlays, hatch: m.hatches })[type] as { id: number }[];
+  ({ wall: m.walls, opening: m.openings, line: m.lines, dim: m.dims, room: m.rooms, slab: m.slabs, roof: m.roofs, stair: m.stairs, deck: m.decks, furniture: m.furniture, section: m.sections, text: m.texts, fixture: m.fixtures, run: m.runs, underlay: m.underlays, hatch: m.hatches })[type] as { id: number }[];
 
 export function findElement(m: Model, r: ElementRef) {
   return listOf(m, r.type).find((o) => o.id === r.id) ?? null;
@@ -100,7 +100,8 @@ export function deleteElements(m: Model, refs: ElementRef[]) {
   m.dims = m.dims.filter((d) => !dims.has(d.id));
   m.rooms = m.rooms.filter((r) => !rooms.has(r.id));
   m.slabs = m.slabs.filter((r) => !slabs.has(r.id));
-  const roofs = ids("roof"), stairs = ids("stair");
+  const roofs = ids("roof"), stairs = ids("stair"), decks = ids("deck");
+  m.decks = m.decks.filter((r) => !decks.has(r.id));
   m.roofs = m.roofs.filter((r) => !roofs.has(r.id));
   m.stairs = m.stairs.filter((r) => !stairs.has(r.id));
   const furn = ids("furniture");
