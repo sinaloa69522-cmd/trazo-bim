@@ -103,9 +103,20 @@ export interface Level extends Model {
   elev: number;
 }
 
+/** Datos del cajetín de las láminas. */
+export interface ProjectInfo {
+  name: string;
+  author: string;
+  client: string;
+  date: string;
+}
+
 export interface Project {
   levels: Level[];
+  info: ProjectInfo;
 }
+
+export const defaultInfo = (): ProjectInfo => ({ name: "Vivienda unifamiliar", author: "", client: "", date: new Date().toISOString().slice(0, 10) });
 
 export type LayerId = "muros" | "puertas" | "ventanas" | "cotas" | "anot" | "hab" | "losas" | "cubiertas" | "escaleras";
 
@@ -134,7 +145,7 @@ export const emptyModel = (): Model => ({ walls: [], openings: [], lines: [], di
 
 export const newLevel = (name: string, elev: number, content: Model = emptyModel()): Level => ({ ...content, name, elev });
 
-export const emptyProject = (): Project => ({ levels: [newLevel("Planta baja", 0)] });
+export const emptyProject = (): Project => ({ levels: [newLevel("Planta baja", 0)], info: defaultInfo() });
 
 export const nextId = (m: Model) => m.nid++;
 
@@ -155,9 +166,10 @@ export function normalizeModel(raw: unknown): Model {
 /** Acepta proyectos guardados y también modelos de una sola planta de versiones anteriores. */
 export function normalizeProject(raw: unknown): Project {
   const r = raw as Partial<Project> & Partial<Model>;
+  const info = { ...defaultInfo(), ...(r?.info ?? {}) };
   if (Array.isArray(r?.levels) && r.levels.length)
-    return { levels: r.levels.map((l, i) => ({ ...normalizeModel(l), name: l.name ?? `Nivel ${i}`, elev: l.elev ?? 0 })) };
-  return { levels: [newLevel("Planta baja", 0, normalizeModel(raw))] };
+    return { levels: r.levels.map((l, i) => ({ ...normalizeModel(l), name: l.name ?? `Nivel ${i}`, elev: l.elev ?? 0 })), info };
+  return { levels: [newLevel("Planta baja", 0, normalizeModel(raw))], info };
 }
 
 /** Vivienda de ejemplo: planta baja de 10 x 7 m con su losa y cubierta a dos aguas. */
@@ -165,7 +177,7 @@ export function sampleProject(): Project {
   const m = sampleModel();
   m.slabs.push({ id: nextId(m), pts: [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 7 }, { x: 0, y: 7 }], thick: 0.2 });
   m.roofs.push({ id: nextId(m), x1: 0, y1: 0, x2: 10, y2: 7, kind: "gable", pitch: 30, overhang: 0.5, base: 2.7, thick: 0.15 });
-  return { levels: [newLevel("Planta baja", 0, m)] };
+  return { levels: [newLevel("Planta baja", 0, m)], info: defaultInfo() };
 }
 
 /** Vivienda de ejemplo de 10 x 7 m. */

@@ -16,6 +16,7 @@ Herramienta web de dibujo arquitectónico que toma como referencia AutoCAD (plan
 - **Cubiertas:** rectangulares, planas, a dos aguas o a cuatro aguas, con pendiente, vuelo y altura de arranque. La cumbrera va en la dirección larga.
 - **Escaleras:** tramo recto de arranque a llegada (`ES`); calcula peldaños, huella y contrahuella para salvar el desnivel hasta el nivel de arriba y avisa si la huella es corta.
 - **3D:** modelo generado a partir de todas las plantas, apiladas según su cota (Three.js).
+- **Lámina (documentación):** vista "Lámina" con la planta activa en A3 a escala normalizada (automática o elegida), marcas de puertas y ventanas (P1, V1…), tablas de puertas, ventanas y superficies útiles, escala gráfica y cajetín editable (proyecto, autor, cliente, fecha). "Imprimir / PDF" la imprime o la guarda como PDF desde el navegador.
 - **Exportación DXF** por capas (`A-MUROS`, `A-PUERTAS`, `A-VENTANAS`, `A-COTAS`, `A-ANOTACION`, `A-HABITACIONES`, `A-LOSAS`, `A-CUBIERTAS`, `A-ESCALERAS`) del nivel activo.
 
 El dibujo se guarda en el navegador (localStorage).
@@ -39,6 +40,6 @@ npm run build      # comprobación de tipos y build de producción
 
 1. Planta 2D: empalme de esquinas, bloques y mobiliario, sombreados.
 2. BIM: cubiertas de contorno libre, escaleras con rellano, huecos en losas, tipos de muro con capas de materiales.
-3. Documentación: tablas de puertas y ventanas, láminas con cajetín, impresión a PDF.
+3. Documentación: alzados y secciones, varias vistas por lámina, cotas automáticas.
 4. Intercambio: exportación IFC para Revit y ArchiCAD.
 5. Proyectos en la nube y colaboración.

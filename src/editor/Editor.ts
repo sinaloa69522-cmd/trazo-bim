@@ -1,6 +1,6 @@
 import { bounds, dimOffset, dir, distSeg, dimGeom, fits, loc, pointInPolygon, polygonArea, roofGeom, stairSteps, type Pt } from "../core/geometry";
 import {
-  cloneModel, emptyProject, newLevel, nextId, normalizeProject, sampleProject, type Level, type Project,
+  cloneModel, emptyProject, newLevel, nextId, normalizeProject, sampleProject, type Level, type Project, type ProjectInfo,
   type LayerId, type Model, type RoofKind, type Wall,
 } from "../core/model";
 import { parseDxf } from "../core/dxfImport";
@@ -124,8 +124,11 @@ export class Editor {
   }
   log(t: string) { this.message = t; this.emit(); }
 
-  loadSample() { this.snapshot(); this.project = sampleProject(); this.active = 0; this.sel = null; this.log("Vivienda de ejemplo cargada."); this.changed(); }
-  clear() { this.snapshot(); this.project = emptyProject(); this.active = 0; this.sel = null; this.log("Dibujo nuevo. Usa Deshacer si te equivocaste."); this.changed(); this.setTool("wall"); }
+  loadSample() { this.snapshot(); this.project = { ...sampleProject(), info: this.project.info }; this.active = 0; this.sel = null; this.log("Vivienda de ejemplo cargada."); this.changed(); }
+  clear() { this.snapshot(); this.project = { ...emptyProject(), info: this.project.info }; this.active = 0; this.sel = null; this.log("Dibujo nuevo. Usa Deshacer si te equivocaste."); this.changed(); this.setTool("wall"); }
+
+  /** Cambia los datos del cajetín. */
+  setInfo(patch: Partial<ProjectInfo>) { this.edit(() => { this.project.info = { ...this.project.info, ...patch }; }); }
 
   // ---------- niveles ----------
   /** Nivel inmediatamente inferior al activo (se muestra de referencia en planta). */
