@@ -101,7 +101,7 @@ export function App() {
       onDragLeave={(e) => { if (e.currentTarget === e.target) setDragging(false); }}
       onDrop={(e) => { e.preventDefault(); setDragging(false); const f = e.dataTransfer.files[0]; if (f) void openAny(f); }}>
       <header className="top">
-        <div className="brand">Trazo BIM <small>v0.2</small></div>
+        <div className="brand">Smartarchitect <small>v0.2</small></div>
         <div className="group" role="toolbar" aria-label="Herramientas" id="tools">
           {TOOLS.map((t) => (
             <button key={t.key} className="tb" title={`${t.label} (${t.key})`}
