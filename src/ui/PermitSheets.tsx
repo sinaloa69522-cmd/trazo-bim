@@ -2,9 +2,10 @@
 // más la columna lateral (tablas y notas) de las láminas generadas desde el modelo.
 import type { ReactNode } from "react";
 import { ROOFINGS, SIDINGS, usedFinishes } from "../core/finishes";
+import { foundationType } from "../core/foundation";
 import type { Project } from "../core/model";
 import { feetInches, fmtArea } from "../core/units";
-import { FOOTING_TYPES, headers, hvac, joistBays, projectAreas, roofFraming, site } from "../core/permit";
+import { headers, hvac, joistBays, projectAreas, roofFraming, site } from "../core/permit";
 import { ABBREVIATIONS, CODES, DEFERRED, DESIGN_CRITERIA, GENERAL_NOTES, SCOPE, SHEET_NOTES } from "../core/permitNotes";
 import type { Editor } from "../editor/Editor";
 import { SheetLegend } from "./SheetLegend";
@@ -44,8 +45,10 @@ const NotesList = ({ notes, start = 1 }: { notes: string[]; start?: number }) =>
 );
 
 /** Notas de una lámina; en los alzados, la de cubierta y la de revestimiento dicen los materiales elegidos en el modelo. */
-function notesFor(content: string, levels: Project["levels"]) {
+function notesFor(content: string, levels: Project["levels"], fdn?: Project["foundation"]) {
   let notes = SHEET_NOTES[content === "fach" ? "elev" : content];
+  // el plano de cimentación lleva las notas del tipo elegido
+  if (content === "found") notes = [notes[0], ...foundationType({ foundation: fdn }).notes];
   if (notes && (content === "fach" || content === "elev")) {
     const fins = usedFinishes(levels), roof = fins.filter((f) => ROOFINGS.includes(f)), wall = fins.filter((f) => SIDINGS.includes(f));
     if (roof.length) notes = notes.map((n) => n.replace("ASPHALT SHINGLES CLASS A", roof.map((f) => f.en.toUpperCase()).join(" / ") + ", INSTALLED PER MANUFACTURER"));
@@ -65,11 +68,13 @@ export function PermitSide({ ed, content, level, set = [] }: { ed: Editor; conte
   const lv = ed.project.levels[level];
   let tables: ReactNode = null;
   if (content === "found") {
+    const fdn = foundationType(ed.project);
     tables = <>
+      <h4>Foundation: {fdn.en}</h4>
       <h4>Footing schedule</h4>
       <table><thead><tr><th>Mark</th><th>Size</th><th>Reinforcing</th></tr></thead><tbody>
-        <tr><td><b>F1</b></td><td>{feetInches(FOOTING_TYPES.F1.width)} x {feetInches(FOOTING_TYPES.F1.depth)}</td><td>(2) #4 CONT.</td></tr>
-        <tr><td><b>F2</b></td><td>{feetInches(FOOTING_TYPES.F2.width)} x {feetInches(FOOTING_TYPES.F2.depth)}</td><td>(1) #4 CONT.</td></tr>
+        <tr><td><b>F1</b></td><td>{feetInches(fdn.ext.w)} x {feetInches(fdn.ext.d)}{fdn.id === "pier" ? " PAD" : ""}</td><td>{fdn.ext.bars}</td></tr>
+        {fdn.int && <tr><td><b>F2</b></td><td>{feetInches(fdn.int.w)} x {feetInches(fdn.int.d)}{fdn.id === "crawl" || fdn.id === "basement" ? " PAD" : ""}</td><td>{fdn.int.bars}</td></tr>}
       </tbody></table>
     </>;
   } else if (content === "floorfr") {
@@ -138,11 +143,11 @@ export function PermitSide({ ed, content, level, set = [] }: { ed: Editor; conte
       <table><tbody>{ABBREVIATIONS.map(([k, v]) => <tr key={k}><td><b>{k}</b></td><td>{v}</td></tr>)}</tbody></table>
     </>;
   }
-  const notes = notesFor(content, ed.project.levels);
+  const notes = notesFor(content, ed.project.levels, ed.project.foundation);
   return (
     <div className="tables">
       {tables}
-      <SheetLegend content={content} finishes={usedFinishes(ed.project.levels)} />
+      <SheetLegend content={content} finishes={usedFinishes(ed.project.levels)} foundation={ed.project.foundation} />
       {notes && <><h4>{isDetails(content) ? "Notes" : `${SHEET_TITLES[content]?.en ?? ""} notes`}</h4><NotesList notes={notes} /></>}
     </div>
   );

@@ -7,7 +7,8 @@ import type { Opening, Wall } from "../core/model";
 import { openingStyle } from "../core/openingStyles";
 import { finish, gableWall, outward, roofFinish, type Finish } from "../core/finishes";
 import { finishTile } from "./finishTextures";
-import { framing, type MemberKind } from "../core/framing";
+import { framing, MEMBER_COLOR, type Member } from "../core/framing";
+import { foundation, gradeLevel } from "../core/foundation";
 import type { Editor } from "./Editor";
 
 /** Modelo 3D generado a partir de la planta. Se reconstruye en cada cambio. */
@@ -131,7 +132,6 @@ export class Viewer3D {
 
   /** Vista de la estructura: solo las piezas de madera y las zapatas, sobre las losas en transparencia. */
   private buildFraming() {
-    const COLOR: Record<MemberKind, string> = { footing: "#b3b0a8", plate: "#c99b62", stud: "#e2c08f", header: "#a8763f", joist: "#d6ad74", rafter: "#d9b27c", ridge: "#9c6c3a" };
     const ghost = new THREE.MeshStandardMaterial({ color: 0xb9b6ae, transparent: true, opacity: 0.25, roughness: 1, depthWrite: false });
     for (const lv of this.ed.project.levels) for (const sl of lv.slabs) {
       if (sl.pts.length < 3) continue;
@@ -140,11 +140,16 @@ export class Viewer3D {
       mesh.rotation.x = Math.PI / 2; mesh.position.y = lv.elev;
       this.group.add(mesh);
     }
+    this.members(framing(this.ed.project));
+  }
+
+  /** Piezas como cajas orientadas: las verticales según su muro, las demás apuntando de a a b. */
+  private members(ms: Member[]) {
     const unit = new THREE.BoxGeometry(1, 1, 1), edges = new THREE.EdgesGeometry(unit), tmp = new THREE.Vector3();
-    for (const m of framing(this.ed.project)) {
+    for (const m of ms) {
       const A = new THREE.Vector3(m.a.x, m.a.z, m.a.y), B = new THREE.Vector3(m.b.x, m.b.z, m.b.y), L = A.distanceTo(B);
       if (L < 1e-3) continue;
-      const mesh = new THREE.Mesh(unit, this.mepMat(COLOR[m.kind]));
+      const mesh = new THREE.Mesh(unit, this.mepMat(MEMBER_COLOR[m.kind]));
       mesh.position.copy(A).add(B).multiplyScalar(0.5);
       if (m.along) {
         // montante: alto en y, w a lo largo del muro y h a través
@@ -270,11 +275,17 @@ export class Viewer3D {
     };
     const b = projectBounds(this.ed);
     const floor = new THREE.Mesh(new THREE.BoxGeometry(b.x1 - b.x0, 0.1, b.y1 - b.y0), this.mat.floor);
-    floor.position.set((b.x0 + b.x1) / 2, -0.32, (b.y0 + b.y1) / 2);
+    floor.position.set((b.x0 + b.x1) / 2, gradeLevel(project) - 0.05, (b.y0 + b.y1) / 2);
     floor.receiveShadow = true;
     this.group.add(floor);
     // en la vista de estructura el terreno baja para que se vean las zapatas
-    if (this.ed.framing) { floor.position.y = -0.75; this.buildFraming(); this.dirty = true; return; }
+    if (this.ed.framing) {
+      const zs = foundation(project).flatMap((m) => [m.a.z - m.h / 2, m.b.z - m.h / 2]);
+      floor.position.y = Math.min(-0.75, ...zs) - 0.1;
+      this.buildFraming(); this.dirty = true; return;
+    }
+    // la cimentación se ve donde asoma sobre el terreno (block del crawl space, pilares)
+    if (vis.losas) this.members(foundation(project).filter((m) => m.kind !== "joist" && m.kind !== "plate" && m.kind !== "slab"));
 
     project.levels.forEach((m, li) => {
       base = m.elev;

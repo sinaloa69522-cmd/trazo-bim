@@ -348,3 +348,5 @@ dialog .err{color:var(--danger);font-size:13px}
 .framelegend td{padding:1px 4px;white-space:nowrap}
 .framelegend td.r{text-align:right;font-family:var(--f-mono)}
 .framelegend i{display:inline-block;width:10px;height:10px;border-radius:2px;border:1px solid rgba(0,0,0,.25);vertical-align:-1px}
+.fingrid.fdn{grid-template-columns:repeat(3,1fr)}
+.fingrid.fdn button{aspect-ratio:auto;padding:2px 0}

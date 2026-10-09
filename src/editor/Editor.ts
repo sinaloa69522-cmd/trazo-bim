@@ -14,6 +14,7 @@ import { extend, offset, trim, type Linear } from "../core/modify";
 import { GENERIC, wallType } from "../core/wallTypes";
 import { finish } from "../core/finishes";
 import { openingStyle } from "../core/openingStyles";
+import { foundationType, type FoundationKind } from "../core/foundation";
 import { computeRooms, RC, roomAt, type RoomGrid } from "../core/rooms";
 import { hatchArea, hatchPattern, inHatch, maskLoops, IMPORTED } from "../core/hatch";
 import { deleteElements, reflection, scaling, transformElements, translation, type Xform } from "../core/transform";
@@ -149,6 +150,13 @@ export class Editor {
     this.modelListeners.forEach((f) => f());
     this.emit();
   }
+  /** Tipo de cimentación de la planta baja. */
+  setFoundation(k: FoundationKind) {
+    this.edit(() => { this.project.foundation = k; });
+    this.message = `Cimentación: ${foundationType(this.project).name.toLowerCase()}. Mírala con Estructura en el 3D o en la lámina S-101.`;
+    this.emit();
+  }
+
   /** El 3D muestra la estructura de madera (framing) en lugar de los acabados. */
   framing = false;
   toggleFraming() {

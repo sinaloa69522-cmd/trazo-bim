@@ -3,6 +3,8 @@
 import type { Pt } from "../core/geometry";
 import { anchorBolts, footings, headers, hvac, isExterior, joistBays, roofFraming, site, studs, type Seg2 } from "../core/permit";
 import { feetInches } from "../core/units";
+import { foundation, foundationType } from "../core/foundation";
+import type { Member } from "../core/framing";
 import type { Editor } from "./Editor";
 
 export type PermitPlan = "site" | "found" | "floorfr" | "wallfr" | "rooffr" | "hvac";
@@ -55,27 +57,82 @@ function callout(ctx: CanvasRenderingContext2D, ed: Editor, at: Pt, dx: number, 
   label(ctx, text, s.x + dx + Math.sign(dx || 1) * 8, s.y + dy, 7, dx < 0 ? "right" : "left");
 }
 
+/** Planta de la cimentación a partir de sus piezas: zapatas a trazos, muros de block o concreto rayados, pilares y vigas. */
+function foundationPlan(ctx: CanvasRenderingContext2D, ed: Editor, ms: Member[]) {
+  const rect = (m: Member) => {
+    const dx = m.b.x - m.a.x, dy = m.b.y - m.a.y, L = Math.hypot(dx, dy) || 1, nx = (-dy / L) * (m.w / 2), ny = (dx / L) * (m.w / 2);
+    return [{ x: m.a.x + nx, y: m.a.y + ny }, { x: m.b.x + nx, y: m.b.y + ny }, { x: m.b.x - nx, y: m.b.y - ny }, { x: m.a.x - nx, y: m.a.y - ny }];
+  };
+  for (const m of ms.filter((x) => x.kind === "footing")) { poly(ctx, ed, rect(m)); ctx.setLineDash([5, 3]); ctx.lineWidth = 0.8; ctx.strokeStyle = INK; ctx.stroke(); ctx.setLineDash([]); }
+  for (const m of ms.filter((x) => x.kind === "foundation")) {
+    poly(ctx, ed, rect(m)); ctx.fillStyle = "#d9d9d9"; ctx.fill();
+    ctx.save(); ctx.clip();
+    // rayado cruzado del block / concreto
+    const s = ed.toS(m.a.x, m.a.y), q = ed.toS(m.b.x, m.b.y), r = Math.hypot(q.x - s.x, q.y - s.y) + 20;
+    ctx.beginPath();
+    for (let k = -r; k < r; k += 4) { ctx.moveTo(s.x + k, s.y - r); ctx.lineTo(s.x + k + 2 * r, s.y + r); }
+    ctx.lineWidth = 0.3; ctx.strokeStyle = INK; ctx.stroke(); ctx.restore();
+    poly(ctx, ed, rect(m)); ctx.lineWidth = 0.9; ctx.strokeStyle = INK; ctx.stroke();
+  }
+  for (const m of ms.filter((x) => x.kind === "girder" && !x.along)) {
+    const a = ed.toS(m.a.x, m.a.y), b = ed.toS(m.b.x, m.b.y);
+    ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.setLineDash([10, 4]); ctx.lineWidth = 2.2; ctx.strokeStyle = INK; ctx.stroke(); ctx.setLineDash([]);
+  }
+  // pilares y columnas: cuadro relleno (o círculo la columna de acero)
+  for (const m of ms.filter((x) => x.along && (x.kind === "pier" || x.kind === "girder"))) {
+    const s = ed.toS(m.a.x, m.a.y), h = Math.max(2.5, (m.w * ed.view.scale) / 2);
+    ctx.beginPath();
+    if (m.kind === "girder") ctx.arc(s.x, s.y, h, 0, Math.PI * 2); else ctx.rect(s.x - h, s.y - h, 2 * h, 2 * h);
+    ctx.fillStyle = "#555"; ctx.fill(); ctx.lineWidth = 0.6; ctx.strokeStyle = INK; ctx.stroke();
+  }
+}
+
 export function drawPermitOverlay(ctx: CanvasRenderingContext2D, ed: Editor, kind: PermitPlan, _W: number) {
   const m = ed.model;
   ctx.save();
   ctx.lineCap = "butt";
   if (kind === "found") {
+    const fdn = foundationType(ed.project), ground = ed.active === 0;
     const fs = footings(m);
-    for (const f of fs) { poly(ctx, ed, f.poly); ctx.setLineDash([5, 3]); ctx.lineWidth = 0.8; ctx.strokeStyle = INK; ctx.stroke(); ctx.setLineDash([]); }
+    if (ground && fdn.id !== "slab" && fdn.id !== "monolithic") foundationPlan(ctx, ed, foundation(ed.project));
+    else for (const f of fs) { poly(ctx, ed, f.poly); ctx.setLineDash([5, 3]); ctx.lineWidth = 0.8; ctx.strokeStyle = INK; ctx.stroke(); ctx.setLineDash([]); }
     for (const p of anchorBolts(m)) {
       const s = ed.toS(p.x, p.y);
       ctx.beginPath(); ctx.arc(s.x, s.y, 2.2, 0, Math.PI * 2); ctx.moveTo(s.x - 3.5, s.y); ctx.lineTo(s.x + 3.5, s.y); ctx.moveTo(s.x, s.y - 3.5); ctx.lineTo(s.x, s.y + 3.5);
       ctx.lineWidth = 0.6; ctx.strokeStyle = INK; ctx.stroke();
     }
-    // una marca por muro, en su punto medio
+    // una marca por muro, en su punto medio (los interiores sin zapata corrida no la llevan)
     for (const f of fs) {
+      if (f.mark === "F2" && (fdn.id === "crawl" || fdn.id === "basement")) continue;
       const w = f.wall, mid = { x: (w.x1 + w.x2) / 2, y: (w.y1 + w.y2) / 2 }, s = ed.toS(mid.x, mid.y);
       ctx.beginPath(); ctx.ellipse(s.x, s.y, 9, 5.5, 0, 0, Math.PI * 2); ctx.fillStyle = "#fff"; ctx.fill(); ctx.lineWidth = 0.6; ctx.strokeStyle = INK; ctx.stroke();
-      label(ctx, f.mark, s.x, s.y, 7);
+      label(ctx, fdn.id === "pier" ? "F1" : f.mark, s.x, s.y, 7);
     }
     const g = ed.rooms;
     const big = g ? m.rooms.map((r) => g.rooms.get(r.id)).filter((c) => c?.ok).sort((a, b) => b!.area - a!.area)[0] : null;
-    if (big) { const s = ed.toS(big.cx, big.cy + 0.9); label(ctx, `4" CONC. SLAB ON GRADE`, s.x, s.y, 8); label(ctx, "OVER 6 MIL V.B. OVER 4\" GRAVEL", s.x, s.y + 10, 7); }
+    const LBL: Record<string, [string, string]> = {
+      slab: [`4" CONC. SLAB ON GRADE`, `OVER 6 MIL V.B. OVER 4" GRAVEL`],
+      monolithic: [`4" MONOLITHIC SLAB`, `12" x 18" TURNED-DOWN EDGE`],
+      stemwall: [`4" CONC. SLAB OVER COMPACTED FILL`, `8" CMU STEM WALL AT PERIMETER`],
+      crawl: ["CRAWL SPACE", "6 MIL POLY GROUND COVER, 18\" MIN CLEAR"],
+      basement: ["BASEMENT", `4" CONC. SLAB, 8'-0" CLEAR`],
+      pier: ["CRAWL SPACE (PIER & BEAM)", "18\" MIN CLEAR TO JOISTS"],
+    };
+    if (big) { const s = ed.toS(big.cx, big.cy + 0.9), [a, b] = LBL[ground ? fdn.id : "slab"]; label(ctx, a, s.x, s.y, 8); label(ctx, b, s.x, s.y + 10, 7); }
+    if (ground && (fdn.id === "crawl" || fdn.id === "pier")) {
+      // acceso al crawl space en el muro exterior más largo y ventilaciones cerca de las esquinas
+      const ext = m.walls.filter(isExterior).sort((a, b) => Math.hypot(b.x2 - b.x1, b.y2 - b.y1) - Math.hypot(a.x2 - a.x1, a.y2 - a.y1));
+      if (ext[0]) { const w = ext[0], L = Math.hypot(w.x2 - w.x1, w.y2 - w.y1); callout(ctx, ed, { x: w.x1 + (w.x2 - w.x1) * 0.5, y: w.y1 + (w.y2 - w.y1) * 0.5 }, 18, 26, `18" x 24" CRAWL ACCESS`); void L; }
+      for (const w of ext) {
+        const L = Math.hypot(w.x2 - w.x1, w.y2 - w.y1);
+        if (L < 2) continue;
+        for (const t of [0.9 / L, 1 - 0.9 / L]) {
+          const s = ed.toS(w.x1 + (w.x2 - w.x1) * t, w.y1 + (w.y2 - w.y1) * t);
+          ctx.beginPath(); ctx.rect(s.x - 4, s.y - 4, 8, 8); ctx.fillStyle = "#fff"; ctx.fill(); ctx.lineWidth = 0.6; ctx.strokeStyle = INK; ctx.stroke();
+          label(ctx, "V", s.x, s.y, 6);
+        }
+      }
+    }
   } else if (kind === "floorfr") {
     const above = ed.project.levels[ed.active + 1];
     for (const bay of joistBays(m, above ? "floor" : "ceiling", ed.rooms)) {

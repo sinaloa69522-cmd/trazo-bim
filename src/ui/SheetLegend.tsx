@@ -123,6 +123,8 @@ const S = {
   batt: () => <Sym><rect x={1} y={0.8} width={12} height={3.4} strokeWidth={0.12} /><path d="M1 4.2L2 .8 3 4.2 4 .8 5 4.2 6 .8 7 4.2 8 .8 9 4.2 10 .8 11 4.2 12 .8 13 4.2" strokeWidth={0.12} /></Sym>,
   lumber: () => <Sym><rect x={1} y={1} width={12} height={3} strokeWidth={0.15} /><path d="M1 1l12 3M1 4l12-3" strokeWidth={0.12} /></Sym>,
   cmu: () => <CrossHatch />,
+  pier: () => <Sym><rect x={4.5} y={0.5} width={4} height={4} strokeDasharray=".6 .4" strokeWidth={0.15} /><rect x={5.5} y={1.5} width={2} height={2} fill="#9d9a92" strokeWidth={0.15} /></Sym>,
+  girder: () => <Sym><path d="M1 2.5h12" strokeWidth={0.6} strokeDasharray="2 .8" /></Sym>,
   sheathing: () => <Sym><rect x={1} y={2} width={12} height={1} fill="#c9b48a" strokeWidth={0.12} /></Sym>,
 };
 
@@ -257,8 +259,15 @@ export function FinishSym({ f }: { f: Finish }) {
 }
 
 /** Bloque «Leyenda y símbolos» de una lámina; nada si la lámina no tiene símbolos propios. En los alzados se añaden los acabados del proyecto. */
-export function SheetLegend({ content, finishes = [] }: { content: string; finishes?: Finish[] }) {
-  const rows = ROWS[content];
+export function SheetLegend({ content, finishes = [], foundation }: { content: string; finishes?: Finish[]; foundation?: string }) {
+  let rows = ROWS[content];
+  // el plano de cimentación suma los muros de block o concreto, pilares y vigas según el tipo
+  if (content === "found" && foundation && foundation !== "slab" && foundation !== "monolithic") rows = [
+    ...rows.slice(0, 2),
+    ...(foundation !== "pier" ? [[S.cmu, foundation === "basement" ? "Muro de concreto" : "Muro de block", foundation === "basement" ? "8\" CONC. FOUNDATION WALL" : "8\" CMU FOUNDATION / STEM WALL"] as Row] : []),
+    ...(foundation !== "stemwall" ? [[S.pier, "Pilar o columna con zapata aislada", "PIER / COLUMN ON PAD FOOTING"] as Row, [S.girder, "Viga (girder)", "(3) 2x10 GIRDER ABOVE"] as Row] : []),
+    ...rows.slice(2).filter((r) => foundation === "stemwall" || foundation === "basement" || r[0] !== S.slab),
+  ];
   if (!rows) return null;
   const fins = content === "fach" || content === "elev" ? finishes : [];
   return <>
