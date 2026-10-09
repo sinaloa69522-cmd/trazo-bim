@@ -1,6 +1,9 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { allSections, elevation, FACADES, section, type Elevation } from "../core/elevation";
 import { bounds } from "../core/geometry";
+import type { Model } from "../core/model";
+import { computeRooms } from "../core/rooms";
 import { levelMarks, openingSchedule, roomSchedule, wallSchedule } from "../core/schedules";
 import type { Editor } from "../editor/Editor";
 import { drawElevation } from "../editor/elevationRenderer";
@@ -23,8 +26,8 @@ const PAPER: PlanColors = {
 };
 
 /** Escala normalizada más grande en la que cabe la planta. */
-export function fitScale(ed: Editor) {
-  const b = bounds(ed.model), wm = b.x1 - b.x0, hm = b.y1 - b.y0;
+export function fitScale(m: Model) {
+  const b = bounds(m), wm = b.x1 - b.x0, hm = b.y1 - b.y0;
   return SCALES.find((d) => (wm * 1000) / d <= PLAN.w - 8 && (hm * 1000) / d <= PLAN.h - 8) ?? 1000;
 }
 
@@ -57,22 +60,40 @@ function ScaleBar({ den }: { den: number }) {
   );
 }
 
-export function SheetView({ ed }: { ed: Editor }) {
-  const canvas = useRef<HTMLCanvasElement>(null);
-  const host = useRef<HTMLDivElement>(null);
-  const [zoom, setZoom] = useState(1);
-  const [den, setDen] = useState<number | null>(null);
-  const [content, setContent] = useState<Content>("plan");
-  const secs = allSections(ed.project);
-  const views = content === "elev" ? FACADES.map((f) => ({ label: f.label, el: elevation(ed.project, f.id) }))
-    : content === "sec" ? secs.slice(0, 4).map((s) => ({ label: `Sección ${s.name}-${s.name}'`, el: section(ed.project, s) })) : [];
-  const autoScale = content === "plan" ? fitScale(ed) : fitElevScale(views.map((e) => e.el));
-  const scale = den ?? autoScale;
-  const p = ed.project, info = p.info, lv = ed.model;
-  const doors = openingSchedule(p, "door").types, windows = openingSchedule(p, "window").types, rooms = roomSchedule(p), walls = wallSchedule(p);
-  const sheetNo = `A-${String(content === "elev" ? p.levels.length + 1 : content === "sec" ? p.levels.length + 2 : ed.active + 1).padStart(2, "0")}`;
+type View = { label: string; el: Elevation };
 
-  // dibujo de la planta a escala, con la vista del editor cambiada solo mientras se dibuja
+/** Vistas que lleva una lámina de alzados o de secciones. */
+function viewsOf(ed: Editor, content: Content): View[] {
+  if (content === "elev") return FACADES.map((f) => ({ label: f.label, el: elevation(ed.project, f.id) }));
+  if (content === "sec") return allSections(ed.project).slice(0, 4).map((s) => ({ label: `Sección ${s.name}-${s.name}'`, el: section(ed.project, s) }));
+  return [];
+}
+
+/** Escala automática de una lámina. */
+function autoScaleOf(ed: Editor, content: Content, level: number) {
+  return content === "plan" ? fitScale(ed.project.levels[level]) : fitElevScale(viewsOf(ed, content).map((v) => v.el));
+}
+
+/**
+ * Dibuja con el editor puesto un momento en otro nivel (y con otra vista), para poder sacar
+ * la planta de cualquier nivel sin tocar lo que el usuario tiene en pantalla.
+ */
+function withLevel(ed: Editor, level: number, fn: () => void) {
+  const saved = { active: ed.active, rooms: ed.rooms, hover: ed.hover, view: { ...ed.view } };
+  ed.active = level; ed.hover = null;
+  if (level !== saved.active) ed.rooms = computeRooms(ed.model);
+  try { fn(); } finally { ed.active = saved.active; ed.rooms = saved.rooms; ed.hover = saved.hover; Object.assign(ed.view, saved.view); }
+}
+
+/** Una lámina A3 completa: dibujo, tablas y cajetín. */
+function Sheet({ ed, content, level, scale, zoom = 1 }: { ed: Editor; content: Content; level: number; scale: number; zoom?: number }) {
+  const canvas = useRef<HTMLCanvasElement>(null);
+  const p = ed.project, info = p.info, lv = p.levels[level];
+  const views = viewsOf(ed, content), secs = allSections(p);
+  const doors = openingSchedule(p, "door").types, windows = openingSchedule(p, "window").types, rooms = roomSchedule(p), walls = wallSchedule(p);
+  const sheetNo = `A-${String(content === "elev" ? p.levels.length + 1 : content === "sec" ? p.levels.length + 2 : level + 1).padStart(2, "0")}`;
+
+  // dibujo a escala; la planta usa la vista del editor cambiada solo mientras se dibuja
   useEffect(() => {
     const cv = canvas.current;
     if (!cv) return;
@@ -97,13 +118,97 @@ export function SheetView({ ed }: { ed: Editor }) {
       });
       return;
     }
-    const b = bounds(lv), s = (1000 / scale) * PX_MM, saved = { ...ed.view };
-    ed.view.scale = s;
-    ed.view.ox = W / 2 - ((b.x0 + b.x1) / 2) * s;
-    ed.view.oy = H / 2 - ((b.y0 + b.y1) / 2) * s;
-    try { drawPlan(ctx, ed, PAPER, W, H, { print: true, marks: levelMarks(p, ed.active) }); }
-    finally { Object.assign(ed.view, saved); }
+    withLevel(ed, level, () => {
+      const b = bounds(lv), s = (1000 / scale) * PX_MM;
+      ed.view.scale = s;
+      ed.view.ox = W / 2 - ((b.x0 + b.x1) / 2) * s;
+      ed.view.oy = H / 2 - ((b.y0 + b.y1) / 2) * s;
+      drawPlan(ctx, ed, PAPER, W, H, { print: true, marks: levelMarks(p, level) });
+    });
   });
+
+  return (
+    <article className="sheet" style={{ transform: `scale(${zoom})` }} aria-label={`Lámina ${sheetNo}`}>
+      <canvas ref={canvas} className="sheetplan" style={{ left: `${PLAN.x}mm`, top: `${PLAN.y}mm`, width: `${PLAN.w}mm`, height: `${PLAN.h}mm` }} />
+      <div className="viewtitle" style={{ left: `${PLAN.x + 6}mm`, top: `${PLAN.y + PLAN.h + 1}mm` }}>
+        <span className="vt-n">{content === "elev" ? "ALZADOS" : content === "sec" ? "SECCIONES" : lv.name.toUpperCase()}</span>
+        <span className="vt-s">E 1:{scale}{content === "plan" && ` · cota ${lv.elev >= 0 ? "+" : ""}${n2(lv.elev)}`}</span>
+        <ScaleBar den={scale} />
+      </div>
+      <aside className="sheetside" style={{ left: `${SHEET.w - FRAME - SIDE}mm`, top: `${FRAME}mm`, width: `${SIDE}mm`, height: `${SHEET.h - 2 * FRAME}mm` }}>
+        <div className="tables">
+          <h4>Puertas</h4>
+          <ScheduleTable rows={doors} kind="door" />
+          <h4>Ventanas</h4>
+          <ScheduleTable rows={windows} kind="window" />
+          <h4>Muros</h4>
+          {walls.length ? (
+            <table>
+              <thead><tr><th>Tipo</th><th className="r">Long. m</th><th className="r">Sup. m²</th></tr></thead>
+              <tbody>{walls.map((r) => <tr key={r.type}><td>{r.type}</td><td className="r">{n2(r.length)}</td><td className="r">{n2(r.area)}</td></tr>)}</tbody>
+            </table>
+          ) : <p className="empty">Sin muros.</p>}
+          <h4>Superficies útiles</h4>
+          {rooms.length ? (
+            <table>
+              <thead><tr><th>Nivel</th><th>Espacio</th><th className="r">m²</th></tr></thead>
+              <tbody>
+                {rooms.map((r, i) => <tr key={i}><td>{r.level}</td><td>{r.name}</td><td className="r">{n2(r.area)}</td></tr>)}
+                <tr className="tot"><td colSpan={2}>Total</td><td className="r">{n2(rooms.reduce((s, r) => s + r.area, 0))}</td></tr>
+              </tbody>
+            </table>
+          ) : <p className="empty">Sin habitaciones definidas.</p>}
+        </div>
+        <div className="cajetin">
+          <div className="c-proj"><small>Proyecto</small>{info.name || "—"}</div>
+          <div className="c-row">
+            <div><small>Plano</small>{content === "elev" ? "Alzados norte, sur, este y oeste" : content === "sec" ? (views.length ? `Secciones ${secs.slice(0, 4).map((x) => `${x.name}-${x.name}'`).join(", ")}` : "Secciones") : lv.name}</div>
+          </div>
+          <div className="c-row">
+            <div><small>Autor</small>{info.author || "—"}</div>
+            <div><small>Cliente</small>{info.client || "—"}</div>
+          </div>
+          <div className="c-row">
+            <div><small>Escala</small>1:{scale}</div>
+            <div><small>Fecha</small>{info.date}</div>
+            <div className="c-no"><small>Lámina</small>{sheetNo}</div>
+          </div>
+        </div>
+      </aside>
+      <div className="frame" />
+    </article>
+  );
+}
+
+/** Láminas del juego completo: la planta de cada nivel (todas a la misma escala), los alzados y las secciones. */
+export function sheetSet(ed: Editor): { content: Content; level: number; scale: number }[] {
+  const planScale = Math.max(...ed.project.levels.map((_, i) => autoScaleOf(ed, "plan", i)));
+  const set: { content: Content; level: number; scale: number }[] = ed.project.levels.map((_, i) => ({ content: "plan", level: i, scale: planScale }));
+  set.push({ content: "elev", level: 0, scale: autoScaleOf(ed, "elev", 0) });
+  if (allSections(ed.project).length) set.push({ content: "sec", level: 0, scale: autoScaleOf(ed, "sec", 0) });
+  return set;
+}
+
+export function SheetView({ ed }: { ed: Editor }) {
+  const host = useRef<HTMLDivElement>(null);
+  const [zoom, setZoom] = useState(1);
+  const [den, setDen] = useState<number | null>(null);
+  const [content, setContent] = useState<Content>("plan");
+  const [printSet, setPrintSet] = useState(false);
+  const secs = allSections(ed.project);
+  const autoScale = autoScaleOf(ed, content, ed.active);
+  const scale = den ?? autoScale;
+  const info = ed.project.info;
+
+  // juego completo: se montan todas las láminas fuera de la app, se imprime y se desmontan al terminar
+  useEffect(() => {
+    if (!printSet) return;
+    const root = document.documentElement, done = () => { root.classList.remove("print-set"); setPrintSet(false); };
+    root.classList.add("print-set");
+    window.addEventListener("afterprint", done, { once: true });
+    const t = window.setTimeout(() => window.print(), 50);
+    return () => { window.clearTimeout(t); window.removeEventListener("afterprint", done); root.classList.remove("print-set"); };
+  }, [printSet]);
 
   // la lámina se encaja en el hueco disponible
   useLayoutEffect(() => {
@@ -125,6 +230,7 @@ export function SheetView({ ed }: { ed: Editor }) {
         onBlur={(e) => { const v = e.target.value.trim(); if (v !== info[k]) ed.setInfo({ [k]: v }); }} />
     </label>
   );
+  const set = printSet ? sheetSet(ed) : [];
 
   return (
     <div className="sheetpane">
@@ -147,60 +253,18 @@ export function SheetView({ ed }: { ed: Editor }) {
           </select>
         </label>
         <button className="btn primary" onClick={() => window.print()} title="En el diálogo de impresión elige A3 horizontal o Guardar como PDF">Imprimir / PDF</button>
+        <button className="btn" onClick={() => setPrintSet(true)} disabled={printSet}
+          title="Todas las plantas, los alzados y las secciones en un solo PDF, una lámina por página">Juego completo</button>
       </div>
       <div className="sheethost" ref={host}>
         <div className="sheetfit" style={{ width: `${SHEET.w * PX_MM * zoom}px`, height: `${SHEET.h * PX_MM * zoom}px` }}>
-          <article className="sheet" style={{ transform: `scale(${zoom})` }} aria-label={`Lámina ${sheetNo}`}>
-            <canvas ref={canvas} className="sheetplan" style={{ left: `${PLAN.x}mm`, top: `${PLAN.y}mm`, width: `${PLAN.w}mm`, height: `${PLAN.h}mm` }} />
-            <div className="viewtitle" style={{ left: `${PLAN.x + 6}mm`, top: `${PLAN.y + PLAN.h + 1}mm` }}>
-              <span className="vt-n">{content === "elev" ? "ALZADOS" : content === "sec" ? "SECCIONES" : lv.name.toUpperCase()}</span>
-              <span className="vt-s">E 1:{scale}{content === "plan" && ` · cota ${lv.elev >= 0 ? "+" : ""}${n2(lv.elev)}`}</span>
-              <ScaleBar den={scale} />
-            </div>
-            <aside className="sheetside" style={{ left: `${SHEET.w - FRAME - SIDE}mm`, top: `${FRAME}mm`, width: `${SIDE}mm`, height: `${SHEET.h - 2 * FRAME}mm` }}>
-              <div className="tables">
-                <h4>Puertas</h4>
-                <ScheduleTable rows={doors} kind="door" />
-                <h4>Ventanas</h4>
-                <ScheduleTable rows={windows} kind="window" />
-                <h4>Muros</h4>
-                {walls.length ? (
-                  <table>
-                    <thead><tr><th>Tipo</th><th className="r">Long. m</th><th className="r">Sup. m²</th></tr></thead>
-                    <tbody>{walls.map((r) => <tr key={r.type}><td>{r.type}</td><td className="r">{n2(r.length)}</td><td className="r">{n2(r.area)}</td></tr>)}</tbody>
-                  </table>
-                ) : <p className="empty">Sin muros.</p>}
-                <h4>Superficies útiles</h4>
-                {rooms.length ? (
-                  <table>
-                    <thead><tr><th>Nivel</th><th>Espacio</th><th className="r">m²</th></tr></thead>
-                    <tbody>
-                      {rooms.map((r, i) => <tr key={i}><td>{r.level}</td><td>{r.name}</td><td className="r">{n2(r.area)}</td></tr>)}
-                      <tr className="tot"><td colSpan={2}>Total</td><td className="r">{n2(rooms.reduce((s, r) => s + r.area, 0))}</td></tr>
-                    </tbody>
-                  </table>
-                ) : <p className="empty">Sin habitaciones definidas.</p>}
-              </div>
-              <div className="cajetin">
-                <div className="c-proj"><small>Proyecto</small>{info.name || "—"}</div>
-                <div className="c-row">
-                  <div><small>Plano</small>{content === "elev" ? "Alzados norte, sur, este y oeste" : content === "sec" ? (views.length ? `Secciones ${secs.slice(0, 4).map((x) => `${x.name}-${x.name}'`).join(", ")}` : "Secciones") : lv.name}</div>
-                </div>
-                <div className="c-row">
-                  <div><small>Autor</small>{info.author || "—"}</div>
-                  <div><small>Cliente</small>{info.client || "—"}</div>
-                </div>
-                <div className="c-row">
-                  <div><small>Escala</small>1:{scale}</div>
-                  <div><small>Fecha</small>{info.date}</div>
-                  <div className="c-no"><small>Lámina</small>{sheetNo}</div>
-                </div>
-              </div>
-            </aside>
-            <div className="frame" />
-          </article>
+          <Sheet ed={ed} content={content} level={ed.active} scale={scale} zoom={zoom} />
         </div>
       </div>
+      {printSet && createPortal(
+        <div className="printset">{set.map((s) => <Sheet key={`${s.content}-${s.level}`} ed={ed} content={s.content} level={s.level} scale={s.scale} />)}</div>,
+        document.body,
+      )}
     </div>
   );
 }

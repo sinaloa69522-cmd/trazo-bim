@@ -168,7 +168,14 @@ dialog .acts span{margin-right:auto;color:var(--muted);font-size:12px}
   body *{visibility:hidden}
   .sheet,.sheet *{visibility:visible}
   .sheet{position:fixed;left:0;top:0;transform:none!important;box-shadow:none}
+  /* juego completo: una lámina por página, la app desaparece */
+  html.print-set,html.print-set body{height:auto!important;overflow:visible!important}
+  html.print-set #root{display:none!important}
+  html.print-set .printset{display:block}
+  html.print-set .printset .sheet{position:relative;break-after:page;page-break-after:always}
+  html.print-set .printset .sheet:last-child{break-after:auto;page-break-after:auto}
 }
+.printset{display:none}
 .group.exp{align-items:center}
 .group .glbl{padding:0 4px 0 8px;font-size:12px;color:var(--muted)}
 .catalog{display:grid;grid-template-columns:1fr 1fr;gap:4px}
