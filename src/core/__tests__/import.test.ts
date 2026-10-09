@@ -1,7 +1,7 @@
 import { readFileSync } from "fs";
 import { describe, expect, it } from "vitest";
 import { Editor } from "../../editor/Editor";
-import { arcPoints, bulgePoints, dwgSegments, type DwgDatabaseLike } from "../cadImport";
+import { arcPoints, bulgePoints, dwgSegments, plainText, type DwgDatabaseLike } from "../cadImport";
 import { pdfToMeters, pdfVectorSegments, type PdfOps } from "../pdfImport";
 import { readProjectImages } from "../projectFile";
 
@@ -52,7 +52,53 @@ describe("importar DWG", () => {
     expect(near(d.a.x, 2) && near(d.a.y, -1) && near(d.b.x, 2) && near(d.b.y, -3)).toBe(true);
     // la capa 0 dentro del bloque toma la de la inserción
     expect(d.layer).toBe("PUERTAS");
-    expect(r.skipped.TEXT).toBe(1);
+    expect(r.skipped).toEqual({});
+    expect(r.texts).toBeUndefined();
+  });
+
+  it("importa textos, atributos de los símbolos y cotas", () => {
+    const db: DwgDatabaseLike = {
+      header: { INSUNITS: 6 },
+      tables: { BLOCK_RECORD: { entries: [
+        { name: "*Model_Space", handle: "1F" },
+        // símbolo con un texto fijo dentro, insertado girado 90°
+        { name: "NORTE", handle: "B0", entities: [{ type: "TEXT", layer: "0", text: "N", startPoint: { x: 1, y: 0 }, textHeight: 0.2, rotation: 0 }] },
+        // bloque anónimo de una cota: la línea y el texto con la medida
+        { name: "*D1", handle: "B1", entities: [
+          { type: "LINE", layer: "0", startPoint: { x: 0, y: 1 }, endPoint: { x: 4, y: 1 } },
+          { type: "MTEXT", layer: "0", text: "\\A1;4.00", insertionPoint: { x: 2, y: 1.1 }, textHeight: 0.25, attachmentPoint: 8 },
+        ] },
+      ] } },
+      entities: [
+        { type: "TEXT", layer: "T", ownerBlockRecordSoftId: "1F", text: "%%c12", startPoint: { x: 0, y: 0 }, textHeight: 0.5, rotation: 0 },
+        // centrado en (10, 0): empieza medio ancho a la izquierda
+        { type: "TEXT", layer: "T", ownerBlockRecordSoftId: "1F", text: "AB", startPoint: { x: 0, y: 0 }, endPoint: { x: 10, y: 0 }, textHeight: 1, halign: 1 },
+        { type: "MTEXT", layer: "T", ownerBlockRecordSoftId: "1F", text: "{\\fArial|b1;Salón}\\Pcomedor", insertionPoint: { x: 0, y: 10 }, textHeight: 0.3, attachmentPoint: 1 },
+        { type: "INSERT", layer: "S", ownerBlockRecordSoftId: "1F", name: "NORTE", insertionPoint: { x: 5, y: 5 }, rotation: Math.PI / 2,
+          attribs: [{ type: "ATTRIB", layer: "0", text: { text: "PB-01", startPoint: { x: 5, y: 4 }, textHeight: 0.2, rotation: 0 } }] },
+        { type: "DIMENSION", layer: "COTAS", ownerBlockRecordSoftId: "1F", name: "*D1" },
+      ],
+    };
+    const r = dwgSegments(db), t = (s: string) => r.texts!.find((x) => x.text === s)!;
+    expect(r.texts!.map((x) => x.text).sort()).toEqual(["4.00", "AB", "N", "PB-01", "Salón", "comedor", "Ø12"].sort());
+    expect(r.segments).toHaveLength(1);
+    expect(t("Ø12")).toMatchObject({ x: 0, size: 0.5, rot: 0 });
+    expect(t("AB").x).toBeCloseTo(10 - 0.6);
+    // el párrafo: primera línea bajo el punto de inserción (Y de la planta hacia abajo) y la segunda debajo
+    expect(t("Salón").y).toBeCloseTo(-10 + 0.3);
+    expect(t("comedor").y).toBeGreaterThan(t("Salón").y);
+    // el texto del símbolo gira con él
+    expect(t("N").rot).toBeCloseTo(90);
+    expect(t("N").x).toBeCloseTo(5);
+    expect(t("N").y).toBeCloseTo(-6);
+    expect(t("PB-01").layer).toBe("S");
+    expect(t("4.00").layer).toBe("COTAS");
+  });
+
+  it("limpia los códigos de formato de AutoCAD", () => {
+    expect(plainText("{\\fArial|b0|i0;\\H0.7x;Planta} \\Pbaja")).toBe("Planta\nbaja");
+    expect(plainText("1\\S1^2;")).toBe("11/2");
+    expect(plainText("%%p0.00 %%d")).toBe("±0.00 °");
   });
 
   it("lee un DWG real con LibreDWG", async () => {
@@ -62,11 +108,11 @@ describe("importar DWG", () => {
     const data = lib.dwg_read_data(buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength), Dwg_File_Type.DWG)!;
     const r = dwgSegments(lib.convert(data) as unknown as DwgDatabaseLike);
     lib.dwg_free(data);
-    // muestra de LibreDWG: tres líneas, una polilínea y un círculo, en mm
+    // muestra de LibreDWG: tres líneas, una polilínea, un círculo y un texto, en mm
     expect(r.unitsLabel).toBe("mm");
     expect(r.segments.length).toBeGreaterThan(36);
-    // los textos no se importan, pero se cuentan
-    expect(r.skipped).toEqual({ TEXT: 1 });
+    expect(r.texts).toHaveLength(1);
+    expect(r.skipped).toEqual({});
     expect(r.segments.every((s) => [s.a.x, s.a.y, s.b.x, s.b.y].every(Number.isFinite))).toBe(true);
   }, 30000);
 });
