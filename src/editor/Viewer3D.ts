@@ -133,6 +133,7 @@ export class Viewer3D {
       if (vis.losas) for (const sl of m.slabs) {
         if (sl.pts.length < 3) continue;
         const shape = new THREE.Shape(sl.pts.map((p) => new THREE.Vector2(p.x, p.y)));
+        for (const h of sl.holes) shape.holes.push(new THREE.Path(h.map((p) => new THREE.Vector2(p.x, p.y))));
         const g = new THREE.ExtrudeGeometry(shape, { depth: sl.thick, bevelEnabled: false });
         const mesh = new THREE.Mesh(g, isSel("slab", sl.id) ? this.mat.sel : this.mat.slab);
         mesh.rotation.x = Math.PI / 2; // (x, y) de la planta pasa a (x, z); la extrusión baja

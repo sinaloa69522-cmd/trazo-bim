@@ -1,4 +1,4 @@
-import { bounds, dimOffset, dir, distSeg, dimGeom, fits, loc, pointInPolygon, polygonArea, roofGeom, stairSteps, type Pt } from "../core/geometry";
+import { bounds, dimOffset, dir, distSeg, dimGeom, fits, loc, onSlab, pointInPolygon, polygonArea, roofGeom, stairSteps, type Pt } from "../core/geometry";
 import {
   cloneModel, emptyProject, newLevel, nextId, nextSectionName, normalizeProject, sampleProject, type Level, type Project, type ProjectInfo,
   type LayerId, type Model, type RoofKind, type Wall,
@@ -9,7 +9,7 @@ import { extend, offset, trim, type Linear } from "../core/modify";
 import { computeRooms, roomAt, type RoomGrid } from "../core/rooms";
 import { deleteElements, reflection, transformElements, translation, type Xform } from "../core/transform";
 
-export type Tool = "select" | "wall" | "door" | "window" | "line" | "dim" | "room" | "move" | "copy" | "mirror" | "trim" | "extend" | "offset" | "slab" | "roof" | "stair" | "furniture" | "section";
+export type Tool = "select" | "wall" | "door" | "window" | "line" | "dim" | "room" | "move" | "copy" | "mirror" | "trim" | "extend" | "offset" | "slab" | "roof" | "stair" | "furniture" | "section" | "hole";
 /** Herramientas que actúan pulsando directamente sobre un muro o una línea. */
 const PICK_TOOLS: Tool[] = ["trim", "extend", "offset"];
 /** Herramientas que actúan sobre la selección actual. */
@@ -44,7 +44,7 @@ const COMMANDS: Record<string, Tool> = {
   MO: "move", MOVER: "move", CO: "copy", COPIA: "copy", SI: "mirror", SIMETRIA: "mirror", "SIMETRÍA": "mirror",
   LO: "slab", LOSA: "slab", TR: "trim", RECORTAR: "trim", AL: "extend", ALARGAR: "extend", DE: "offset", DESFASE: "offset", EQ: "offset", EQUIDISTANCIA: "offset",
   CU: "roof", CUBIERTA: "roof", TEJADO: "roof", ES: "stair", ESCALERA: "stair", MB: "furniture", MOBILIARIO: "furniture", MUEBLE: "furniture",
-  SE: "section", SECCION: "section", "SECCIÓN": "section", CORTE: "section",
+  HL: "hole", HUECO: "hole", SE: "section", SECCION: "section", "SECCIÓN": "section", CORTE: "section",
 };
 
 /**
@@ -162,14 +162,17 @@ export class Editor {
     const top = Math.max(...this.project.levels.map((l) => l.elev));
     const elev = Math.round((Math.max(top, this.model.elev) + this.storyHeight()) * 100) / 100;
     const n = this.project.levels.length;
-    // la copia no lleva cubiertas (suelen pasar a la planta de arriba) ni secciones (cortan todo el edificio)
+    // la copia no lleva cubiertas (se mueven abajo) ni secciones (cortan todo el edificio)
     const content = copy ? { ...cloneModel(this.model), roofs: [], sections: [] } : undefined;
     const lv = newLevel(n === 1 ? "Planta 1" : `Planta ${n}`, elev, content);
+    // al copiar la planta más alta, su cubierta sube a la copia para seguir coronando el edificio
+    const src = this.model, moved = copy && src.elev >= top - 1e-6 ? src.roofs.length : 0;
+    if (moved) { lv.roofs = src.roofs; src.roofs = []; }
     this.project.levels.push(lv);
     this.project.levels.sort((a, b) => a.elev - b.elev);
     this.active = this.project.levels.indexOf(lv);
     this.sels = [];
-    this.message = copy ? `${lv.name} creada como copia, a ${elev.toFixed(2)} m.` : `${lv.name} creada a ${elev.toFixed(2)} m. El nivel de abajo se ve en gris como referencia.`;
+    this.message = copy ? `${lv.name} creada como copia, a ${elev.toFixed(2)} m.${moved ? " La cubierta ha subido a la nueva planta." : ""}` : `${lv.name} creada a ${elev.toFixed(2)} m. El nivel de abajo se ve en gris como referencia.`;
     this.changed();
   }
   renameLevel(name: string) { this.edit(() => { this.model.name = name; }); }
@@ -225,6 +228,7 @@ export class Editor {
       case "slab": return n < 3 ? `LOSA  Precisa ${n ? "siguiente" : "primer"} vértice del contorno:` : "LOSA  Siguiente vértice [Enter o clic en el primero cierra]:";
       case "roof": return n ? "CUBIERTA  Esquina opuesta del perímetro:" : `CUBIERTA  Primera esquina del perímetro (${ROOF_LABEL[d.roofKind].toLowerCase()}, ${d.pitch}°):`;
       case "stair": return n ? "ESCALERA  Punto de llegada (o longitud):" : `ESCALERA  Punto de arranque (ancho ${d.stairW.toFixed(2)} m):`;
+      case "hole": return n ? "HUECO  Esquina opuesta del hueco:" : "HUECO EN LOSA  Primera esquina del hueco (dentro de una losa):";
       case "section": return n ? "SECCIÓN  Punto final de la línea de corte (se mira a su izquierda):" : "SECCIÓN  Primer punto de la línea de corte:";
       case "furniture": return `MOBILIARIO  Haz clic para colocar ${furnitureDef(d.furnKind).label.toLowerCase()} [R gira 90°, Esc termina]:`;
       case "trim": return "RECORTAR  Haz clic en el tramo de muro o línea que quieres quitar:";
@@ -368,7 +372,7 @@ export class Editor {
       if (r) return r;
     }
     let x = wx, y = wy;
-    const orth = from && this.ortho && this.tool !== "roof" && (this.tool !== "dim" || this.draft?.pts.length === 1);
+    const orth = from && this.ortho && this.tool !== "roof" && this.tool !== "hole" && (this.tool !== "dim" || this.draft?.pts.length === 1);
     if (orth) { if (Math.abs(x - from!.x) > Math.abs(y - from!.y)) y = from!.y; else x = from!.x; }
     const g = (v: number) => Math.round(v * 10) / 10;
     if (orth && y === from!.y) x = g(x);
@@ -397,7 +401,7 @@ export class Editor {
       if (pointInPolygon({ x: wx, y: wy }, furnitureOutline(f))) take(0.15 + Math.hypot(wx - f.x, wy - f.y) * 0.01, { type: "furniture", id: f.id });
     if (!best && this.vis.hab) { const r = roomAt(m, this.rooms, wx, wy); if (r) best = { type: "room", id: r.id }; }
     if (!best && this.vis.cubiertas) for (const r of m.roofs) if (pointInPolygon({ x: wx, y: wy }, roofGeom(r).outline)) best = { type: "roof", id: r.id };
-    if (!best && this.vis.losas) for (const sl of m.slabs) if (pointInPolygon({ x: wx, y: wy }, sl.pts)) best = { type: "slab", id: sl.id };
+    if (!best && this.vis.losas) for (const sl of m.slabs) if (onSlab({ x: wx, y: wy }, sl)) best = { type: "slab", id: sl.id };
     return best;
   }
 
@@ -463,6 +467,16 @@ export class Editor {
         this.message = `Escalera de ${k.n} peldaños: huella ${(k.tread * 100).toFixed(0)} cm, contrahuella ${(k.riser * 100).toFixed(1)} cm.` +
           (k.tread < 0.25 ? " La huella es corta: alarga el tramo." : "");
       }
+      this.draft = null;
+      this.changed();
+      return;
+    }
+    if (this.tool === "hole") {
+      if (!this.draft) { this.draft = { pts: [p] }; this.emit(); return; }
+      const a = this.draft.pts[0];
+      if (Math.abs(p.x - a.x) < 0.1 || Math.abs(p.y - a.y) < 0.1) { this.log("El hueco necesita un rectángulo: elige la esquina opuesta."); return; }
+      const rect = [a, { x: p.x, y: a.y }, p, { x: a.x, y: p.y }].map((q) => ({ x: q.x, y: q.y }));
+      if (!this.addHole(m, rect)) { this.log("Dibuja el hueco dentro de una losa de este nivel."); return; }
       this.draft = null;
       this.changed();
       return;
@@ -609,7 +623,7 @@ export class Editor {
     const pts = this.draft?.pts ?? [];
     if (pts.length < 3) { this.log("Una losa necesita al menos 3 vértices."); return; }
     this.snapshot();
-    const sl = { id: nextId(this.model), pts: pts.map((p) => ({ ...p })), thick: this.defaults.slabThick };
+    const sl = { id: nextId(this.model), pts: pts.map((p) => ({ ...p })), thick: this.defaults.slabThick, holes: [] };
     this.model.slabs.push(sl);
     this.draft = null;
     this.sels = [{ type: "slab", id: sl.id }];
@@ -811,6 +825,44 @@ export class Editor {
     }
     this.rooms = computeRooms(this.model);
     this.refresh3d();
+  }
+
+  /**
+   * Añade un hueco a la losa del nivel que contiene su centro. Devuelve false si no hay ninguna.
+   * Guarda deshacer y deja la losa seleccionada; quien llama debe avisar del cambio.
+   */
+  private addHole(lv: Level, ring: Pt[]): boolean {
+    const c = { x: ring.reduce((s, q) => s + q.x, 0) / ring.length, y: ring.reduce((s, q) => s + q.y, 0) / ring.length };
+    const sl = lv.slabs.find((x) => onSlab(c, x));
+    if (!sl) return false;
+    this.snapshot();
+    sl.holes.push(ring);
+    if (lv === this.model) this.sels = [{ type: "slab", id: sl.id }];
+    this.message = `Hueco de ${polygonArea(ring).toFixed(2)} m² abierto en la losa${lv === this.model ? "" : ` de ${lv.name}`}.`;
+    return true;
+  }
+
+  /** Nivel inmediatamente por encima del activo, si lo hay. */
+  levelAbove(): Level | null {
+    const e = this.model.elev;
+    return this.project.levels.filter((l) => l.elev > e + 1e-6).sort((a, b) => a.elev - b.elev)[0] ?? null;
+  }
+
+  /** Abre en la losa del nivel de arriba un hueco con la huella de la escalera. */
+  openAboveStair(id: number) {
+    const st = this.model.stairs.find((x) => x.id === id), up = this.levelAbove();
+    if (!st) return;
+    if (!up) { this.log("No hay ningún nivel por encima. Crea uno con Nuevo nivel."); return; }
+    const { L } = dir(st), h = st.width / 2;
+    const ring = [loc(st, 0, -h), loc(st, L, -h), loc(st, L, h), loc(st, 0, h)];
+    if (!this.addHole(up, ring)) { this.log(`${up.name} no tiene ninguna losa sobre la escalera.`); return; }
+    this.changed();
+  }
+
+  /** Quita todos los huecos de una losa. */
+  clearHoles(id: number) {
+    const sl = this.model.slabs.find((x) => x.id === id);
+    if (sl?.holes.length) this.edit(() => { sl.holes = []; });
   }
 
   /** Invierte el sentido de una sección: se ve el otro lado del corte. */

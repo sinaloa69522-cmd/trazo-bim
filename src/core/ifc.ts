@@ -46,10 +46,12 @@ export function toIfc(p: Project, opts: { now?: Date; random?: () => number } = 
     const prof = add(`IFCRECTANGLEPROFILEDEF(.AREA.,$,${add(`IFCAXIS2PLACEMENT2D(${pt2(cx, cy)},$)`)},${f(a)},${f(b)})`);
     return add(`IFCEXTRUDEDAREASOLID(${prof},${add(`IFCAXIS2PLACEMENT3D(${pt3(0, 0, z0)},$,$)`)},${zAxis},${f(h)})`);
   };
-  /** Prisma de planta poligonal (coordenadas IFC) extruido desde z0 una altura h. */
-  const prism = (pts: { x: number; y: number }[], z0: number, h: number) => {
-    const ps = pts.map((q) => pt2(q.x, q.y));
-    const prof = add(`IFCARBITRARYCLOSEDPROFILEDEF(.AREA.,$,${add(`IFCPOLYLINE(${list([...ps, ps[0]])})`)})`);
+  /** Prisma de planta poligonal (coordenadas IFC), con huecos opcionales, extruido desde z0 una altura h. */
+  const prism = (pts: { x: number; y: number }[], z0: number, h: number, holes: { x: number; y: number }[][] = []) => {
+    const ring = (r: { x: number; y: number }[]) => { const ps = r.map((q) => pt2(q.x, q.y)); return add(`IFCPOLYLINE(${list([...ps, ps[0]])})`); };
+    const prof = holes.length
+      ? add(`IFCARBITRARYPROFILEDEFWITHVOIDS(.AREA.,$,${ring(pts)},${list(holes.map(ring))})`)
+      : add(`IFCARBITRARYCLOSEDPROFILEDEF(.AREA.,$,${ring(pts)})`);
     return add(`IFCEXTRUDEDAREASOLID(${prof},${add(`IFCAXIS2PLACEMENT3D(${pt3(0, 0, z0)},$,$)`)},${zAxis},${f(h)})`);
   };
   /** Superficies (caras planas) como modelo de superficies. */
@@ -101,7 +103,7 @@ export function toIfc(p: Project, opts: { now?: Date; random?: () => number } = 
     // losas: el contorno se extruye hacia abajo desde la cota del nivel
     for (const sl of lv.slabs) {
       if (sl.pts.length < 3) continue;
-      const rep = shape("SweptSolid", [prism(sl.pts.map((q) => ({ x: q.x, y: -q.y })), -sl.thick, sl.thick)]);
+      const rep = shape("SweptSolid", [prism(sl.pts.map((q) => ({ x: q.x, y: -q.y })), -sl.thick, sl.thick, sl.holes.map((h) => h.map((q) => ({ x: q.x, y: -q.y }))))]);
       contained.push(add(`IFCSLAB('${id()}',$,'Losa',$,$,${place(stPl)},${rep},$,.FLOOR.)`));
     }
 

@@ -1,5 +1,5 @@
 import { Fragment, useState } from "react";
-import { dimGeom, dir, fits, polygonArea, roofGeom, stairSteps } from "../core/geometry";
+import { dimGeom, dir, fits, polygonArea, roofGeom, slabArea, stairSteps } from "../core/geometry";
 import { FURNITURE, furnitureDef } from "../core/furniture";
 import { LAYERS, type Model, type RoofKind } from "../core/model";
 import { ROOF_LABEL, type Editor } from "../editor/Editor";
@@ -72,8 +72,12 @@ function Properties({ ed, onFocusCommand }: { ed: Editor; onFocusCommand: () => 
   } else if (sel && o && sel.type === "slab") {
     const sl = o as Model["slabs"][number];
     title = "Losa";
-    ro.push(["Superficie", `${num(polygonArea(sl.pts))} m²`], ["Vértices", String(sl.pts.length)]);
-    body = <NumberField id={`${key}-t`} label="Espesor (m)" value={sl.thick} onCommit={(v) => ed.edit(() => { sl.thick = v; })} />;
+    ro.push(["Superficie", `${num(slabArea(sl))} m²`], ["Vértices", String(sl.pts.length)]);
+    if (sl.holes.length) ro.push(["Huecos", `${sl.holes.length} (${num(sl.holes.reduce((s, h) => s + polygonArea(h), 0))} m²)`]);
+    body = <>
+      <NumberField id={`${key}-t`} label="Espesor (m)" value={sl.thick} onCommit={(v) => ed.edit(() => { sl.thick = v; })} />
+      {sl.holes.length > 0 && <button className="btn full" onClick={() => ed.clearHoles(sl.id)}>Quitar huecos</button>}
+    </>;
   } else if (sel && o && sel.type === "roof") {
     const r = o as Model["roofs"][number], g = roofGeom(r);
     title = `Cubierta ${ROOF_LABEL[r.kind].toLowerCase()}`;
@@ -93,6 +97,7 @@ function Properties({ ed, onFocusCommand }: { ed: Editor; onFocusCommand: () => 
     body = <>
       <NumberField id={`${key}-w`} label="Ancho (m)" value={st.width} onCommit={(v) => ed.edit(() => { st.width = v; })} />
       <NumberField id={`${key}-h`} label="Desnivel (m)" value={st.height} onCommit={(v) => ed.edit(() => { st.height = v; })} />
+      <button className="btn full" onClick={() => ed.openAboveStair(st.id)} title="Hueco con la huella de la escalera en la losa del nivel de arriba">Abrir hueco en la losa de arriba</button>
     </>;
   } else if (sel && o && sel.type === "furniture") {
     const f = o as Model["furniture"][number], d = furnitureDef(f.kind);

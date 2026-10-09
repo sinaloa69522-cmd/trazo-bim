@@ -118,6 +118,16 @@ export function polygonArea(poly: Pt[]) {
   return Math.abs(a) / 2;
 }
 
+/** Superficie neta de una losa: el contorno menos sus huecos. */
+export function slabArea(sl: { pts: Pt[]; holes: Pt[][] }) {
+  return polygonArea(sl.pts) - sl.holes.reduce((s, h) => s + polygonArea(h), 0);
+}
+
+/** ¿Cae el punto sobre la losa (dentro del contorno y fuera de los huecos)? */
+export function onSlab(p: Pt, sl: { pts: Pt[]; holes: Pt[][] }) {
+  return pointInPolygon(p, sl.pts) && !sl.holes.some((h) => pointInPolygon(p, h));
+}
+
 /** Punto 3D: x, y de la planta y z altura sobre la cota del nivel. */
 export interface P3 { x: number; y: number; z: number }
 

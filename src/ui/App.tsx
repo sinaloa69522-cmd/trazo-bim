@@ -18,6 +18,7 @@ const TOOLS: { tool: Tool; label: string; key: string; icon: JSX.Element }[] = [
   { tool: "dim", label: "Cota", key: "C", icon: <path d="M2 4v6M14 4v6M2 8h12M4 9.5l-2-1.5 2-1.5M12 6.5l2 1.5-2 1.5" /> },
   { tool: "room", label: "Habitación", key: "H", icon: <><rect x="2" y="2" width="12" height="12" /><path d="M5 7h6M5 10h4" /></> },
   { tool: "slab", label: "Losa", key: "LO", icon: <path d="M2 6l6-3 6 3-6 3zM2 6v3l6 3 6-3V6" /> },
+  { tool: "hole", label: "Hueco en losa", key: "HL", icon: <><path d="M2 5l6-3 6 3-6 3z" /><path d="M6 4.5l4 1.5M10 4.5l-4 1.5" /><path d="M2 5v3l6 3 6-3V5" /></> },
   { tool: "roof", label: "Cubierta", key: "CU", icon: <path d="M1.5 9L8 3.5 14.5 9M3.5 7.5V13h9V7.5" /> },
   { tool: "stair", label: "Escalera", key: "ES", icon: <path d="M2 14h3v-3h3V8h3V5h3V2" /> },
   { tool: "furniture", label: "Mobiliario", key: "MB", icon: <path d="M4 2v12M4 8h8v6M12 8V5M2 14h2" /> },

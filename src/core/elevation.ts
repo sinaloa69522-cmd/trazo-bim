@@ -79,12 +79,12 @@ function project(p: Project, fr: Frame): Elevation {
   const rect = (ua: number, ub: number, z0: number, z1: number, kind: FaceKind = "cut") => {
     if (ub - ua > 1e-6 && z1 - z0 > 1e-6) faces.push({ pts: [{ u: ua, z: z0 }, { u: ub, z: z0 }, { u: ub, z: z1 }, { u: ua, z: z1 }], depth: 0, kind, cut: true });
   };
-  /** Tramos (en u) en los que la línea de corte atraviesa el contorno en planta. */
-  const cutSpans = (base: Pt[]): [number, number][] => {
+  /** Tramos (en u) en los que la línea de corte atraviesa el contorno en planta (y sus huecos, por paridad). */
+  const cutSpans = (base: Pt[], holes: Pt[][] = []): [number, number][] => {
     if (!fr.cut) return [];
     const us: number[] = [];
-    base.forEach((a, i) => {
-      const b = base[(i + 1) % base.length], fa = ahead(a), fb = ahead(b);
+    for (const ring of [base, ...holes]) ring.forEach((a, i) => {
+      const b = ring[(i + 1) % ring.length], fa = ahead(a), fb = ahead(b);
       if ((fa < 0) !== (fb < 0)) { const t = fa / (fa - fb); us.push(view({ x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t }).u); }
     });
     us.sort((x, y) => x - y);
@@ -93,17 +93,17 @@ function project(p: Project, fr: Frame): Elevation {
     return out;
   };
   /** Prisma de base poligonal (en planta) entre dos alturas: caras laterales y, si se corta, su sección. */
-  const prism = (base: Pt[], z0: number, z1: number, kind: FaceKind, poche = true) => {
-    base.forEach((a, i) => {
-      const b = base[(i + 1) % base.length];
+  const prism = (base: Pt[], z0: number, z1: number, kind: FaceKind, poche = true, holes: Pt[][] = []) => {
+    for (const ring of [base, ...holes]) ring.forEach((a, i) => {
+      const b = ring[(i + 1) % ring.length];
       face([{ ...a, z: z0 }, { ...b, z: z0 }, { ...b, z: z1 }, { ...a, z: z1 }], kind);
     });
-    if (poche) for (const [ua, ub] of cutSpans(base)) rect(ua, ub, z0, z1);
+    if (poche) for (const [ua, ub] of cutSpans(base, holes)) rect(ua, ub, z0, z1);
   };
 
   for (const lv of p.levels) {
     const e = lv.elev;
-    for (const sl of lv.slabs) if (sl.pts.length >= 3) prism(sl.pts, e - sl.thick, e, "slab");
+    for (const sl of lv.slabs) if (sl.pts.length >= 3) prism(sl.pts, e - sl.thick, e, "slab", true, sl.holes);
     /** Muros cortados de este nivel, para dar espesor a los hastiales que se apoyan en ellos. */
     const wallCuts: { ua: number; ub: number; top: number }[] = [];
     for (const w of lv.walls) {
