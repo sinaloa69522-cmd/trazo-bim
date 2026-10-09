@@ -68,23 +68,38 @@ function texture(ctx: CanvasRenderingContext2D, f: EFace, X: Px, Y: Px, s: numbe
   const m = f.mat!;
   // [alto de hilada, largo de pieza, aparejo a matajunta]
   const P = { brick: [0.15, 0.3, true], block: [0.2, 0.4, true], concrete: [0.6, 1.2, false], tile: [0.25, 0, false] } as const;
-  if (!(m.hatch in P)) return;
-  const [rowH, len, bond] = P[m.hatch as keyof typeof P];
-  if (rowH * s < 3) return;
+  const fin = m.finish;
+  if (!fin && !(m.hatch in P)) return;
+  const [rowH, len, bond] = fin ? [fin.row ?? 0, fin.len ?? 0, !!fin.bond] : P[m.hatch as keyof typeof P];
   let u0 = Infinity, u1 = -Infinity, z0 = Infinity, z1 = -Infinity;
   for (const q of f.pts) { u0 = Math.min(u0, q.u); u1 = Math.max(u1, q.u); z0 = Math.min(z0, q.z); z1 = Math.max(z1, q.z); }
   ctx.save();
   ctx.clip();
   ctx.beginPath();
-  for (let i = Math.floor(z0 / rowH); i * rowH <= z1; i++) {
+  if (rowH * s >= 3) for (let i = Math.floor(z0 / rowH); i * rowH <= z1; i++) {
     const z = i * rowH, y = Y(z);
     ctx.moveTo(X(u0), y); ctx.lineTo(X(u1), y);
-    // juntas verticales, desplazadas media pieza en hiladas alternas
-    if (len && len * s >= 6) for (let u = Math.floor(u0 / len) * len + (bond && i % 2 ? len / 2 : 0); u <= u1; u += len) {
-      ctx.moveTo(X(u), y); ctx.lineTo(X(u), Y(z + rowH));
+    // juntas verticales, desplazadas media pieza en hiladas alternas (y algo irregulares en tejuelas y piedra)
+    if (len && len * s >= 6) for (let u = Math.floor(u0 / len) * len + (bond && i % 2 ? len / 2 : 0), k = 0; u <= u1; u += len, k++) {
+      const j = fin?.random ? (((i * 7 + k * 13) % 5) - 2) * len * 0.12 : 0;
+      ctx.moveTo(X(u + j), y); ctx.lineTo(X(u + j), Y(z + rowH));
     }
   }
-  ctx.strokeStyle = m.hatch === "tile" ? "#8a6b5a" : "#9a9a9a"; ctx.lineWidth = 0.3; ctx.stroke();
+  // listones, ranuras y juntas alzadas
+  if (fin?.col && fin.col * s >= 3) for (let u = Math.floor(u0 / fin.col) * fin.col; u <= u1; u += fin.col) {
+    ctx.moveTo(X(u), Y(z0)); ctx.lineTo(X(u), Y(z1));
+    if (fin.style === "batten" && 0.06 * s >= 1.5) { ctx.moveTo(X(u + 0.06), Y(z0)); ctx.lineTo(X(u + 0.06), Y(z1)); }
+  }
+  ctx.strokeStyle = m.hatch === "tile" && (!fin || fin.id === "clay") ? "#8a6b5a" : "#9a9a9a"; ctx.lineWidth = 0.3; ctx.stroke();
+  // punteado del estuco y la cubierta vegetal
+  if (fin?.dots) {
+    ctx.fillStyle = "#8a8a8a";
+    const step = Math.max(4, 0.12 * s);
+    for (let y = Y(z1); y <= Y(z0); y += step) for (let x = X(u0), k = 0; x <= X(u1); x += step, k++) {
+      const h = Math.sin(x * 12.9898 + y * 78.233) * 43758.5453, r = h - Math.floor(h);
+      ctx.fillRect(x + r * step, y + ((r * 7) % 1) * step, 0.6, 0.6);
+    }
+  }
   ctx.restore();
 }
 

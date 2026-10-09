@@ -12,6 +12,7 @@ import { FURNITURE, furnitureDef, furnitureOutline } from "../core/furniture";
 import { autoRoute, discOfSystem, isElectric, MEP, mepDef, mepOf, runLength, sanitaryPoints, systemDef, type Discipline } from "../core/mep";
 import { extend, offset, trim, type Linear } from "../core/modify";
 import { GENERIC, wallType } from "../core/wallTypes";
+import { finish } from "../core/finishes";
 import { computeRooms, RC, roomAt, type RoomGrid } from "../core/rooms";
 import { hatchArea, hatchPattern, inHatch, maskLoops, IMPORTED } from "../core/hatch";
 import { deleteElements, reflection, scaling, transformElements, translation, type Xform } from "../core/transform";
@@ -1301,6 +1302,18 @@ export class Editor {
     if (!ws.length) return;
     this.edit(() => { for (const w of ws) { w.type = type; if (type !== GENERIC) w.thick = wallType(type).thick; } });
     this.message = `${ws.length > 1 ? `${ws.length} muros cambiados` : "Muro cambiado"} a ${wallType(type).name.toLowerCase()}.`;
+    this.emit();
+  }
+
+  /** Cambia el revestimiento exterior de varios muros o el material de varias cubiertas (undefined lo quita). */
+  setFinish(ids: number[], f: string | undefined, what: "wall" | "roof" = "wall") {
+    const xs = what === "wall" ? this.model.walls.filter((w) => ids.includes(w.id)) : this.model.roofs.filter((r) => ids.includes(r.id));
+    if (!xs.length) return;
+    this.edit(() => { for (const x of xs) x.finish = f; });
+    const name = finish(f)?.name.toLowerCase(), n = xs.length;
+    this.message = what === "wall"
+      ? `${n > 1 ? `${n} muros` : "Muro"}: ${name ? `revestimiento de ${name}` : "sin revestimiento"}.`
+      : `${n > 1 ? `${n} cubiertas` : "Cubierta"}: ${name ?? "material por defecto"}.`;
     this.emit();
   }
 

@@ -7,6 +7,8 @@ import { GENERIC, WALL_TYPES, wallType, wallTypeLabel } from "../core/wallTypes"
 import { LAYERS, type Model, type RoofKind, type RunSystem } from "../core/model";
 import { ROOF_LABEL, type Editor } from "../editor/Editor";
 import { fmtArea, fmtDim, fmtElev, fmtField, fmtLen, fmtSmall, imperial, lenUnit, parseLen } from "../core/units";
+import { finish, ROOFINGS, SIDINGS, type Finish } from "../core/finishes";
+import { finishSwatch } from "../editor/finishTextures";
 import { HATCH_PATTERNS, hatchArea, hatchPattern, hatchSegments, IMPORTED, patternLines } from "../core/hatch";
 
 
@@ -37,6 +39,26 @@ function WallTypeField({ id, value, label = "Tipo de muro", onChange }: { id: st
         {WALL_TYPES.map((t) => <option key={t.id} value={t.id}>{t.id === GENERIC ? t.name : `${t.name} (${fmtLen(t.thick)})`}</option>)}
       </select>
     </>
+  );
+}
+
+/** Muestrario de acabados: una pastilla con la textura por material; la primera deja el de por defecto. */
+function FinishPicker({ label, list, value, none, multi, onChange }: { label: string; list: Finish[]; value: string | undefined; none: string; multi?: boolean; onChange: (id: string | undefined) => void }) {
+  const cur = finish(value), noneOn = !cur && !multi;
+  return (
+    <div className="full finpick">
+      <label>{label}: <b>{cur ? cur.name : none}</b></label>
+      <div className="fingrid" role="radiogroup" aria-label={label}>
+        <button type="button" role="radio" aria-checked={noneOn} className={noneOn ? "on" : ""} title={multi ? "Quitar" : none} onClick={() => onChange(undefined)}>
+          <span className="finnone">—</span>
+        </button>
+        {list.map((f) => (
+          <button key={f.id} type="button" role="radio" aria-checked={cur?.id === f.id} className={cur?.id === f.id ? "on" : ""} title={f.name} onClick={() => onChange(f.id)}>
+            <img src={finishSwatch(f)} alt="" />
+          </button>
+        ))}
+      </div>
+    </div>
   );
 }
 
@@ -101,6 +123,7 @@ function Properties({ ed, onFocusCommand }: { ed: Editor; onFocusCommand: () => 
         <input type="checkbox" checked={w.attach} onChange={(e) => ed.edit(() => { w.attach = e.target.checked; })} />
         Hasta la losa del nivel de arriba
       </label>
+      <FinishPicker label="Revestimiento exterior" list={SIDINGS} value={w.finish} none="Según el tipo de muro" onChange={(f) => ed.setFinish([w.id], f)} />
     </>;
   } else if (sel && o && sel.type === "opening") {
     const op = o as Model["openings"][number], w = ed.wallById(op.wallId)!;
@@ -142,6 +165,8 @@ function Properties({ ed, onFocusCommand }: { ed: Editor; onFocusCommand: () => 
       {r.kind !== "flat" && <NumberField id={`${key}-p`} label="Pendiente (°)" value={r.pitch} min={1} step={1} digits={0} onCommit={(v) => ed.edit(() => { r.pitch = Math.min(75, v); })} />}
       <NumberField id={`${key}-o`} label="Vuelo (m)" value={r.overhang} min={0} onCommit={(v) => ed.edit(() => { r.overhang = v; })} />
       <NumberField id={`${key}-b`} label="Arranque (m)" value={r.base} min={0} onCommit={(v) => ed.edit(() => { r.base = v; })} />
+      <FinishPicker label="Material de cubierta" list={ROOFINGS} value={r.finish} none={r.kind === "flat" ? "Sin definir" : "Teja cerámica (por defecto)"}
+        onChange={(f) => ed.setFinish([r.id], f, "roof")} />
     </>;
   } else if (sel && o && sel.type === "stair") {
     const st = o as Model["stairs"][number], k = stairSteps(st);
@@ -259,8 +284,14 @@ function Properties({ ed, onFocusCommand }: { ed: Editor; onFocusCommand: () => 
       if (c) ro.push([label, String(c)]);
     }
     const walls = ed.sels.filter((x) => x.type === "wall").map((x) => x.id);
-    if (walls.length) body = <WallTypeField id="multi-ty" label={`Tipo de los ${walls.length} muros`} value=""
-      onChange={(t) => ed.setWallType(walls, t)} />;
+    const roofs = ed.sels.filter((x) => x.type === "roof").map((x) => x.id);
+    if (walls.length || roofs.length) body = <>
+      {walls.length > 0 && <>
+        <WallTypeField id="multi-ty" label={`Tipo de los ${walls.length} muros`} value="" onChange={(t) => ed.setWallType(walls, t)} />
+        <FinishPicker label={`Revestimiento de ${walls.length > 1 ? `los ${walls.length} muros` : "1 muro"}`} list={SIDINGS} value={undefined} none="—" multi onChange={(f) => ed.setFinish(walls, f)} />
+      </>}
+      {roofs.length > 0 && <FinishPicker label={`Material de ${roofs.length > 1 ? `las ${roofs.length} cubiertas` : "la cubierta"}`} list={ROOFINGS} value={undefined} none="—" multi onChange={(f) => ed.setFinish(roofs, f, "roof")} />}
+    </>;
   } else {
     body = <>
       <WallTypeField id="def-ty" value={d.wallType} onChange={(t) => { d.wallType = t; if (t !== GENERIC) d.thick = wallType(t).thick; ed.emit(); }} />

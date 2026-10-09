@@ -2,6 +2,7 @@
 // aparecen en el dibujo, con su significado. En pies y pulgadas se escribe en inglés, como el resto del juego.
 import { useId, type ReactNode } from "react";
 import { imperial } from "../core/units";
+import type { Finish } from "../core/finishes";
 
 const INK = "#111";
 const L = (es: string, en: string) => (imperial() ? en : es);
@@ -237,15 +238,40 @@ ROWS.details2 = [ROWS.details[0], [S.cmu, "Bloque de concreto (CMU)", "CONCRETE 
 ROWS.details3 = [...ROWS.details];
 ROWS.notes = [...ROWS.notes.slice(0, 1), [S.cmu, "Bloque de concreto (CMU)", "CONCRETE MASONRY UNIT (CMU)"], ...ROWS.notes.slice(1)];
 
-/** Bloque «Leyenda y símbolos» de una lámina; nada si la lámina no tiene símbolos propios. */
-export function SheetLegend({ content }: { content: string }) {
+/** Muestra de un acabado con el mismo despiece que su trama en los alzados (escala aprox. 1:50). */
+export function FinishSym({ f }: { f: Finish }) {
+  const k = 20, d: string[] = [];
+  if (f.row) for (let i = 0, y = 0.8; y < 4.2; i++, y += Math.max(0.35, f.row * k)) {
+    d.push(`M1 ${y.toFixed(2)}h12`);
+    const L = f.len ? Math.max(0.8, f.len * k) : 0;
+    if (L) for (let x = 1 + (f.bond && i % 2 ? L / 2 : 0); x < 13; x += L) d.push(`M${x.toFixed(2)} ${y.toFixed(2)}v${Math.min(Math.max(0.35, f.row * k), 4.2 - y).toFixed(2)}`);
+  }
+  if (f.col) { const c = Math.max(0.35, f.col * k); for (let x = 1 + c; x < 13; x += c) d.push(`M${x.toFixed(2)} 0.8v3.4`); }
+  return (
+    <Sym>
+      <rect x={1} y={0.8} width={12} height={3.4} fill="#fff" />
+      {d.length > 0 && <path d={d.join("")} strokeWidth={0.1} stroke="#555" />}
+      {f.dots && Array.from({ length: 30 }, (_, i) => <circle key={i} cx={1.4 + ((i * 3.7) % 11.2)} cy={1.1 + ((i * 1.9) % 2.9)} r={0.08} fill="#555" stroke="none" />)}
+    </Sym>
+  );
+}
+
+/** Bloque «Leyenda y símbolos» de una lámina; nada si la lámina no tiene símbolos propios. En los alzados se añaden los acabados del proyecto. */
+export function SheetLegend({ content, finishes = [] }: { content: string; finishes?: Finish[] }) {
   const rows = ROWS[content];
   if (!rows) return null;
+  const fins = content === "fach" || content === "elev" ? finishes : [];
   return <>
     <h4>{content === "notes" || content.startsWith("details") ? L("Materiales", "Material legend") : L("Leyenda y símbolos", "Legend & symbols")}</h4>
     <table className="legend symleg"><tbody>
       {rows.map(([draw, es, en], i) => <tr key={i}><td>{draw()}</td><td>{L(es, en)}</td></tr>)}
     </tbody></table>
+    {fins.length > 0 && <>
+      <h4>{L("Acabados exteriores", "Exterior finishes")}</h4>
+      <table className="legend symleg"><tbody>
+        {fins.map((f) => <tr key={f.id}><td><FinishSym f={f} /></td><td>{L(f.name, f.en.toUpperCase())}</td></tr>)}
+      </tbody></table>
+    </>}
   </>;
 }
 
