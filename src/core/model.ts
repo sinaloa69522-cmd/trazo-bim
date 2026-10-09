@@ -43,6 +43,8 @@ export interface Line {
 export interface Dim extends Line {
   /** Desplazamiento perpendicular de la línea de cota */
   off: number;
+  /** Creada por el acotado automático: se sustituye al volver a acotar */
+  auto?: boolean;
 }
 
 export interface Room {
