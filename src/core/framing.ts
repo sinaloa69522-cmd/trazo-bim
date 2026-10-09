@@ -43,7 +43,7 @@ export function framing(p: Project): Member[] {
       const d = actualDepth(bay.member), z = e + H + d / 2;
       for (const [a, b] of bay.segs) out.push({ kind: "joist", a: { ...a, z }, b: { ...b, z }, w: T, h: d, size: nominal(bay.member) });
     }
-    for (const r of lv.roofs) out.push(...roofFrame(r, e));
+    for (const r of lv.roofs) out.push(...roofFrame(r, e, lv.walls));
   });
   return out;
 }
@@ -85,8 +85,15 @@ function wallFrame(w: Wall, ops: { t: number; width: number; height: number; sil
 }
 
 /** Cabios a 24", cumbrera y limatesas (o viguetas de cubierta plana), bajo la cara superior del faldón. */
-function roofFrame(r: Roof, e: number): Member[] {
+function roofFrame(r: Roof, e: number, walls: Wall[]): Member[] {
   const out: Member[] = [], g = roofGeom(r);
+  // apoyo: la cara superior de la doble solera de los muros exteriores bajo la cubierta (si los hay), para que
+  // los cabios queden siempre encima aunque el arranque de la cubierta no coincida con la altura de los muros
+  const rx0 = Math.min(r.x1, r.x2) - 0.05, rx1 = Math.max(r.x1, r.x2) + 0.05, ry0 = Math.min(r.y1, r.y2) - 0.05, ry1 = Math.max(r.y1, r.y2) + 0.05;
+  const under = walls.filter((w) => isExterior(w) && [[w.x1, w.y1], [w.x2, w.y2]].every(([x, y]) => x >= rx0 && x <= rx1 && y >= ry0 && y <= ry1));
+  const seat = under.length ? Math.max(r.base, ...under.map((w) => w.height)) : r.base;
+  // el talón del corte de asiento cae en la cara exterior de la solera
+  const heel = under.length ? Math.max(...under.map((w) => Math.min(w.thick, 5.5 * IN))) / 2 : 0;
   const xs = g.outline.map((q) => q.x), ys = g.outline.map((q) => q.y);
   const x0 = Math.min(...xs), x1 = Math.max(...xs), y0 = Math.min(...ys), y1 = Math.max(...ys);
   const alongX = x1 - x0 >= y1 - y0, U0 = alongX ? x0 : y0, U1 = alongX ? x1 : y1, V0 = alongX ? y0 : x0, V1 = alongX ? y1 : x1;
@@ -94,12 +101,12 @@ function roofFrame(r: Roof, e: number): Member[] {
   const short = V1 - V0, s = 24 * IN;
   if (r.kind === "flat") {
     // viguetas de cubierta apoyadas sobre la doble solera (el arranque)
-    const m = floorJoist(short), d = actualDepth(m), z = e + r.base + d / 2;
+    const m = floorJoist(short), d = actualDepth(m), z = e + seat + d / 2;
     for (let u = U0 + s / 2; u < U1; u += s) out.push({ kind: "rafter", a: P(u, V0, z), b: P(u, V1, z), w: T, h: d, size: nominal(m) });
     return out;
   }
   const tan = Math.tan((Math.max(1, Math.min(75, r.pitch)) * Math.PI) / 180), half = short / 2, vm = (V0 + V1) / 2;
-  const m = rafterSize(half), d = actualDepth(/TRUSS/.test(m) ? "2x8" : m), z0 = e + r.base - r.overhang * tan;
+  const m = rafterSize(half), d = actualDepth(/TRUSS/.test(m) ? "2x8" : m), z0 = e + seat - (r.overhang - heel) * tan;
   // el plano del arranque pasa por la cara superior de la doble solera: los cabios se apoyan en ella
   // (con su corte de asiento), así que su eje va medio canto por encima de ese plano
   const drop = d / 2 / Math.cos(Math.atan(tan));
@@ -119,7 +126,7 @@ function roofFrame(r: Roof, e: number): Member[] {
   }
   // montantes del hastial, sobre la línea del muro, hasta la cara inferior de los cabios
   if (!hip) {
-    const along = alongX ? { x: 0, y: 1 } : { x: 1, y: 0 }, o = r.overhang, zb = e + r.base;
+    const along = alongX ? { x: 0, y: 1 } : { x: 1, y: 0 }, o = r.overhang, zb = e + seat;
     for (const u of [U0 + o, U1 - o]) for (let v = V0 + o + 16 * IN; v < V1 - o - 0.05; v += 16 * IN) {
       const top = Z(Math.min(v - V0, V1 - v)) - drop;
       if (top - zb > 0.05) out.push({ kind: "stud", a: P(u, v, zb), b: P(u, v, top), w: T, h: 3.5 * IN, along, size: "2x4" });
