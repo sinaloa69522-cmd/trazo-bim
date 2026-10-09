@@ -138,11 +138,19 @@ export class Editor {
   }
   log(t: string) { this.message = t; this.emit(); }
 
-  loadSample() { this.snapshot(); this.project = { ...sampleProject(), info: this.project.info }; this.active = 0; this.sel = null; this.log("Vivienda de ejemplo cargada."); this.changed(); }
-  clear() { this.snapshot(); this.project = { ...emptyProject(), info: this.project.info }; this.active = 0; this.sel = null; this.log("Dibujo nuevo. Usa Deshacer si te equivocaste."); this.changed(); this.setTool("wall"); }
+  loadSample() { this.snapshot(); this.project = { ...sampleProject(), info: this.project.info, budget: this.project.budget }; this.active = 0; this.sel = null; this.log("Vivienda de ejemplo cargada."); this.changed(); }
+  clear() { this.snapshot(); this.project = { ...emptyProject(), info: this.project.info, budget: this.project.budget }; this.active = 0; this.sel = null; this.log("Dibujo nuevo. Usa Deshacer si te equivocaste."); this.changed(); this.setTool("wall"); }
 
   /** Cambia los datos del cajetín. */
   setInfo(patch: Partial<ProjectInfo>) { this.edit(() => { this.project.info = { ...this.project.info, ...patch }; }); }
+  /** Cambia moneda, porcentajes o precios del presupuesto. */
+  setBudget(patch: Partial<Project["budget"]>) { this.edit(() => { this.project.budget = { ...this.project.budget, ...patch }; }); }
+  /** Pone un precio unitario propio a una partida; sin valor vuelve al de referencia. */
+  setPrice(code: string, price: number | null) {
+    const prices = { ...this.project.budget.prices };
+    if (price === null) delete prices[code]; else prices[code] = price;
+    this.setBudget({ prices });
+  }
 
   // ---------- niveles ----------
   /** Nivel inmediatamente inferior al activo (se muestra de referencia en planta). */

@@ -75,6 +75,8 @@ button,input,select,textarea{font:inherit;color:inherit}
 .work[data-view="3d"]{grid-template-columns:1fr}
 .work[data-view="sheet"]{grid-template-columns:1fr}
 .work[data-view="sheet"] .pane{display:none}
+.work[data-view="budget"]{grid-template-columns:1fr}
+.work[data-view="budget"] .pane{display:none}
 .work[data-view="plan"] .pane3d,.work[data-view="3d"] .paneplan{display:none}
 .pane{position:relative;min-width:0;min-height:0;overflow:hidden}
 .paneplan{background:var(--plan-bg)}
@@ -164,6 +166,43 @@ dialog .acts span{margin-right:auto;color:var(--muted);font-size:12px}
 .cajetin .c-no{font-family:var(--f-display);font-weight:600;font-size:12pt}
 
 @page{size:A3 landscape;margin:0}
+/* presupuesto: documento A4 */
+.budgetpane{display:grid;grid-template-rows:auto 1fr;min-width:0;min-height:0;background:var(--view-bg)}
+.budgetpane .sheetbar input{width:70px}
+.budgethost{overflow:auto;padding:16px}
+.budgetdoc{max-width:210mm;margin:0 auto;background:#fff;color:#111;padding:14mm 14mm 10mm;box-shadow:0 2px 10px rgba(0,0,0,.18);font-size:9pt;page:budget}
+.budgetdoc header{display:flex;justify-content:space-between;align-items:flex-end;gap:12px;border-bottom:.6mm solid #111;padding-bottom:3mm;margin-bottom:4mm}
+.budgetdoc header small{display:block;font-size:7pt;letter-spacing:.14em;text-transform:uppercase;color:#555}
+.budgetdoc h1{font-family:var(--f-display);font-size:16pt;margin:1mm 0}
+.budgetdoc header p{margin:0;color:#555;font-size:8pt}
+.budgetdoc .tot-head{text-align:right}
+.budgetdoc .tot-head b{font-size:14pt;font-variant-numeric:tabular-nums}
+.budgetdoc table{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums}
+.budgetdoc th{text-align:left;font-size:7.5pt;text-transform:uppercase;letter-spacing:.06em;border-bottom:.4mm solid #111;padding:1.2mm 1.5mm}
+.budgetdoc td{border-bottom:.15mm solid #ccc;padding:1mm 1.5mm;vertical-align:middle}
+.budgetdoc .r{text-align:right;white-space:nowrap}
+.budgetdoc .code{font-family:var(--f-mono);font-size:8pt;color:#555;white-space:nowrap}
+.budgetdoc tr.chap td{font-weight:600;background:#f1f1ee;border-top:.3mm solid #999;padding-top:1.6mm}
+.budgetdoc tfoot td{border-bottom:0;padding:1mm 1.5mm;text-align:right}
+.budgetdoc tfoot tr:first-child td{border-top:.4mm solid #111;padding-top:2mm}
+.budgetdoc tfoot tr.grand td{font-weight:700;font-size:11pt;border-top:.4mm solid #111}
+.budgetdoc input.price{width:92px;text-align:right;font:inherit;border:1px solid transparent;background:transparent;color:inherit;padding:1px 3px;border-radius:3px}
+.budgetdoc input.price:hover,.budgetdoc input.price:focus{border-color:#9bb3e0;background:#fff}
+.budgetdoc input.price{-moz-appearance:textfield;appearance:textfield}
+.budgetdoc input.price::-webkit-inner-spin-button,.budgetdoc input.price::-webkit-outer-spin-button{-webkit-appearance:none;margin:0}
+.budgetdoc .own,.budgetdoc input.price.own{color:#1f5fd1;font-weight:600}
+.budgetdoc .note{font-size:7.5pt;color:#555;margin-top:5mm;line-height:1.4}
+.budgetdoc .empty{color:#666}
+@page budget{size:A4 portrait;margin:12mm 0}
+.printbudget{display:none}
+@media print{
+  html.print-budget,html.print-budget body{width:auto!important;height:auto!important;overflow:visible!important}
+  html.print-budget #root{display:none!important}
+  html.print-budget .printbudget{display:block}
+  html.print-budget .budgetdoc,html.print-budget .budgetdoc *{visibility:visible}
+  html.print-budget .budgetdoc{box-shadow:none;padding-top:0;max-width:none;width:210mm;margin:0}
+  html.print-budget .budgetdoc tr{break-inside:avoid}
+}
 @media print{
   html,body{width:420mm;height:297mm!important;overflow:hidden!important;background:#fff!important}
   #root,.app{height:100%!important;overflow:hidden!important}
