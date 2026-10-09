@@ -163,9 +163,12 @@ export class Viewer3D {
         for (let i = 0; i < k.n; i++) box(st as unknown as Wall, i * k.tread, (i + 1) * k.tread, 0, (i + 1) * k.riser, st.width, mat);
       }
       if (vis.mobiliario) for (const f of m.furniture) {
-        const mat = isSel("furniture", f.id) ? this.mat.sel : this.mat.furn;
+        const sel = isSel("furniture", f.id);
         for (const s of furnitureSolids(f.kind)) {
-          const g = new THREE.BoxGeometry(s.w, s.h, s.d), mesh = new THREE.Mesh(g, mat), c = furnitureToPlan(f, s);
+          // cilindros, esferas y conos se hacen unitarios y se escalan a la caja del sólido
+          const g = s.shape === "cyl" ? new THREE.CylinderGeometry(0.5, 0.5, 1, 20) : s.shape === "sphere" ? new THREE.SphereGeometry(0.5, 20, 14) : s.shape === "cone" ? new THREE.ConeGeometry(0.5, 1, 20) : new THREE.BoxGeometry(s.w, s.h, s.d);
+          const mesh = new THREE.Mesh(g, sel ? this.mat.sel : s.color ? this.mepMat(s.color) : this.mat.furn), c = furnitureToPlan(f, s);
+          if (s.shape) mesh.scale.set(s.w, s.h, s.d);
           mesh.position.set(c.x, base + s.z0 + s.h / 2, c.y);
           mesh.rotation.y = (-f.rot * Math.PI) / 180;
           mesh.castShadow = mesh.receiveShadow = true;

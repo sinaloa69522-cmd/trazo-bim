@@ -1,6 +1,6 @@
 import { Fragment, useState } from "react";
 import { dimGeom, dir, fits, polygonArea, roofGeom, slabArea, stairSteps } from "../core/geometry";
-import { FURNITURE, furnitureDef } from "../core/furniture";
+import { FURNITURE, FURNITURE_CATS, furnitureDef } from "../core/furniture";
 import { CIRCUITS, mepDef, mepOf, runLength, SYSTEMS, systemDef, type Discipline } from "../core/mep";
 import { SymbolIcon, SystemIcon } from "./MepIcons";
 import { GENERIC, WALL_TYPES, wallType, wallTypeLabel } from "../core/wallTypes";
@@ -161,7 +161,7 @@ function Properties({ ed, onFocusCommand }: { ed: Editor; onFocusCommand: () => 
     body = <>
       <label htmlFor={`${key}-k`}>Pieza</label>
       <select id={`${key}-k`} value={f.kind} onChange={(e) => ed.edit(() => { f.kind = e.target.value; })}>
-        {FURNITURE.map((x) => <option key={x.kind} value={x.kind}>{x.label}</option>)}
+        {FURNITURE_CATS.map((c) => <optgroup key={c} label={c}>{FURNITURE.filter((x) => x.cat === c).map((x) => <option key={x.kind} value={x.kind}>{x.label}</option>)}</optgroup>)}
       </select>
       <NumberField id={`${key}-r`} label="Giro (°)" value={f.rot} min={0} step={15} digits={0} onCommit={(v) => ed.edit(() => { f.rot = v % 360; })} />
       <button className="btn full" onClick={() => ed.edit(() => { f.rot = (f.rot + 90) % 360; })}>Girar 90°</button>
@@ -332,18 +332,37 @@ function Levels({ ed }: { ed: Editor }) {
 }
 
 function Catalog({ ed }: { ed: Editor }) {
+  // grupo abierto: el de la pieza elegida, hasta que se cambie de pestaña
+  const [cat, setCat] = useState(() => furnitureDef(ed.defaults.furnKind).cat);
   return (
     <section>
-      <h2>Mobiliario</h2>
+      <h2>Mobiliario y entorno</h2>
+      <div className="cattabs" role="tablist" aria-label="Grupo del catálogo">
+        {FURNITURE_CATS.map((c) => <button key={c} role="tab" aria-selected={c === cat} className={c === cat ? "on" : ""} onClick={() => setCat(c)}>{c}</button>)}
+      </div>
       <div className="catalog" role="radiogroup" aria-label="Pieza a colocar">
-        {FURNITURE.map((f) => (
-          <button key={f.kind} role="radio" aria-checked={ed.defaults.furnKind === f.kind} className="cat" onClick={() => ed.pickFurniture(f.kind)}>
-            {f.label}<small>{fmtDim(f.w)} × {fmtDim(f.d)}</small>
+        {FURNITURE.filter((f) => f.cat === cat).map((f) => (
+          <button key={f.kind} role="radio" aria-checked={ed.defaults.furnKind === f.kind} className="cat furn-cat" onClick={() => ed.pickFurniture(f.kind)}>
+            <FurnitureIcon kind={f.kind} /><span>{f.label}<small>{fmtDim(f.w)} × {fmtDim(f.d)}</small></span>
           </button>
         ))}
       </div>
       <p className="hint">Clic en la planta para colocar. <b>R</b> y Enter gira 90° (ahora {ed.defaults.furnRot}°).</p>
     </section>
+  );
+}
+
+/** Miniatura en planta de una pieza del catálogo. */
+function FurnitureIcon({ kind, size = 34 }: { kind: string; size?: number }) {
+  const d = furnitureDef(kind), m = Math.max(d.w, d.d) / 2 * 1.08;
+  return (
+    <svg width={size} height={size} viewBox={`${-m} ${-m} ${2 * m} ${2 * m}`} aria-hidden="true" className="sym">
+      {d.draw().map((k, i) => {
+        const pts = k.pts.map((q) => `${q.x},${q.y}`).join(" ");
+        const st = { stroke: "currentColor", strokeWidth: m / 22, fill: "none" };
+        return k.closed ? <polygon key={i} points={pts} {...st} /> : <polyline key={i} points={pts} {...st} />;
+      })}
+    </svg>
   );
 }
 
