@@ -91,8 +91,10 @@ export function drawPlan(ctx: CanvasRenderingContext2D, ed: Editor, C: PlanColor
     }
   }
 
-  if (ed.vis.anot) for (const l of m.lines)
-    seg({ x: l.x1, y: l.y1 }, { x: l.x2, y: l.y2 }, isSel("line", l.id) ? C.accent : C.anno, isSel("line", l.id) ? 2.5 : 1.2);
+  if (ed.vis.anot) for (const l of m.lines) {
+    const hl = isSel("line", l.id) || (ed.hover?.type === "line" && ed.hover.id === l.id);
+    seg({ x: l.x1, y: l.y1 }, { x: l.x2, y: l.y2 }, hl ? C.accent : C.anno, hl ? 2.5 : 1.2);
+  }
   if (ed.vis.cotas) for (const d of m.dims) drawDim(ctx, ed, d, isSel("dim", d.id) ? C.accent : C.dim);
 
   // rótulos de habitación
@@ -150,6 +152,18 @@ export function drawPlan(ctx: CanvasRenderingContext2D, ed: Editor, C: PlanColor
     } else if (ed.tool === "dim") {
       if (draft.pts.length === 1) { seg(last, p, C.accent, 1, [5, 4]); lengthTag(ctx, ed, C, last, p); }
       else { const [a, b] = draft.pts; drawDim(ctx, ed, { id: 0, x1: a.x, y1: a.y, x2: b.x, y2: b.y, off: dimOffset(a, b, p) }, C.accent); }
+    }
+  }
+  // desfase: copia fantasma en el lado del cursor
+  if (ed.tool === "offset" && ed.offsetTarget && ed.mouse.in) {
+    const t = ed.offsetTarget, o = t.type === "wall" ? ed.wallById(t.id) : m.lines.find((l) => l.id === t.id);
+    if (o) {
+      const { ux, uy } = dir(o), nx = -uy, ny = ux;
+      const sg = (ed.mouse.x - o.x1) * nx + (ed.mouse.y - o.y1) * ny >= 0 ? 1 : -1, d = ed.offsetDist * sg;
+      ctx.globalAlpha = 0.55;
+      seg({ x: o.x1 + nx * d, y: o.y1 + ny * d }, { x: o.x2 + nx * d, y: o.y2 + ny * d }, C.accent,
+        t.type === "wall" ? Math.max(2, (o as Wall).thick * ed.view.scale) : 1.5, [6, 4]);
+      ctx.globalAlpha = 1;
     }
   }
   if (ed.openCand && ed.mouse.in) {

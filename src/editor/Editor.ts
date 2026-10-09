@@ -4,10 +4,13 @@ import {
   type LayerId, type Model, type Wall,
 } from "../core/model";
 import { parseDxf } from "../core/dxfImport";
+import { extend, offset, trim, type Linear } from "../core/modify";
 import { computeRooms, roomAt, type RoomGrid } from "../core/rooms";
 import { deleteElements, reflection, transformElements, translation, type Xform } from "../core/transform";
 
-export type Tool = "select" | "wall" | "door" | "window" | "line" | "dim" | "room" | "move" | "copy" | "mirror";
+export type Tool = "select" | "wall" | "door" | "window" | "line" | "dim" | "room" | "move" | "copy" | "mirror" | "trim" | "extend" | "offset";
+/** Herramientas que actúan pulsando directamente sobre un muro o una línea. */
+const PICK_TOOLS: Tool[] = ["trim", "extend", "offset"];
 /** Herramientas que actúan sobre la selección actual. */
 const MODIFY_TOOLS: Tool[] = ["move", "copy", "mirror"];
 export type SelType = "wall" | "opening" | "line" | "dim" | "room";
@@ -36,6 +39,7 @@ const COMMANDS: Record<string, Tool> = {
   L: "line", LINEA: "line", "LÍNEA": "line", C: "dim", COTA: "dim", S: "select", SEL: "select",
   H: "room", HAB: "room", HABITACION: "room", "HABITACIÓN": "room",
   MO: "move", MOVER: "move", CO: "copy", COPIA: "copy", SI: "mirror", SIMETRIA: "mirror", "SIMETRÍA": "mirror",
+  TR: "trim", RECORTAR: "trim", AL: "extend", ALARGAR: "extend", DE: "offset", DESFASE: "offset", EQ: "offset", EQUIDISTANCIA: "offset",
 };
 
 /**
@@ -53,6 +57,9 @@ export class Editor {
   /** La selección cuando hay exactamente un elemento; null si no hay ninguno o hay varios. */
   get sel(): Selection | null { return this.sels.length === 1 ? this.sels[0] : null; }
   set sel(s: Selection | null) { this.sels = s ? [s] : []; }
+  /** Distancia de desfase (equidistancia) y elemento elegido para desfasar. */
+  offsetDist = 1;
+  offsetTarget: Linear | null = null;
   /** Ventana de selección en curso, en coordenadas del dibujo. */
   box: { a: Pt; b: Pt } | null = null;
   ortho = true;
@@ -138,6 +145,11 @@ export class Editor {
       case "move": return n ? "MOVER  Precisa punto de destino:" : "MOVER  Precisa punto base:";
       case "copy": return n ? "COPIA  Precisa punto de destino [Esc termina]:" : "COPIA  Precisa punto base:";
       case "mirror": return n ? "SIMETRÍA  Segundo punto del eje:" : "SIMETRÍA  Primer punto del eje de simetría:";
+      case "trim": return "RECORTAR  Haz clic en el tramo de muro o línea que quieres quitar:";
+      case "extend": return "ALARGAR  Haz clic cerca del extremo que quieres alargar:";
+      case "offset": return this.offsetTarget
+        ? "DESFASE  Haz clic en el lado donde va la copia:"
+        : `DESFASE  Elige un muro o línea, o teclea otra distancia <${this.offsetDist.toFixed(2)} m>:`;
     }
   }
   stats() {
@@ -187,7 +199,7 @@ export class Editor {
     if (MODIFY_TOOLS.includes(t) && this.sels.every((s) => s.type === "opening")) {
       this.message = "Las puertas y ventanas se mueven con su muro. Selecciona el muro."; t = "select";
     }
-    this.tool = t; this.draft = null; this.openCand = null; this.box = null;
+    this.tool = t; this.draft = null; this.openCand = null; this.box = null; this.offsetTarget = null;
     if (t !== "select" && !MODIFY_TOOLS.includes(t)) this.sels = [];
     this.refresh3d();
   }
@@ -424,6 +436,47 @@ export class Editor {
 
   finishDraft() { if (this.draft) { this.draft = null; this.log("Comando terminado."); } }
 
+  /** Muro o línea bajo el cursor. */
+  pickLinear(wx: number, wy: number): Linear | null {
+    const tol = 6 / this.view.scale;
+    let best: Linear | null = null, bd = Infinity;
+    if (this.vis.muros) for (const w of this.model.walls) {
+      const r = distSeg(wx, wy, w.x1, w.y1, w.x2, w.y2);
+      if (r.d < w.thick / 2 + tol && r.d < bd) { bd = r.d; best = { type: "wall", id: w.id }; }
+    }
+    if (this.vis.anot) for (const l of this.model.lines) {
+      const r = distSeg(wx, wy, l.x1, l.y1, l.x2, l.y2);
+      if (r.d < tol && r.d < bd) { bd = r.d; best = { type: "line", id: l.id }; }
+    }
+    return best;
+  }
+
+  /** Clic con recortar, alargar o desfase. */
+  private pickAction(p: Pt) {
+    if (this.tool === "offset" && this.offsetTarget) {
+      this.snapshot();
+      const made = offset(this.model, this.offsetTarget, this.offsetDist, p);
+      if (!made) { this.history.pop(); this.offsetTarget = null; this.emit(); return; }
+      this.offsetTarget = null;
+      this.message = `Copia desfasada ${this.offsetDist.toFixed(2)} m. Elige otro elemento o pulsa Esc.`;
+      this.changed();
+      return;
+    }
+    const target = this.pickLinear(p.x, p.y);
+    if (!target) { this.log("Haz clic sobre un muro o una línea."); return; }
+    if (this.tool === "offset") { this.offsetTarget = target; this.hover = target; this.emit(); return; }
+    this.snapshot();
+    const ok = this.tool === "trim" ? trim(this.model, target, p) : extend(this.model, target, p);
+    if (!ok) {
+      this.history.pop();
+      this.log(this.tool === "trim" ? "Ningún muro ni línea corta ese elemento." : "No hay ningún muro ni línea en esa dirección.");
+      return;
+    }
+    this.sels = [];
+    this.message = this.tool === "trim" ? "Tramo recortado." : "Elemento alargado.";
+    this.changed();
+  }
+
   deleteSel() {
     if (!this.sels.length) return;
     this.snapshot();
@@ -439,6 +492,7 @@ export class Editor {
 
   escape() {
     if (MODIFY_TOOLS.includes(this.tool)) { this.setTool("select"); return; }
+    if (this.tool === "offset" && this.offsetTarget) { this.offsetTarget = null; this.emit(); return; }
     if (this.draft) this.finishDraft();
     else if (this.tool !== "select") this.setTool("select");
     else this.select(null);
@@ -457,6 +511,11 @@ export class Editor {
     if (s === "U" || s === "DESHACER") return this.undo();
     if (s === "Z" || s === "ZOOM" || s === "ENCUADRAR") { this.fitRequest?.(); return; }
     const num = s.replace(",", ".");
+    if (this.tool === "offset" && /^\d*\.?\d+$/.test(num)) {
+      const v = parseFloat(num);
+      if (v > 0) { this.offsetDist = v; this.log(`Distancia de desfase: ${v.toFixed(2)} m.`); }
+      return;
+    }
     const lengthOk = this.draft?.pts.length &&
       (["wall", "line", "move", "copy", "mirror"].includes(this.tool) || (this.tool === "dim" && this.draft.pts.length === 1));
     if (/^-?\d*\.?\d+$/.test(num) && lengthOk) {
@@ -475,7 +534,7 @@ export class Editor {
       this.commitPoint({ x, y });
       return;
     }
-    this.log(`Comando desconocido: "${raw}". Prueba M, P, V, L, C, H, MO, CO, SI, B (borrar), U (deshacer), Z (encuadrar).`);
+    this.log(`Comando desconocido: "${raw}". Prueba M, P, V, L, C, H, MO, CO, SI, TR, AL, DE, B (borrar), U (deshacer), Z (encuadrar).`);
   }
   /** La vista de planta registra aquí cómo encuadrar, porque conoce su tamaño. */
   fitRequest: (() => void) | null = null;
@@ -487,6 +546,7 @@ export class Editor {
     if (this.grip) { this.dragGrip(w); return; }
     this.snap = null; this.hover = null; this.openCand = null;
     if (this.tool === "select") this.hover = this.pick(w.x, w.y);
+    else if (PICK_TOOLS.includes(this.tool)) this.hover = this.offsetTarget ?? this.pickLinear(w.x, w.y);
     else if (this.tool === "door" || this.tool === "window") this.openCand = this.openingCandidate(w.x, w.y);
     else this.snap = this.snapPoint(w.x, w.y);
     this.emit();
@@ -509,6 +569,7 @@ export class Editor {
     }
     if (this.tool === "door" || this.tool === "window") { this.placeOpening(w.x, w.y); return { box: false }; }
     if (this.tool === "room") { this.placeRoom(w.x, w.y); return { box: false }; }
+    if (PICK_TOOLS.includes(this.tool)) { this.pickAction(w); return { box: false }; }
     this.commitPoint(this.snapPoint(w.x, w.y));
     return { box: false };
   }

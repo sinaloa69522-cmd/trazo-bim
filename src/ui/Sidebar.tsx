@@ -131,7 +131,7 @@ export function Sidebar({ ed, onFocusCommand }: { ed: Editor; onFocusCommand: ()
       </section>
       <p className="hint">
         Escribe comandos como en AutoCAD: <b>M</b> muro, <b>P</b> puerta, <b>V</b> ventana, <b>L</b> línea, <b>C</b> cota,{" "}
-        <b>H</b> habitación, <b>MO</b> mover, <b>CO</b> copiar, <b>SI</b> simetría. Mientras dibujas, teclea una longitud (p. ej. <b>4.5</b>) y Enter.
+        <b>H</b> habitación, <b>MO</b> mover, <b>CO</b> copiar, <b>SI</b> simetría, <b>TR</b> recortar, <b>AL</b> alargar, <b>DE</b> desfase. Mientras dibujas, teclea una longitud (p. ej. <b>4.5</b>) y Enter.
         Selecciona un muro y arrastra sus cuadros azules para estirarlo. Arrastra sobre el vacío para seleccionar con ventana (Mayús o Ctrl suma a la selección). Rueda para zoom; arrastra con el botón derecho, la rueda o Espacio para desplazar. F8 orto, F3 referencias.
       </p>
     </aside>
