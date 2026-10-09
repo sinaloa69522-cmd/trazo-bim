@@ -27,7 +27,7 @@ body{margin:0}
 body{background:var(--bg);color:var(--fg);font-family:var(--f-body);font-size:13px;overflow:hidden}
 *{box-sizing:border-box}
 button,input,select,textarea{font:inherit;color:inherit}
-.app{height:100%;display:grid;grid-template-rows:auto 1fr auto}
+.app{height:100%;display:grid;grid-template-rows:auto 1fr auto;grid-template-columns:minmax(0,1fr)}
 
 /* barra superior */
 .top{display:flex;flex-wrap:wrap;align-items:center;gap:10px;padding:8px 16px;background:var(--panel);border-bottom:1px solid var(--line)}
@@ -109,18 +109,41 @@ dialog textarea{width:100%;height:280px;font-family:var(--f-mono);font-size:11px
 dialog .acts{display:flex;gap:8px;justify-content:flex-end;margin-top:10px;align-items:center}
 dialog .acts span{margin-right:auto;color:var(--muted);font-size:12px}
 
+.menubtn,.panelbtn,.sideclose{display:none}
+.more{display:contents}
 @media (max-width:760px){
-  body{overflow:auto}
-  .app{height:auto;min-height:100%}
-  .main{grid-template-columns:1fr}
-  .work{height:62vh;grid-template-columns:1fr}
+  /* celular: la planta ocupa la pantalla; herramientas en una fila que se desliza; archivo en un menú; panel deslizable */
+  .app{height:100dvh}
+  .top{flex-wrap:wrap;gap:6px;padding:6px 8px}
+  .brand{font-size:15px;margin-right:0}
+  .brand small{display:none}
+  .top .spacer{display:none}
+  .group{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;min-width:0}
+  .group::-webkit-scrollbar{display:none}
+  .top > .group[aria-label="Vista"]{order:9;flex:1 0 100%}
+  .brand{flex:1}
+  #tools{order:10;flex:1 0 100%}
+  .tb{padding:8px 10px}
+  .tb svg{width:18px;height:18px}
+  .tb .lbl,.tb kbd{display:none}
+  .btn{padding:7px 10px}
+  .menubtn{display:inline-block}
+  .more{display:none}
+  .top[data-menu] .more{display:flex;flex-wrap:wrap;gap:6px;flex:1 0 100%;order:11}
+  .main{grid-template-columns:minmax(0,1fr);position:relative}
+  .work,.work[data-view]{grid-template-columns:minmax(0,1fr)}
   .work[data-view="split"]{grid-template-rows:1fr 1fr}
   .work[data-view="split"] .pane3d{border-left:0;border-top:1px solid var(--line)}
-  .side{border-right:0;border-top:1px solid var(--line);order:2}
-  .tb .lbl{display:none}
+  .side{position:absolute;left:0;right:0;bottom:0;max-height:60%;z-index:5;border-right:0;border-top:1px solid var(--line);border-radius:12px 12px 0 0;box-shadow:0 -6px 24px rgba(0,0,0,.18);padding-top:44px;display:none}
+  .main[data-panel] .side{display:flex}
+  .sideclose{display:block;position:absolute;top:8px;right:12px}
+  .panelbtn{display:block;position:absolute;left:10px;bottom:10px;z-index:4;box-shadow:0 2px 8px rgba(0,0,0,.15)}
+  .main[data-panel] .panelbtn{display:none}
+  .tag{display:none}
   .coords{display:none}
-  .cmd .prompt{max-width:100%}
-  .cmd{grid-template-columns:1fr}
+  .cmd{grid-template-columns:1fr auto;padding:4px 8px 6px;gap:2px 8px}
+  .cmd .prompt{max-width:45%}
+  .cmd input{font-size:16px}
 }
 @media (max-width:1560px){.tb kbd{display:none}.brand small{display:none}}
 @media (max-width:1400px){#tools .tb .lbl{display:none}}

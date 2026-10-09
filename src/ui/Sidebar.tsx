@@ -427,10 +427,11 @@ function DimTools({ ed }: { ed: Editor }) {
   );
 }
 
-export function Sidebar({ ed, onFocusCommand }: { ed: Editor; onFocusCommand: () => void }) {
+export function Sidebar({ ed, onFocusCommand, onClose }: { ed: Editor; onFocusCommand: () => void; onClose?: () => void }) {
   const counts = ed.layerCounts(), s = ed.stats();
   return (
-    <aside className="side">
+    <aside className="side" aria-label="Capas y propiedades">
+      {onClose && <button className="btn sideclose" onClick={onClose}>Cerrar</button>}
       {ed.tool === "furniture" && <Catalog ed={ed} />}
       {ed.tool === "fixture" && <MepCatalog ed={ed} />}
       {ed.tool === "run" && <RunCatalog ed={ed} />}

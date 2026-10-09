@@ -37,6 +37,8 @@ const TOOLS: { tool: Tool; label: string; key: string; icon: JSX.Element; disc?:
   { tool: "offset", label: "Desfase", key: "DE", icon: <path d="M2 5h12M2 11h12" /> },
 ];
 
+const CATALOG_TOOLS: Tool[] = ["furniture", "fixture", "run", "hatch"];
+
 /** Descarga un texto como archivo. */
 function download(name: string, text: string, type = "application/json") {
   const a = document.createElement("a");
@@ -90,6 +92,10 @@ export function App() {
   };
   const view3d = useRef<View3DHandle>(null);
   const spaceDown = useRef(false);
+  // en pantallas táctiles enfocar la línea de comandos abre el teclado y tapa la planta
+  const focusCmd = () => { if (!matchMedia("(pointer: coarse)").matches) cmdRef.current?.focus(); };
+  const [menu, setMenu] = useState(false);
+  const [panel, setPanel] = useState(false);
 
   useEffect(() => { try { localStorage.setItem("trazo-view", view); } catch { /* sin almacenamiento */ } }, [view]);
 
@@ -119,13 +125,18 @@ export function App() {
       onDragOver={(e) => { if (e.dataTransfer.types.includes("Files")) { e.preventDefault(); setDragging(true); } }}
       onDragLeave={(e) => { if (e.currentTarget === e.target) setDragging(false); }}
       onDrop={(e) => { e.preventDefault(); setDragging(false); const f = e.dataTransfer.files[0]; if (f) void openAny(f); }}>
-      <header className="top">
+      <header className="top" data-menu={menu || undefined}>
         <div className="brand">Smartarchitect <small>v0.2</small></div>
         <div className="group" role="toolbar" aria-label="Herramientas" id="tools">
           {TOOLS.map((t) => (
             <button key={t.key} className="tb" title={`${t.label} (${t.key})`}
               aria-pressed={ed.tool === t.tool && (!t.disc || mepDef(ed.defaults.mepKind).disc === t.disc)}
-              onClick={() => { if (t.disc) ed.pickDiscipline(t.disc); else ed.setTool(t.tool); cmdRef.current?.focus(); }}>
+              onClick={() => {
+                if (t.disc) ed.pickDiscipline(t.disc); else ed.setTool(t.tool);
+                // en el celular el catálogo de estas herramientas está en el panel
+                if (innerWidth < 760 && CATALOG_TOOLS.includes(t.tool)) setPanel(true);
+                focusCmd();
+              }}>
               <svg viewBox="0 0 16 16">{t.icon}</svg><span className="lbl">{t.label}</span><kbd>{t.key}</kbd>
             </button>
           ))}
@@ -137,6 +148,8 @@ export function App() {
         </div>
         <div className="spacer" />
         <button className="btn" onClick={() => ed.undo()} title="Deshacer (Ctrl+Z)">Deshacer</button>
+        <button className="btn menubtn" aria-expanded={menu} onClick={() => setMenu(!menu)}>Archivo</button>
+        <div className="more" onClick={(e) => { if ((e.target as HTMLElement).closest("button")) setMenu(false); }}>
         <button className="btn" onClick={() => { ed.loadSample(); ed.fitRequest?.(); view3d.current?.fit(); }}>Ejemplo</button>
         <button className="btn" onClick={() => ed.clear()}>Nuevo</button>
         <button className="btn" onClick={() => openRef.current?.click()} title="Abrir un proyecto .trazo (Ctrl+O). También puedes arrastrarlo a la ventana.">Abrir</button>
@@ -160,10 +173,12 @@ export function App() {
           <button className="tb" onClick={() => setExporting("dxf")} title="Planta del nivel activo para AutoCAD">DXF</button>
           <button className="tb" onClick={() => setExporting("ifc")} title="Modelo BIM completo para Revit, ArchiCAD y visores IFC">IFC</button>
         </div>
+        </div>
       </header>
 
-      <div className="main">
-        <Sidebar ed={ed} onFocusCommand={() => cmdRef.current?.focus()} />
+      <div className="main" data-panel={panel || undefined}>
+        <Sidebar ed={ed} onFocusCommand={focusCmd} onClose={() => setPanel(false)} />
+        <button className="btn panelbtn" aria-expanded={panel} onClick={() => setPanel(!panel)}>{panel ? "Cerrar panel" : "Capas y propiedades"}</button>
         <section className="work" data-view={view}>
           <div className="pane paneplan">
             <PlanView ed={ed} spaceDown={spaceDown} />
