@@ -215,3 +215,35 @@ describe("importar y exportar sombreados", () => {
     expect(ed.message).toMatch(/sombreado/);
   });
 });
+
+describe("planos que se veían diminutos", () => {
+  // casa de 12 × 9 dibujada en metros con la plantilla acadiso (declara mm) y un resto olvidado a 50 km
+  const house = (extra: string[] = []) => [
+    "0", "SECTION", "2", "HEADER", "9", "$INSUNITS", "70", "4", "0", "ENDSEC",
+    "0", "SECTION", "2", "ENTITIES",
+    ...Array.from({ length: 60 }, (_, i) => ["0", "LINE", "8", "MUROS", "10", String((i % 13)), "20", "0", "11", String(i % 13), "21", "9"]).flat(),
+    "0", "LWPOLYLINE", "8", "MUROS", "90", "4", "70", "1", "10", "0", "20", "0", "10", "12", "20", "0", "10", "12", "20", "9", "10", "0", "20", "9",
+    ...extra,
+    "0", "ENDSEC", "0", "EOF",
+  ].join("\n");
+
+  it("un plano en metros que declara mm se lee en metros", () => {
+    const r = parseDxf(house());
+    expect(r.scale).toBe(1);
+    expect(r.unitsLabel).toMatch(/^m \(el archivo dice mm/);
+    expect(Math.max(...r.segments.map((s) => s.b.x))).toBeCloseTo(12);
+  });
+
+  it("un resto lejano no achica el encuadre ni mueve el plano", () => {
+    const r = parseDxf(house(["0", "LINE", "8", "0", "10", "50000", "20", "50000", "11", "50001", "21", "50000"]));
+    expect(r.scale).toBe(1);
+    expect(r.moved).toBeUndefined();
+    const ed = new Editor();
+    ed.clear();
+    ed.importDxf(house(["0", "LINE", "8", "0", "10", "50000", "20", "50000", "11", "50001", "21", "50000"]), "casa.dxf");
+    ed.fit(1000, 700);
+    // la casa (12 m) ocupa casi todo el ancho de la vista
+    expect(12 * ed.view.scale).toBeGreaterThan(700);
+  });
+});
+

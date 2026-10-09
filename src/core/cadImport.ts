@@ -1,4 +1,4 @@
-import type { Pt } from "./geometry";
+import { robustBox, type Pt } from "./geometry";
 import { flipLine, mapLines, type PatLine } from "./hatch";
 
 export interface ImportedSegment { a: Pt; b: Pt; layer: string }
@@ -30,17 +30,16 @@ export const MAX_SEGMENTS = 60000;
 /**
  * Pasa a metros y a la planta (Y hacia abajo) los segmentos leídos en unidades de dibujo.
  * Sin unidades declaradas, si el dibujo mide más de 1000 se asume que está en mm.
+ * Si con las unidades declaradas el plano mediría menos de 15 cm, está dibujado en metros
+ * (pasa con la plantilla acadiso, que declara mm aunque se dibuje 1 unidad = 1 m).
  * Si queda a más de 1 km del origen (coordenadas UTM, por ejemplo) se trae junto al origen.
  */
 export function finishSegments(segs: ImportedSegment[], insunits: number, skipped: Record<string, number>, texts: ImportedText[] = [], hatches: ImportedHatch[] = []): CadImportResult {
   let [scale, unitsLabel] = INSUNITS[insunits] ?? [1, "m"];
-  const hpts = hatches.flatMap((h) => h.loops.flat());
-  if (!INSUNITS[insunits] && (segs.length || hpts.length)) {
-    let ext = 0;
-    for (const s of segs) ext = Math.max(ext, Math.abs(s.a.x), Math.abs(s.a.y), Math.abs(s.b.x), Math.abs(s.b.y));
-    for (const p of hpts) ext = Math.max(ext, Math.abs(p.x), Math.abs(p.y));
-    if (ext > 1000) [scale, unitsLabel] = [0.001, "mm (supuesto)"];
-  }
+  const raw = [...segs.flatMap((s) => [s.a, s.b]), ...hatches.flatMap((h) => h.loops.flat())];
+  const box = robustBox(raw), size = box ? Math.max(box.x1 - box.x0, box.y1 - box.y0) : 0;
+  if (!INSUNITS[insunits] && size > 1000) [scale, unitsLabel] = [0.001, "mm (supuesto)"];
+  else if (INSUNITS[insunits] && scale < 1 && size > 0 && size * scale < 0.15) [scale, unitsLabel] = [1, `m (el archivo dice ${unitsLabel}, pero así mediría ${(size * INSUNITS[insunits][0] * 100).toFixed(1)} cm)`];
   const P = (p: Pt) => ({ x: p.x * scale, y: -p.y * scale });
   for (const s of segs) { s.a = P(s.a); s.b = P(s.b); }
   for (const t of texts) { t.x *= scale; t.y = -t.y * scale; t.size *= scale; }
@@ -51,10 +50,9 @@ export function finishSegments(segs: ImportedSegment[], insunits: number, skippe
   const res: CadImportResult = { segments: segs, scale, unitsLabel, skipped };
   if (texts.length) res.texts = texts;
   if (hatches.length) res.hatches = hatches;
-  const all = [...segs.flatMap((s) => [s.a, s.b]), ...hatches.flatMap((h) => h.loops.flat())];
-  if (all.length) {
-    let x0 = Infinity, y0 = Infinity;
-    for (const p of all) { x0 = Math.min(x0, p.x); y0 = Math.min(y0, p.y); }
+  if (box) {
+    // la esquina del grueso del dibujo, ya en metros y con la Y de la planta
+    const x0 = box.x0 * scale, y0 = -box.y1 * scale;
     if (Math.abs(x0) > 1000 || Math.abs(y0) > 1000) {
       const dx = Math.round(x0), dy = Math.round(y0), mv = (p: Pt) => ({ x: p.x - dx, y: p.y - dy });
       for (const s of segs) { s.a = mv(s.a); s.b = mv(s.b); }

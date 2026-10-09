@@ -578,6 +578,9 @@ function hatchWall(ctx: CanvasRenderingContext2D, ed: Editor, polys: Pt[][], hat
   ctx.fillStyle = C["plan-bg"]; ctx.fill();
   if (hatch === "concrete" || hatch === "drywall") { ctx.globalAlpha = hatch === "concrete" ? 0.3 : 0.16; ctx.fillStyle = C.wall; ctx.fill(); ctx.globalAlpha = 1; }
   ctx.clip();
+  // solo la parte visible: con mucho zoom un muro mide cientos de miles de píxeles
+  x0 = Math.max(x0, 0); y0 = Math.max(y0, 0); x1 = Math.min(x1, ctx.canvas.width); y1 = Math.min(y1, ctx.canvas.height);
+  if (x0 > x1 || y0 > y1) { ctx.restore(); return; }
   // rayado en coordenadas de pantalla para que siga continuo de un muro a otro
   const lines = (step: number, dirn: 1 | -1, dash: number[] = []) => {
     ctx.beginPath(); ctx.setLineDash(dash);

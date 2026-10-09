@@ -40,6 +40,8 @@ interface GripDrag {
 }
 
 const STORAGE_KEY = "trazo-bim";
+/** Límites del zoom, en píxeles por metro: de un plano de varios kilómetros a un detalle de milímetros. */
+const MIN_ZOOM = 0.02, MAX_ZOOM = 20000;
 
 export const ROOF_LABEL: Record<RoofKind, string> = { flat: "Plana", gable: "A dos aguas", hip: "A cuatro aguas" };
 
@@ -327,8 +329,9 @@ export class Editor {
   fit(width: number, height: number) {
     if (!width) return;
     // los calcos también cuentan al encuadrar en pantalla (en las láminas no se dibujan)
-    const b = bounds(this.model, this.vis.calcos ? this.model.underlays.flatMap((u) => [{ x: u.x, y: u.y }, { x: u.x + u.w, y: u.y + u.h }]) : []);
-    const s = Math.max(5, Math.min(400, Math.min(width / (b.x1 - b.x0), height / (b.y1 - b.y0))));
+    // sin los restos sueltos lejanos que traen algunos DWG, que harían ver el plano diminuto
+    const b = bounds(this.model, this.vis.calcos ? this.model.underlays.flatMap((u) => [{ x: u.x, y: u.y }, { x: u.x + u.w, y: u.y + u.h }]) : [], true);
+    const s = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, Math.min(width / (b.x1 - b.x0), height / (b.y1 - b.y0))));
     this.view.scale = s;
     this.view.ox = width / 2 - ((b.x0 + b.x1) / 2) * s;
     this.view.oy = height / 2 - ((b.y0 + b.y1) / 2) * s;
@@ -336,7 +339,7 @@ export class Editor {
   }
   zoomAt(sx: number, sy: number, factor: number) {
     const before = this.toW(sx, sy);
-    this.view.scale = Math.max(5, Math.min(600, this.view.scale * factor));
+    this.view.scale = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, this.view.scale * factor));
     this.view.ox = sx - before.x * this.view.scale;
     this.view.oy = sy - before.y * this.view.scale;
     this.emit();
