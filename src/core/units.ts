@@ -98,9 +98,13 @@ export const US_SCALES: { den: number; label: string }[] = [
   { den: 48, label: '1/4" = 1\'-0"' },
   { den: 64, label: '3/16" = 1\'-0"' },
   { den: 96, label: '1/8" = 1\'-0"' },
+  { den: 120, label: '1" = 10\'-0"' },
   { den: 128, label: '3/32" = 1\'-0"' },
   { den: 192, label: '1/16" = 1\'-0"' },
+  { den: 240, label: '1" = 20\'-0"' },
+  { den: 360, label: '1" = 30\'-0"' },
   { den: 384, label: '1/32" = 1\'-0"' },
+  { den: 480, label: '1" = 40\'-0"' },
 ];
 export const METRIC_SCALES = [20, 25, 50, 75, 100, 125, 150, 200, 250, 500, 1000];
 export const scalesFor = (u = current) => (u === "imperial" ? US_SCALES.map((s) => s.den) : METRIC_SCALES);
