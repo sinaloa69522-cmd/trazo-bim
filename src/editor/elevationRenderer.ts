@@ -1,5 +1,6 @@
 import { fmtDim, fmtElev } from "../core/units";
 import type { EFace, Elevation, FaceKind } from "../core/elevation";
+import { elevationLines } from "../core/openingStyles";
 
 const FILL: Record<FaceKind, string> = {
   wall: "#ffffff", glass: "#dfe8ee", door: "#efe7dc", roof: "#e6e6e6", slab: "#d4d4d4", stair: "#ece8e0", furn: "#f4f4f4", cut: "#2b2b2b",
@@ -35,6 +36,7 @@ export function drawElevation(ctx: CanvasRenderingContext2D, el: Elevation, ox: 
       ctx.closePath();
     }
     ctx.strokeStyle = f.kind === "cut" ? FILL.cut : "#1a1a1a"; ctx.lineWidth = f.cut ? 0.9 : f.kind === "glass" || f.kind === "door" || f.kind === "furn" ? 0.5 : 0.7; ctx.stroke();
+    if (f.op && !f.cut) carpentry(ctx, f, X, Y);
   };
   // primero lo que se ve más allá; lo cortado va encima del terreno
   for (const f of el.faces) if (!f.cut) paint(f);
@@ -99,6 +101,20 @@ function texture(ctx: CanvasRenderingContext2D, f: EFace, X: Px, Y: Px, s: numbe
       const h = Math.sin(x * 12.9898 + y * 78.233) * 43758.5453, r = h - Math.floor(h);
       ctx.fillRect(x + r * step, y + ((r * 7) % 1) * step, 0.6, 0.6);
     }
+  }
+  ctx.restore();
+}
+
+/** Montantes, travesaños y el triángulo de apertura de una puerta o ventana vista en alzado. */
+function carpentry(ctx: CanvasRenderingContext2D, f: EFace, X: Px, Y: Px) {
+  let u0 = Infinity, u1 = -Infinity, z0 = Infinity, z1 = -Infinity;
+  for (const q of f.pts) { u0 = Math.min(u0, q.u); u1 = Math.max(u1, q.u); z0 = Math.min(z0, q.z); z1 = Math.max(z1, q.z); }
+  ctx.save();
+  ctx.lineWidth = 0.4; ctx.strokeStyle = "#333";
+  for (const l of elevationLines(f.op!)) {
+    ctx.beginPath(); ctx.setLineDash(l.dash ? [3, 2] : []);
+    l.pts.forEach(([u, v], i) => { const x = X(u0 + u * (u1 - u0)), y = Y(z0 + v * (z1 - z0)); if (i) ctx.lineTo(x, y); else ctx.moveTo(x, y); });
+    ctx.stroke();
   }
   ctx.restore();
 }

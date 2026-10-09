@@ -34,6 +34,8 @@ export interface Opening {
   height: number;
   sill: number;
   flip: boolean;
+  /** Tipo de puerta o ventana (openingStyles.ts); sin él, de una hoja / fija */
+  style?: string;
 }
 
 export interface Line {

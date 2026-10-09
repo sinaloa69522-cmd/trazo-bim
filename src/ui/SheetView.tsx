@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { usedFinishes } from "../core/finishes";
+import { openingStyle, styleName } from "../core/openingStyles";
 import { allSections, elevation, FACADES, section, type Elevation, type Facade } from "../core/elevation";
 import { bounds } from "../core/geometry";
 import { mepDef, type Discipline } from "../core/mep";
@@ -571,12 +572,12 @@ function ScheduleTable({ rows, kind }: { rows: ReturnType<typeof openingSchedule
   return (
     <table>
       <thead>
-        <tr><th>{t("Marca", "Mark")}</th><th className="r">{t("Ancho", "Width")}</th><th className="r">{t("Alto", "Height")}</th>{kind === "window" && <th className="r">{t("Antep.", "Sill")}</th>}<th className="r">{t("Ud.", "Qty")}</th></tr>
+        <tr><th>{t("Marca", "Mark")}</th><th>{t("Tipo", "Type")}</th><th className="r">{t("Ancho", "Width")}</th><th className="r">{t("Alto", "Height")}</th>{kind === "window" && <th className="r">{t("Antep.", "Sill")}</th>}<th className="r">{t("Ud.", "Qty")}</th></tr>
       </thead>
       <tbody>
         {rows.map((t) => (
           <tr key={t.mark}>
-            <td><b>{t.mark}</b></td><td className="r">{n2(t.width)}</td><td className="r">{n2(t.height)}</td>
+            <td><b>{t.mark}</b></td><td>{styleName(openingStyle(t))}</td><td className="r">{n2(t.width)}</td><td className="r">{n2(t.height)}</td>
             {kind === "window" && <td className="r">{n2(t.sill)}</td>}<td className="r">{t.count}</td>
           </tr>
         ))}

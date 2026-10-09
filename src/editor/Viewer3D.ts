@@ -3,7 +3,8 @@ import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { furnitureSolids, furnitureToPlan } from "../core/furniture";
 import { discOfSystem, mepDef, systemDef } from "../core/mep";
 import { bounds, dir, loc, pieces, roofGeom, stairSteps, type P3 } from "../core/geometry";
-import type { Wall } from "../core/model";
+import type { Opening, Wall } from "../core/model";
+import { openingStyle } from "../core/openingStyles";
 import { finish, gableWall, outward, roofFinish, type Finish } from "../core/finishes";
 import { finishTile } from "./finishTextures";
 import type { Editor } from "./Editor";
@@ -60,6 +61,71 @@ export class Viewer3D {
       this.finMats.set(f.id, m);
     }
     return m;
+  }
+
+  /**
+   * Carpintería de un hueco según su tipo: hojas, vidrios, montantes y travesaños.
+   * a..b es el vano a lo largo del muro y top la altura del dintel sobre el nivel.
+   */
+  private carpentry(box: (w: Wall, sa: number, sb: number, z0: number, z1: number, th: number, mat: THREE.Material, edges?: boolean, ext?: undefined, n?: number) => void,
+    w: Wall, o: Opening, a: number, b: number, top: number, sel: boolean) {
+    const st = openingStyle(o).id, W = b - a, m = (a + b) / 2, t = w.thick;
+    const leafM = sel ? this.mat.sel : this.mat.door, frameM = sel ? this.mat.sel : this.mat.frame, glass = this.mat.glass;
+    /** Hoja acristalada: bastidor de ancho fw y vidrio dentro. */
+    const glazed = (sa: number, sb: number, z0: number, z1: number, th: number, fw = 0.06, n = 0, fm = frameM) => {
+      box(w, sa, sb, z0, z0 + fw, th, fm, false, undefined, n); box(w, sa, sb, z1 - fw, z1, th, fm, false, undefined, n);
+      box(w, sa, sa + fw, z0 + fw, z1 - fw, th, fm, false, undefined, n); box(w, sb - fw, sb, z0 + fw, z1 - fw, th, fm, false, undefined, n);
+      box(w, sa + fw, sb - fw, z0 + fw, z1 - fw, th * 0.4, glass, false, undefined, n);
+    };
+    const leaf = (sa: number, sb: number, z0 = 0, z1 = top - 0.02) => box(w, sa, sb, z0, z1, 0.045, leafM);
+    if (o.kind === "door") {
+      switch (st) {
+        case "double": leaf(a + 0.02, m - 0.005); leaf(m + 0.005, b - 0.02); break;
+        case "french": glazed(a + 0.02, m - 0.005, 0, top - 0.02, 0.045, 0.1, 0, leafM); glazed(m + 0.005, b - 0.02, 0, top - 0.02, 0.045, 0.1, 0, leafM); break;
+        case "entry": {
+          const side = Math.min(0.36, W * 0.22);
+          glazed(a, a + side, 0, top, 0.06); glazed(b - side, b, 0, top, 0.06);
+          leaf(a + side + 0.02, b - side - 0.02);
+          break;
+        }
+        case "slider": glazed(a, m + 0.05, 0, top, 0.05, 0.06, -0.03); glazed(m - 0.05, b, 0, top, 0.05, 0.06, 0.03); break;
+        case "bifold": for (let i = 0; i < 4; i++) leaf(a + 0.01 + (i * W) / 4, a + ((i + 1) * W) / 4 - 0.006); break;
+        case "dutch": leaf(a + 0.02, b - 0.02, 0, top * 0.5 - 0.008); leaf(a + 0.02, b - 0.02, top * 0.5 + 0.008); break;
+        case "barn": {
+          const sd = o.flip ? -1 : 1;
+          box(w, a - 0.05, b + 0.05, 0.01, top + 0.05, 0.04, leafM, true, undefined, sd * (t / 2 + 0.035));
+          box(w, a - 0.1, b + W, top + 0.08, top + 0.12, 0.03, frameM, true, undefined, sd * (t / 2 + 0.02));
+          break;
+        }
+        case "garage": {
+          const gm = sel ? this.mat.sel : this.mepMat("#ecebe6"), k = 4, hh = (top - 0.02) / k;
+          for (let i = 0; i < k; i++) box(w, a + 0.01, b - 0.01, i * hh + 0.004, (i + 1) * hh - 0.004, 0.05, gm);
+          // ventanillas en la sección de arriba
+          const n = Math.max(2, Math.round(W / 0.6));
+          for (let i = 0; i < n; i++) { const s0 = a + 0.1 + (i * (W - 0.2)) / n; box(w, s0 + 0.04, s0 + (W - 0.2) / n - 0.04, 3 * hh + 0.08, 4 * hh - 0.08, 0.055, glass, false); }
+          break;
+        }
+        default: leaf(a + 0.02, b - 0.02);
+      }
+      return;
+    }
+    // ventanas: marco completo, vidrio y montantes o travesaños según el tipo
+    const z0 = o.sill, z1 = top, fw = st === "picture" ? 0.07 : 0.05, th = t * 0.6;
+    box(w, a, b, z0, z0 + fw, th, frameM, false); box(w, a, b, z1 - fw, z1, th, frameM, false);
+    box(w, a, a + fw, z0 + fw, z1 - fw, th, frameM, false); box(w, b - fw, b, z0 + fw, z1 - fw, th, frameM, false);
+    if (st === "jalousie") {
+      for (let z = z0 + fw; z + 0.09 <= z1 - fw + 1e-6; z += 0.1) box(w, a + fw, b - fw, z, z + 0.09, 0.012, glass, false);
+      return;
+    }
+    box(w, a + fw, b - fw, z0 + fw, z1 - fw, 0.02, glass, false);
+    const mid = (z0 + z1) / 2;
+    if (st === "single-hung" || st === "double-hung") box(w, a + fw, b - fw, mid - 0.025, mid + 0.025, th, frameM, false);
+    if (st === "slider" || st === "casement2") box(w, m - 0.025, m + 0.025, z0 + fw, z1 - fw, th, frameM, false);
+    if (st === "awning" || st === "hopper" || st === "casement") {
+      // bastidor de la hoja dentro del marco
+      const i = fw + 0.03;
+      box(w, a + i, b - i, z0 + i, z0 + i + 0.03, th * 0.5, frameM, false); box(w, a + i, b - i, z1 - i - 0.03, z1 - i, th * 0.5, frameM, false);
+    }
   }
 
   constructor(private host: HTMLElement, private ed: Editor, private background: () => string) {
@@ -121,9 +187,9 @@ export class Viewer3D {
     }
     let base = 0; // cota del nivel que se está construyendo
     /** ext: revestimiento en la cara exterior (+1 la de la normal izquierda, −1 la otra). */
-    const box = (w: Wall, sa: number, sb: number, z0: number, z1: number, th: number, mat: THREE.Material, edges = true, ext?: { mat: THREE.Material; side: 1 | -1 }) => {
+    const box = (w: Wall, sa: number, sb: number, z0: number, z1: number, th: number, mat: THREE.Material, edges = true, ext?: { mat: THREE.Material; side: 1 | -1 }, n = 0) => {
       if (sb - sa < 1e-3 || z1 - z0 < 1e-3) return;
-      const { ux, uy } = dir(w), g = new THREE.BoxGeometry(sb - sa, z1 - z0, th), c = loc(w, (sa + sb) / 2, 0);
+      const { ux, uy } = dir(w), g = new THREE.BoxGeometry(sb - sa, z1 - z0, th), c = loc(w, (sa + sb) / 2, n);
       if (ext) {
         // UV en metros desde el arranque del muro y la cota 0, para que las hiladas casen entre piezas
         const uv = g.attributes.uv as THREE.BufferAttribute, i0 = ext.side > 0 ? 16 : 20;
@@ -241,13 +307,7 @@ export class Viewer3D {
           const top = Math.min(H, o.sill + o.height), om = isSel("opening", o.id);
           box(w, a, bb, top, H, w.thick, mat, true, ext);
           if (o.sill > 0) box(w, a, bb, 0, o.sill, w.thick, mat, true, ext);
-          if (o.kind === "door" && vis.puertas) box(w, a + 0.02, bb - 0.02, 0, top - 0.02, 0.045, om ? this.mat.sel : this.mat.door);
-          if (o.kind === "window" && vis.ventanas) {
-            const fm = om ? this.mat.sel : this.mat.frame;
-            box(w, a, bb, o.sill, o.sill + 0.05, w.thick * 0.6, fm, false);
-            box(w, a, bb, top - 0.05, top, w.thick * 0.6, fm, false);
-            box(w, a + 0.03, bb - 0.03, o.sill + 0.05, top - 0.05, 0.02, this.mat.glass, false);
-          }
+          if (o.kind === "door" ? vis.puertas : vis.ventanas) this.carpentry(box, w, o, a, bb, top, om);
         }
       }
     });

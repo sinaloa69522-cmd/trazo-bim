@@ -13,6 +13,7 @@ import { autoRoute, discOfSystem, isElectric, MEP, mepDef, mepOf, runLength, san
 import { extend, offset, trim, type Linear } from "../core/modify";
 import { GENERIC, wallType } from "../core/wallTypes";
 import { finish } from "../core/finishes";
+import { openingStyle } from "../core/openingStyles";
 import { computeRooms, RC, roomAt, type RoomGrid } from "../core/rooms";
 import { hatchArea, hatchPattern, inHatch, maskLoops, IMPORTED } from "../core/hatch";
 import { deleteElements, reflection, scaling, transformElements, translation, type Xform } from "../core/transform";
@@ -77,6 +78,9 @@ const US_DEFAULTS = {
   slabThick: 4 * IN, pitch: 26.57, overhang: 18 * IN, stairW: 3 * FT, textSize: 9 * IN,
 };
 
+/** Medida habitual en las unidades del proyecto: en pies, redondeada a 2". */
+const nice = (v: number) => (imperial() ? Math.round(v / (2 * IN)) * 2 * IN : v);
+
 export class Editor {
   private _project: Project = emptyProject();
   /** Al cambiar de proyecto (abrir, deshacer, ejemplo…) las medidas pasan a escribirse en sus unidades. */
@@ -89,7 +93,7 @@ export class Editor {
   set model(m: Model) { this.project.levels[this.active] = { ...this.model, ...m }; }
   rooms: RoomGrid | null = null;
   vis: Record<LayerId, boolean> = { muros: true, puertas: true, ventanas: true, cotas: true, anot: true, hab: true, losas: true, cubiertas: true, escaleras: true, mobiliario: true, secciones: true, electricidad: true, plomeria: true, calcos: true, sombreados: true };
-  defaults = { ...METRIC_DEFAULTS, roofKind: "gable" as RoofKind, furnKind: "bed2", furnRot: 0, mepKind: "enchufe", mepRot: 0, runSys: "af" as RunSystem, hatchPattern: "diagonal", hatchScale: 1, hatchAngle: 0, hatchMode: "room" as "room" | "poly" };
+  defaults = { ...METRIC_DEFAULTS, roofKind: "gable" as RoofKind, furnKind: "bed2", furnRot: 0, mepKind: "enchufe", mepRot: 0, runSys: "af" as RunSystem, hatchPattern: "diagonal", hatchScale: 1, hatchAngle: 0, hatchMode: "room" as "room" | "poly", doorStyle: "single", winStyle: "fixed" };
   tool: Tool = "select";
   /** Elementos seleccionados. */
   sels: Selection[] = [];
@@ -845,8 +849,9 @@ export class Editor {
     this.model.openings.push({
       id: nextId(this.model), wallId: c.w.id, t: c.t, kind: door ? "door" : "window",
       width: door ? d.doorW : d.winW, height: door ? d.doorH : d.winH, sill: door ? 0 : d.sill, flip: false,
+      style: door ? d.doorStyle : d.winStyle,
     });
-    this.message = door ? "Puerta insertada." : "Ventana insertada.";
+    this.message = `Insertado: ${openingStyle({ kind: door ? "door" : "window", style: door ? d.doorStyle : d.winStyle }).name.toLowerCase()}.`;
     this.openCand = null;
     this.changed();
   }
@@ -1314,6 +1319,38 @@ export class Editor {
     this.message = what === "wall"
       ? `${n > 1 ? `${n} muros` : "Muro"}: ${name ? `revestimiento de ${name}` : "sin revestimiento"}.`
       : `${n > 1 ? `${n} cubiertas` : "Cubierta"}: ${name ?? "material por defecto"}.`;
+    this.emit();
+  }
+
+  /**
+   * Cambia el tipo de puertas o ventanas y les da sus medidas habituales: el alto y el antepecho siempre
+   * (sin pasar del muro) y el ancho solo si cabe en el muro.
+   */
+  setOpeningStyle(ids: number[], style: string) {
+    const ops = this.model.openings.filter((o) => ids.includes(o.id));
+    if (!ops.length) return;
+    let narrow = 0;
+    this.edit(() => {
+      for (const o of ops) {
+        const w = this.wallById(o.wallId), st = openingStyle({ kind: o.kind, style });
+        o.style = st.id;
+        if (!w) continue;
+        const sw = nice(st.w), sh = nice(st.h), ss = st.sill === undefined ? o.sill : nice(st.sill);
+        if (fits(this.model, w, o.t, sw, o.id)) o.width = sw; else narrow++;
+        o.sill = o.kind === "door" ? 0 : Math.min(ss, Math.max(0, w.height - sh - 0.05));
+        o.height = Math.min(sh, w.height - o.sill - 0.05);
+      }
+    });
+    const st = openingStyle({ kind: ops[0].kind, style });
+    this.message = `${ops.length > 1 ? `${ops.length} huecos` : "Hueco"}: ${st.name.toLowerCase()}.${narrow ? " Su ancho habitual no cabe en el muro; se queda el que tenía." : ""}`;
+    this.emit();
+  }
+
+  /** Tipo para las próximas puertas o ventanas, con sus medidas habituales. */
+  setDefaultStyle(kind: "door" | "window", style: string) {
+    const d = this.defaults, st = openingStyle({ kind, style });
+    if (kind === "door") { d.doorStyle = st.id; d.doorW = nice(st.w); d.doorH = nice(st.h); }
+    else { d.winStyle = st.id; d.winW = nice(st.w); d.winH = nice(st.h); d.sill = st.sill === undefined ? d.sill : nice(st.sill); }
     this.emit();
   }
 

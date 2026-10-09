@@ -1,6 +1,7 @@
+import { openingStyle } from "./openingStyles";
 import { furnitureDef, furnitureSolids } from "./furniture";
 import { dir, endExt, roofGeom, stairSteps, type P3 } from "./geometry";
-import type { Project } from "./model";
+import type { Opening, Project } from "./model";
 import { computeRooms } from "./rooms";
 import { mepDef, systemDef } from "./mep";
 import type { RunSystem } from "./model";
@@ -12,6 +13,12 @@ import { wallType, wallTypeLabel } from "./wallTypes";
  * Un IfcBuildingStorey por nivel; muros con sus huecos, puertas y ventanas, losas, cubiertas,
  * escaleras y espacios. En IFC el eje Y apunta al norte, así que la Y de la planta se invierte.
  */
+/** Apertura de la puerta en IFC; la de una hoja dice hacia qué lado abre. */
+function ifcOp(o: Opening) {
+  const op = openingStyle(o).ifc;
+  return op === "SINGLE_SWING" ? `SINGLE_SWING_${o.flip ? "RIGHT" : "LEFT"}` : op;
+}
+
 export function toIfc(p: Project, opts: { now?: Date; random?: () => number } = {}): string {
   const rnd = opts.random ?? Math.random;
   const now = opts.now ?? new Date();
@@ -103,8 +110,8 @@ export function toIfc(p: Project, opts: { now?: Date; random?: () => number } = 
         const mark = marks.get(o.id) ?? "";
         const leaf = shape("SweptSolid", [box(0, 0, o.width - 0.02, o.kind === "door" ? 0.045 : 0.06, 0, top)]);
         const el = o.kind === "door"
-          ? add(`IFCDOOR('${id()}',$,${str(`Puerta ${mark}`)},$,$,${fPl},${leaf},${str(mark)},${f(top)},${f(o.width)},.DOOR.,.SINGLE_SWING_${o.flip ? "RIGHT" : "LEFT"}.,$)`)
-          : add(`IFCWINDOW('${id()}',$,${str(`Ventana ${mark}`)},$,$,${fPl},${leaf},${str(mark)},${f(top)},${f(o.width)},.WINDOW.,.SINGLE_PANEL.,$)`);
+          ? add(`IFCDOOR('${id()}',$,${str(`${openingStyle(o).name} ${mark}`)},$,$,${fPl},${leaf},${str(mark)},${f(top)},${f(o.width)},.DOOR.,.${ifcOp(o)}.,$)`)
+          : add(`IFCWINDOW('${id()}',$,${str(`${openingStyle(o).name} ${mark}`)},$,$,${fPl},${leaf},${str(mark)},${f(top)},${f(o.width)},.WINDOW.,.${openingStyle(o).ifc}.,$)`);
         add(`IFCRELFILLSELEMENT('${id()}',$,$,$,${op},${el})`);
         contained.push(el);
       }
