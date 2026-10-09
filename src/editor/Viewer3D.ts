@@ -1,6 +1,7 @@
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { furnitureSolids, furnitureToPlan } from "../core/furniture";
+import { discOfSystem, mepDef, systemDef } from "../core/mep";
 import { bounds, dir, loc, pieces, roofGeom, stairSteps, type P3 } from "../core/geometry";
 import type { Wall } from "../core/model";
 import type { Editor } from "./Editor";
@@ -33,6 +34,14 @@ export class Viewer3D {
     furn: new THREE.MeshStandardMaterial({ color: 0xc7b299, roughness: 0.85 }),
     edge: new THREE.LineBasicMaterial({ color: 0x2b3330, transparent: true, opacity: 0.55 }),
   };
+
+  private mepMats = new Map<string, THREE.Material>();
+  private mepMat(color: string, line = false) {
+    const k = `${line ? "l" : "m"}${color}`;
+    let m = this.mepMats.get(k);
+    if (!m) { m = line ? new THREE.LineBasicMaterial({ color }) : new THREE.MeshStandardMaterial({ color, roughness: 0.6 }); this.mepMats.set(k, m); }
+    return m;
+  }
 
   constructor(private host: HTMLElement, private ed: Editor, private background: () => string) {
     this.ren = new THREE.WebGLRenderer({ antialias: true });
@@ -162,6 +171,23 @@ export class Viewer3D {
           mesh.castShadow = mesh.receiveShadow = true;
           this.group.add(mesh);
         }
+      }
+      // instalaciones: puntos como pequeñas cajas a su altura y recorridos como líneas de su color
+      for (const f of m.fixtures) {
+        const d = mepDef(f.kind);
+        if (!vis[d.disc === "elec" ? "electricidad" : "plomeria"]) continue;
+        const sz = f.kind === "termo" ? 0.45 : f.kind === "luz" ? 0.25 : 0.1, hh = f.kind === "termo" ? 0.8 : 0.06;
+        const mesh = new THREE.Mesh(new THREE.BoxGeometry(sz, hh, sz), this.mepMat(systemDef(d.sys).color));
+        const c = furnitureToPlan(f, { x: 0, y: f.kind === "termo" ? 0.2 : 0 });
+        mesh.position.set(c.x, base + f.h + hh / 2, c.y);
+        mesh.rotation.y = (-f.rot * Math.PI) / 180;
+        this.group.add(mesh);
+      }
+      for (const r of m.runs) {
+        if (!vis[discOfSystem(r.system) === "elec" ? "electricidad" : "plomeria"] || r.pts.length < 2) continue;
+        const z = base + (r.system === "san" ? 0.02 : r.system === "elec" ? 2.6 : 2.5);
+        const g = new THREE.BufferGeometry().setFromPoints(r.pts.map((q) => new THREE.Vector3(q.x, z, q.y)));
+        this.group.add(new THREE.Line(g, this.mepMat(systemDef(r.system).color, true)));
       }
       if (vis.muros) for (const w of m.walls) {
         const { solids, ops } = pieces(m, w), H = w.height;

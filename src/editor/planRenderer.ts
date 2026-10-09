@@ -1,9 +1,10 @@
 import { dimGeom, dimOffset, dir, loc, pieces, roofGeom, stairSteps, textBox, type Pt } from "../core/geometry";
 import { furnitureStrokes, type Stroke } from "../core/furniture";
-import type { Dim, Model, Roof, Section, Stair, Wall } from "../core/model";
+import { discOfSystem, fixtureStrokes, fixtureTextAt, mepDef, systemDef, type SymStroke } from "../core/mep";
+import type { Dim, Fixture, Model, Roof, Run, Section, Stair, Wall } from "../core/model";
 import { RC } from "../core/rooms";
 import { wallType, type Hatch } from "../core/wallTypes";
-import type { Editor, SelType } from "./Editor";
+import { DISC_LAYER, type Editor, type SelType } from "./Editor";
 
 export type PlanColors = Record<
   "plan-bg" | "grid" | "grid-major" | "wall" | "door" | "window" | "dim" | "anno" | "accent" | "fg" | "muted" | "danger" | "panel",
@@ -17,6 +18,10 @@ export interface PlanOpts {
   print?: boolean;
   /** Marca de tipo de cada puerta o ventana (P1, V2…), por id del hueco. */
   marks?: Map<number, string>;
+  /** Rotula el circuito junto a cada mecanismo eléctrico (láminas de electricidad). */
+  circuits?: boolean;
+  /** Baja el rótulo de las habitaciones (en metros) para que no tape el punto de luz del centro. */
+  roomLabelDy?: number;
 }
 
 /** Dibuja la planta completa en un canvas 2D. W y H en píxeles CSS. */
@@ -169,13 +174,29 @@ export function drawPlan(ctx: CanvasRenderingContext2D, ed: Editor, C: PlanColor
     const hl = isSel("section", se.id) || (hover?.type === "section" && hover.id === se.id);
     drawSection(ctx, ed, se, hl ? C.accent : C.fg, hl ? 2 : 1);
   }
+  // instalaciones: primero los recorridos y encima los símbolos
+  for (const r of m.runs) {
+    if (!ed.vis[DISC_LAYER[discOfSystem(r.system)]]) continue;
+    const hl = isSel("run", r.id) || (hover?.type === "run" && hover.id === r.id);
+    drawRun(ctx, ed, r.pts, r.system, hl ? C.accent : null, hl ? 1.6 : 1);
+  }
+  for (const f of m.fixtures) {
+    if (!ed.fixtureVisible(f)) continue;
+    const hl = isSel("fixture", f.id) || (hover?.type === "fixture" && hover.id === f.id);
+    drawFixture(ctx, ed, f, hl ? C.accent : systemDef(mepDef(f.kind).sys).color, C["plan-bg"], hl ? 1.8 : 1.1);
+    if (opts.circuits && f.circuit) {
+      const s = toS(f.x, f.y);
+      ctx.font = "600 7px 'IBM Plex Mono', ui-monospace, monospace"; ctx.fillStyle = C.fg; ctx.textAlign = "left";
+      ctx.fillText(f.circuit, s.x + 0.16 * ed.view.scale + 1, s.y - 0.12 * ed.view.scale);
+    }
+  }
   if (ed.vis.cotas) for (const d of m.dims) drawDim(ctx, ed, d, isSel("dim", d.id) ? C.accent : C.dim);
 
   // rótulos de habitación
   if (ed.vis.hab && rg) for (const r of m.rooms) {
     const c = rg.rooms.get(r.id);
     if (!c) continue;
-    const s = toS(c.cx, c.cy);
+    const s = toS(c.cx, c.cy + (opts.roomLabelDy ?? 0));
     ctx.textAlign = "center";
     ctx.font = "600 12px 'IBM Plex Sans', system-ui, sans-serif"; ctx.fillStyle = c.ok ? C.fg : C.danger; ctx.fillText(r.name, s.x, s.y - 2);
     ctx.font = MONO; ctx.fillStyle = c.ok ? C.muted : C.danger;
@@ -231,6 +252,16 @@ export function drawPlan(ctx: CanvasRenderingContext2D, ed: Editor, C: PlanColor
         if (sl) for (const ring of [sl.pts, ...sl.holes]) poly(ring.map(xf.map), null, C.accent, 1.5);
         continue;
       }
+      if (r.type === "fixture") {
+        const f = ed.model.fixtures.find((x) => x.id === r.id);
+        if (f) { const q = xf.map(f); drawFixture(ctx, ed, { ...f, x: q.x, y: q.y }, C.accent, null, 1.2); }
+        continue;
+      }
+      if (r.type === "run") {
+        const rn = ed.model.runs.find((x) => x.id === r.id);
+        if (rn) drawRun(ctx, ed, rn.pts.map(xf.map), rn.system, C.accent, 1.2);
+        continue;
+      }
       if (r.type === "furniture") {
         const f = ed.model.furniture.find((x) => x.id === r.id);
         if (f) strokes(furnitureStrokes(f).map((k) => ({ ...k, pts: k.pts.map(xf.map) })), C.accent, 1.2);
@@ -280,6 +311,9 @@ export function drawPlan(ctx: CanvasRenderingContext2D, ed: Editor, C: PlanColor
     } else if (ed.tool === "section") {
       drawSection(ctx, ed, { id: 0, x1: last.x, y1: last.y, x2: p.x, y2: p.y, name: "?" }, C.accent, 1.5);
       lengthTag(ctx, ed, C, last, p);
+    } else if (ed.tool === "run") {
+      drawRun(ctx, ed, [...draft.pts, p], ed.defaults.runSys, null, 1.2);
+      lengthTag(ctx, ed, C, last, p);
     } else if (ed.tool === "line") {
       seg(last, p, C.accent, 1.2, [5, 4]); lengthTag(ctx, ed, C, last, p);
     } else if (ed.tool === "dim") {
@@ -291,6 +325,13 @@ export function drawPlan(ctx: CanvasRenderingContext2D, ed: Editor, C: PlanColor
   if (ed.tool === "furniture" && ed.mouse.in) {
     ctx.globalAlpha = 0.7;
     strokes(furnitureStrokes({ kind: ed.defaults.furnKind, x: p.x, y: p.y, rot: ed.defaults.furnRot }), C.accent, 1.2);
+    ctx.globalAlpha = 1;
+  }
+  // mecanismo o punto que se va a colocar
+  if (ed.tool === "fixture" && ed.mouse.in) {
+    const c = ed.fixtureCandidate(p);
+    ctx.globalAlpha = 0.75;
+    drawFixture(ctx, ed, { kind: ed.defaults.mepKind, ...c }, C.accent, null, 1.2);
     ctx.globalAlpha = 1;
   }
   // desfase: copia fantasma en el lado del cursor
@@ -460,5 +501,40 @@ function hatchWall(ctx: CanvasRenderingContext2D, ed: Editor, polys: Pt[][], hat
   if (hatch === "brick") lines(4, 1);
   else if (hatch === "block") { lines(6, 1); lines(6, -1); }
   else if (hatch === "concrete") lines(7, 1, [3, 2, 1, 2]);
+  ctx.restore();
+}
+
+/** Tubería o canalización con el trazo de su red; col sustituye al color propio (selección, vista previa). */
+function drawRun(ctx: CanvasRenderingContext2D, ed: Editor, pts: Pt[], system: Run["system"], col: string | null, k: number) {
+  if (pts.length < 2) return;
+  const d = systemDef(system);
+  ctx.save();
+  ctx.strokeStyle = col ?? d.color; ctx.lineWidth = d.width * k; ctx.lineJoin = "round"; ctx.setLineDash(d.dash);
+  path(ctx, ed, pts);
+  ctx.restore();
+}
+
+/** Símbolo de instalaciones, con los rellenos de su color y el rótulo (CGMP, ACS…) si lo tiene. */
+function drawFixture(ctx: CanvasRenderingContext2D, ed: Editor, f: Pick<Fixture, "kind" | "x" | "y" | "rot">, col: string, bg: string | null, lw: number) {
+  const ks: SymStroke[] = fixtureStrokes(f), def = mepDef(f.kind);
+  ctx.save();
+  ctx.strokeStyle = col; ctx.fillStyle = col; ctx.lineWidth = lw;
+  for (const k of ks) {
+    ctx.beginPath();
+    k.pts.forEach((q, j) => { const s = ed.toS(q.x, q.y); if (j) ctx.lineTo(s.x, s.y); else ctx.moveTo(s.x, s.y); });
+    if (k.closed) ctx.closePath();
+    // los símbolos cerrados tapan lo que pasa por debajo (la tubería que llega al punto)
+    if (k.fill) ctx.fill();
+    else if (k.closed && bg) { ctx.fillStyle = bg; ctx.fill(); ctx.fillStyle = col; }
+    ctx.stroke();
+  }
+  if (def.text) {
+    const c = fixtureTextAt(f), s = ed.toS(c.x, c.y);
+    ctx.font = `600 ${Math.max(6, 0.09 * ed.view.scale)}px 'IBM Plex Sans Condensed', 'Arial Narrow', sans-serif`;
+    ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    // el cuadro tiene medio símbolo relleno: el rótulo va encima con el color del papel detrás
+    if (f.kind === "cuadro") { const tw = ctx.measureText(def.text).width + 2; ctx.fillStyle = bg ?? "#fff"; ctx.fillRect(s.x - tw / 2, s.y - 4, tw, 8); ctx.fillStyle = col; }
+    ctx.fillText(def.text, s.x, s.y);
+  }
   ctx.restore();
 }

@@ -2,6 +2,8 @@ import { furnitureDef, furnitureSolids } from "./furniture";
 import { dir, endExt, roofGeom, stairSteps, type P3 } from "./geometry";
 import type { Project } from "./model";
 import { computeRooms } from "./rooms";
+import { mepDef, systemDef } from "./mep";
+import type { RunSystem } from "./model";
 import { levelMarks } from "./schedules";
 import { wallType, wallTypeLabel } from "./wallTypes";
 
@@ -71,6 +73,9 @@ export function toIfc(p: Project, opts: { now?: Date; random?: () => number } = 
   add(`IFCRELAGGREGATES('${id()}',$,$,$,${site},(${building}))`);
 
   const storeys: string[] = [];
+  /** Elementos de cada red, para agruparlos en su IfcDistributionSystem */
+  const bySystem = new Map<RunSystem, string[]>();
+  const toSystem = (sys: RunSystem, el: string) => bySystem.set(sys, [...(bySystem.get(sys) ?? []), el]);
   /** Muros por material, para asociarles su IfcMaterial al final */
   const byMaterial = new Map<string, string[]>();
   p.levels.forEach((lv, li) => {
@@ -136,6 +141,33 @@ export function toIfc(p: Project, opts: { now?: Date; random?: () => number } = 
       contained.push(add(`${d.ifc.cls}('${id()}',$,${str(d.label)},$,$,${pl},${rep},$,.${d.ifc.type}.)`));
     }
 
+    // instalaciones: cada punto como una caja pequeña a su altura de montaje
+    for (const fx of lv.fixtures) {
+      const d = mepDef(fx.kind), a = (fx.rot * Math.PI) / 180;
+      const [bw, bd, bh] = fx.kind === "termo" ? [0.45, 0.45, 0.8] : fx.kind === "cuadro" ? [0.5, 0.12, 0.6] : fx.kind === "luz" ? [0.3, 0.3, 0.08] : [0.08, 0.05, 0.08];
+      const rep = shape("SweptSolid", [box(0, fx.kind === "termo" ? -0.2 : 0, bw, bd, 0, bh)]);
+      const pl = place(stPl, fx.x, -fx.y, fx.h, Math.cos(a), -Math.sin(a));
+      const name = fx.circuit ? `${d.label} ${fx.circuit}` : d.label;
+      const el = add(`${d.ifc.cls}('${id()}',$,${str(name)},$,$,${pl},${rep},${fx.circuit ? str(fx.circuit) : "$"},.${d.ifc.type}.)`);
+      contained.push(el);
+      toSystem(d.sys, el);
+    }
+    // tuberías y canalizaciones: un tramo recto por segmento de la polilínea
+    for (const run of lv.runs) {
+      const z = run.system === "san" ? -0.3 : run.system === "elec" ? 2.6 : 2.5, dia = run.system === "san" ? 0.11 : run.system === "elec" ? 0.025 : 0.02;
+      for (let i = 1; i < run.pts.length; i++) {
+        const a = run.pts[i - 1], b = run.pts[i], L = Math.hypot(b.x - a.x, b.y - a.y);
+        if (L < 1e-3) continue;
+        const pl = place(stPl, a.x, -a.y, z, (b.x - a.x) / L, -(b.y - a.y) / L);
+        const rep = shape("SweptSolid", [box(L / 2, 0, L, dia, 0, dia)]);
+        const el = run.system === "elec"
+          ? add(`IFCCABLECARRIERSEGMENT('${id()}',$,${str(systemDef(run.system).label)},$,$,${pl},${rep},$,.CONDUITSEGMENT.)`)
+          : add(`IFCPIPESEGMENT('${id()}',$,${str(systemDef(run.system).label)},$,$,${pl},${rep},$,.RIGIDSEGMENT.)`);
+        contained.push(el);
+        toSystem(run.system, el);
+      }
+    }
+
     if (contained.length) add(`IFCRELCONTAINEDINSPATIALSTRUCTURE('${id()}',$,$,$,${list(contained)},${storey})`);
 
     // espacios con su superficie útil
@@ -152,6 +184,12 @@ export function toIfc(p: Project, opts: { now?: Date; random?: () => number } = 
     if (spaces.length) add(`IFCRELAGGREGATES('${id()}',$,$,$,${storey},${list(spaces)})`);
   });
   if (storeys.length) add(`IFCRELAGGREGATES('${id()}',$,$,$,${building},${list(storeys)})`);
+  const SYS_IFC: Record<RunSystem, string> = { elec: "ELECTRICAL", af: "DOMESTICCOLDWATER", ac: "DOMESTICHOTWATER", san: "SEWAGE" };
+  for (const [sys, els] of bySystem) {
+    const g = add(`IFCDISTRIBUTIONSYSTEM('${id()}',$,${str(systemDef(sys).label)},$,$,$,.${SYS_IFC[sys]}.)`);
+    add(`IFCRELASSIGNSTOGROUP('${id()}',$,$,$,${list(els)},$,${g})`);
+    add(`IFCRELSERVICESBUILDINGS('${id()}',$,$,$,${g},(${building}))`);
+  }
   for (const [name, walls] of byMaterial)
     add(`IFCRELASSOCIATESMATERIAL('${id()}',$,$,$,${list(walls)},${add(`IFCMATERIAL(${str(name)},$,$)`)})`);
 

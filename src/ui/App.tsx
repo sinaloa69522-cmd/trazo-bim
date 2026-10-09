@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { Editor, type Tool } from "../editor/Editor";
+import { mepDef, type Discipline } from "../core/mep";
 import { CommandLine } from "./CommandLine";
 import { ExportDialog, type ExportFormat } from "./ExportDialog";
 import { PlanView } from "./PlanView";
@@ -9,7 +10,7 @@ import { View3D, type View3DHandle } from "./View3D";
 
 type ViewMode = "plan" | "split" | "3d" | "sheet";
 
-const TOOLS: { tool: Tool; label: string; key: string; icon: JSX.Element }[] = [
+const TOOLS: { tool: Tool; label: string; key: string; icon: JSX.Element; disc?: Discipline }[] = [
   { tool: "select", label: "Seleccionar", key: "S", icon: <path d="M3 2l9 5-4 1.2L6.5 13z" /> },
   { tool: "wall", label: "Muro", key: "M", icon: <rect x="1.5" y="6" width="13" height="4" /> },
   { tool: "door", label: "Puerta", key: "P", icon: <path d="M2 13h12M4 13V4M4 4a9 9 0 0 1 9 9" /> },
@@ -24,6 +25,9 @@ const TOOLS: { tool: Tool; label: string; key: string; icon: JSX.Element }[] = [
   { tool: "furniture", label: "Mobiliario", key: "MB", icon: <path d="M4 2v12M4 8h8v6M12 8V5M2 14h2" /> },
   { tool: "section", label: "Sección", key: "SE", icon: <path d="M2 8h12M2 8v-4M14 8V4M2 4l-1 2M2 4l1 2M14 4l-1 2M14 4l1 2" strokeDasharray="0" /> },
   { tool: "text", label: "Texto", key: "TX", icon: <path d="M3 3h10M8 3v10M6 13h4" /> },
+  { tool: "fixture", disc: "elec", label: "Electricidad", key: "EL", icon: <path d="M9 1.5L3.5 9H8l-1 5.5L12.5 7H8z" /> },
+  { tool: "fixture", disc: "plum", label: "Plomería", key: "PL", icon: <path d="M8 2C6 5 4.5 7 4.5 9.5a3.5 3.5 0 0 0 7 0C11.5 7 10 5 8 2z" /> },
+  { tool: "run", label: "Tubería", key: "TU", icon: <path d="M2 4h6v8h6M2 4v0M14 12v0" /> },
   { tool: "trim", label: "Recortar", key: "TR", icon: <><path d="M2 8h12M8 2v12" /><path d="M10.5 5.5l3-3" strokeDasharray="1.5 1.5" /></> },
   { tool: "extend", label: "Alargar", key: "AL", icon: <><path d="M13 2v12M2 8h7" /><path d="M9 8h4" strokeDasharray="1.5 1.5" /><path d="M7.5 6.5L9.5 8l-2 1.5" /></> },
   { tool: "offset", label: "Desfase", key: "DE", icon: <path d="M2 5h12M2 11h12" /> },
@@ -76,8 +80,9 @@ export function App() {
         <div className="brand">Trazo BIM <small>v0.2</small></div>
         <div className="group" role="toolbar" aria-label="Herramientas" id="tools">
           {TOOLS.map((t) => (
-            <button key={t.tool} className="tb" aria-pressed={ed.tool === t.tool} title={`${t.label} (${t.key})`}
-              onClick={() => { ed.setTool(t.tool); cmdRef.current?.focus(); }}>
+            <button key={t.key} className="tb" title={`${t.label} (${t.key})`}
+              aria-pressed={ed.tool === t.tool && (!t.disc || mepDef(ed.defaults.mepKind).disc === t.disc)}
+              onClick={() => { if (t.disc) ed.pickDiscipline(t.disc); else ed.setTool(t.tool); cmdRef.current?.focus(); }}>
               <svg viewBox="0 0 16 16">{t.icon}</svg><span className="lbl">{t.label}</span><kbd>{t.key}</kbd>
             </button>
           ))}

@@ -1,5 +1,6 @@
 import { furnitureSolids, furnitureToPlan } from "./furniture";
-import { dir, endExt, loc, roofGeom, stairSteps, type Pt } from "./geometry";
+import { dir, distSeg, endExt, loc, roofGeom, stairSteps, type Pt } from "./geometry";
+import { wallType, type Hatch } from "./wallTypes";
 import type { Project, Section } from "./model";
 
 /** Fachada vista desde ese punto cardinal (la planta tiene el norte arriba). */
@@ -14,7 +15,11 @@ export type FaceKind = "wall" | "glass" | "door" | "roof" | "slab" | "stair" | "
  * Polígono proyectado: u horizontal (de izquierda a derecha según se mira), z altura absoluta.
  * Las caras con cut están sobre el plano de corte de una sección y se dibujan encima de todo.
  */
-export interface EFace { pts: { u: number; z: number }[]; depth: number; kind: FaceKind; cut?: boolean }
+export interface EFace {
+  pts: { u: number; z: number }[]; depth: number; kind: FaceKind; cut?: boolean;
+  /** Acabado de la cara vista (muros y faldones), para la trama y la etiqueta de material de las fachadas */
+  mat?: { hatch: Hatch | "tile"; name: string };
+}
 
 export interface Elevation {
   faces: EFace[];
@@ -66,7 +71,7 @@ function project(p: Project, fr: Frame): Elevation {
   const ahead = (q: Pt) => (q.x - fr.o.x) * fr.v.x + (q.y - fr.o.y) * fr.v.y;
   const faces: EFace[] = [];
   /** nudge acerca la cara al observador para que gane a la que tiene justo detrás. */
-  const face = (ps: P3[], kind: FaceKind, nudge = 0) => {
+  const face = (ps: P3[], kind: FaceKind, nudge = 0, mat?: EFace["mat"]) => {
     if (fr.cut) ps = clip(ps, ahead);
     if (ps.length < 3) return;
     const pr = ps.map(view), pts = pr.map((q, i) => ({ u: q.u, z: ps[i].z }));
@@ -74,7 +79,7 @@ function project(p: Project, fr: Frame): Elevation {
     let a = 0;
     for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) a += (pts[j].u + pts[i].u) * (pts[j].z - pts[i].z);
     if (Math.abs(a) < 1e-6) return;
-    faces.push({ pts, depth: pr.reduce((s, q) => s + q.d, 0) / pr.length + nudge, kind });
+    faces.push({ pts, depth: pr.reduce((s, q) => s + q.d, 0) / pr.length + nudge, kind, ...(mat ? { mat } : {}) });
   };
   const rect = (ua: number, ub: number, z0: number, z1: number, kind: FaceKind = "cut") => {
     if (ub - ua > 1e-6 && z1 - z0 > 1e-6) faces.push({ pts: [{ u: ua, z: z0 }, { u: ub, z: z0 }, { u: ub, z: z1 }, { u: ua, z: z1 }], depth: 0, kind, cut: true });
@@ -109,13 +114,14 @@ function project(p: Project, fr: Frame): Elevation {
     for (const w of lv.walls) {
       // el muro entero, sin trocear por los huecos, para que no aparezcan juntas falsas en la fachada
       const h = w.thick / 2, H = w.height, { L, ux, uy } = dir(w), e0 = endExt(lv, w, 0), e1 = endExt(lv, w, 1), a = -e0, b = L + e1;
+      const wt = wallType(w.type), mat = { hatch: wt.hatch, name: wt.material };
       const side = (n: number, kind: FaceKind, s0: number, s1: number, z0: number, z1: number, nudge = 0) => {
         const p0 = loc(w, s0, n), p1 = loc(w, s1, n);
-        face([{ ...p0, z: z0 }, { ...p1, z: z0 }, { ...p1, z: z1 }, { ...p0, z: z1 }], kind, nudge);
+        face([{ ...p0, z: z0 }, { ...p1, z: z0 }, { ...p1, z: z1 }, { ...p0, z: z1 }], kind, nudge, kind === "wall" ? mat : undefined);
       };
       side(-h, "wall", a, b, e, e + H); side(h, "wall", a, b, e, e + H);
       // los testeros solo se ven si el extremo está libre; si acomete a otro muro quedan dentro de él
-      const end = (s: number) => { const p0 = loc(w, s, -h), p1 = loc(w, s, h); face([{ ...p0, z: e }, { ...p1, z: e }, { ...p1, z: e + H }, { ...p0, z: e + H }], "wall"); };
+      const end = (s: number) => { const p0 = loc(w, s, -h), p1 = loc(w, s, h); face([{ ...p0, z: e }, { ...p1, z: e }, { ...p1, z: e + H }, { ...p0, z: e + H }], "wall", 0, mat); };
       if (!e0) end(0);
       if (!e1) end(L);
       const ops = lv.openings.filter((x) => x.wallId === w.id);
@@ -139,8 +145,18 @@ function project(p: Project, fr: Frame): Elevation {
     }
     for (const r of lv.roofs) {
       const g = roofGeom(r);
-      for (const f of g.faces) face(f.map((q) => ({ ...q, z: e + q.z })), "roof");
-      for (const f of g.gables) face(f.map((q) => ({ ...q, z: e + q.z })), "wall");
+      const tile = { hatch: r.kind === "flat" ? "solid" as const : "tile" as const, name: r.kind === "flat" ? "Cubierta plana" : "Teja cerámica" };
+      for (const f of g.faces) face(f.map((q) => ({ ...q, z: e + q.z })), "roof", 0, r.kind === "flat" ? undefined : tile);
+      for (const f of g.gables) {
+        // el hastial lleva el acabado del muro sobre el que se levanta
+        const lo = Math.min(...f.map((q) => q.z)), base = f.filter((q) => q.z < lo + 1e-6);
+        const c = { x: base.reduce((t, q) => t + q.x, 0) / base.length, y: base.reduce((t, q) => t + q.y, 0) / base.length };
+        const w = lv.walls.reduce<{ w: (typeof lv.walls)[number]; d: number } | null>((m, x) => {
+          const d = distSeg(c.x, c.y, x.x1, x.y1, x.x2, x.y2).d;
+          return !m || d < m.d ? { w: x, d } : m;
+        }, null)?.w;
+        face(f.map((q) => ({ ...q, z: e + q.z })), "wall", 0, w ? { hatch: wallType(w.type).hatch, name: wallType(w.type).material } : undefined);
+      }
       // canto del alero
       const zt = e + g.faces[0][0].z;
       prism(g.outline, zt - r.thick, zt, "roof", false);

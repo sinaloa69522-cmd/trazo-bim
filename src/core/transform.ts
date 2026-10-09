@@ -1,7 +1,7 @@
 import type { Pt } from "./geometry";
 import { nextId, type Model } from "./model";
 
-export type ElementType = "wall" | "opening" | "line" | "dim" | "room" | "slab" | "roof" | "stair" | "furniture" | "section" | "text";
+export type ElementType = "wall" | "opening" | "line" | "dim" | "room" | "slab" | "roof" | "stair" | "furniture" | "section" | "text" | "fixture" | "run";
 export interface ElementRef { type: ElementType; id: number }
 
 type Seg = { x1: number; y1: number; x2: number; y2: number };
@@ -29,7 +29,7 @@ function applySeg(s: Seg, t: Xform) {
 }
 
 const listOf = (m: Model, type: ElementType) =>
-  ({ wall: m.walls, opening: m.openings, line: m.lines, dim: m.dims, room: m.rooms, slab: m.slabs, roof: m.roofs, stair: m.stairs, furniture: m.furniture, section: m.sections, text: m.texts })[type] as { id: number }[];
+  ({ wall: m.walls, opening: m.openings, line: m.lines, dim: m.dims, room: m.rooms, slab: m.slabs, roof: m.roofs, stair: m.stairs, furniture: m.furniture, section: m.sections, text: m.texts, fixture: m.fixtures, run: m.runs })[type] as { id: number }[];
 
 export function findElement(m: Model, r: ElementRef) {
   return listOf(m, r.type).find((o) => o.id === r.id) ?? null;
@@ -51,7 +51,8 @@ export function transformElements(m: Model, refs: ElementRef[], t: Xform, copy: 
     if (r.type === "room") { const p = t.map(el); el.x = p.x; el.y = p.y; if (copy) el.name = `${el.name} (copia)`; }
     // el texto solo cambia de sitio: reflejado seguiría teniendo que leerse
     else if (r.type === "text") { const p = t.map(el); el.x = p.x; el.y = p.y; }
-    else if (r.type === "furniture") {
+    else if (r.type === "run") el.pts = el.pts.map(t.map);
+    else if (r.type === "furniture" || r.type === "fixture") {
       // el giro sale de transformar el frente de la pieza (+y local); las piezas son simétricas de izquierda a derecha
       const a = (el.rot * Math.PI) / 180, c = t.map(el), u = t.map({ x: el.x - Math.sin(a), y: el.y + Math.cos(a) });
       const deg = (Math.atan2(-(u.x - c.x), u.y - c.y) * 180) / Math.PI;
@@ -100,4 +101,7 @@ export function deleteElements(m: Model, refs: ElementRef[]) {
   m.sections = m.sections.filter((r) => !secs.has(r.id));
   const texts = ids("text");
   m.texts = m.texts.filter((r) => !texts.has(r.id));
+  const fx = ids("fixture"), runs = ids("run");
+  m.fixtures = m.fixtures.filter((r) => !fx.has(r.id));
+  m.runs = m.runs.filter((r) => !runs.has(r.id));
 }

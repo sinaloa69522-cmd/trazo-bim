@@ -3,7 +3,7 @@
   --bg:#eef0ef; --panel:#f8f9f8; --line:#d5dad8; --fg:#1d2422; --muted:#5f6b67;
   --accent:#1f5fd1; --accent-ink:#ffffff; --accent-soft:#dde7fb;
   --plan-bg:#fbfcfb; --grid:#e7ebe9; --grid-major:#cfd6d3;
-  --wall:#2b3330; --door:#a2552a; --window:#1b7fa6; --dim:#c2361f; --anno:#5b6b8c;
+  --wall:#2b3330; --door:#a2552a; --window:#1b7fa6; --dim:#c2361f; --anno:#5b6b8c; --elec:#c77700; --plum:#1f5fd1;
   --view-bg:#e4e8e6; --danger:#c2361f;
   --f-display:"IBM Plex Sans Condensed","Arial Narrow",system-ui,sans-serif;
   --f-body:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
@@ -13,13 +13,13 @@
   --bg:#121615; --panel:#191e1d; --line:#2b3331; --fg:#e3e8e6; --muted:#93a09b;
   --accent:#6e9cff; --accent-ink:#0c1220; --accent-soft:#1f2b45;
   --plan-bg:#141918; --grid:#1c2221; --grid-major:#29312f;
-  --wall:#dfe5e2; --door:#e08a52; --window:#4fbde3; --dim:#ff7a5c; --anno:#9fb0d6;
+  --wall:#dfe5e2; --door:#e08a52; --window:#4fbde3; --dim:#ff7a5c; --anno:#9fb0d6; --elec:#c77700; --plum:#1f5fd1;
   --view-bg:#1a201f; --danger:#ff7a5c; color-scheme:dark}}
 :root[data-theme="dark"]{
   --bg:#121615; --panel:#191e1d; --line:#2b3331; --fg:#e3e8e6; --muted:#93a09b;
   --accent:#6e9cff; --accent-ink:#0c1220; --accent-soft:#1f2b45;
   --plan-bg:#141918; --grid:#1c2221; --grid-major:#29312f;
-  --wall:#dfe5e2; --door:#e08a52; --window:#4fbde3; --dim:#ff7a5c; --anno:#9fb0d6;
+  --wall:#dfe5e2; --door:#e08a52; --window:#4fbde3; --dim:#ff7a5c; --anno:#9fb0d6; --elec:#c77700; --plum:#1f5fd1;
   --view-bg:#1a201f; --danger:#ff7a5c; color-scheme:dark}
 
 html,body,#root{height:100%}
@@ -151,6 +151,8 @@ dialog .acts span{margin-right:auto;color:var(--muted);font-size:12px}
 .sheetside .r{text-align:right;font-family:var(--f-mono)}
 .sheetside .tot td{border-bottom:0;border-top:.3mm solid #111;font-weight:600}
 .sheetside .empty{font-size:7.5pt;color:#666;margin:0}
+.sheetside .legend td:first-child{width:9mm;padding:.3mm 1mm;line-height:0}
+.sheetside .note{font-size:6.5pt;color:#555;margin:4mm 0 0;line-height:1.35}
 .cajetin{border-top:.5mm solid #111;font-size:8pt}
 .cajetin small{display:block;font-size:6pt;letter-spacing:.1em;text-transform:uppercase;color:#666;margin-bottom:.5mm}
 .cajetin>div{padding:1.5mm 3mm;border-bottom:.2mm solid #111}
@@ -183,3 +185,6 @@ dialog .acts span{margin-right:auto;color:var(--muted);font-size:12px}
 .cat small{font-family:var(--f-mono);font-size:10px;color:var(--muted)}
 .cat:hover{border-color:var(--accent)}
 .cat[aria-checked="true"]{border-color:var(--accent);background:var(--accent-soft)}
+.cat.sym-cat{flex-direction:row;align-items:center;gap:7px}
+.cat.sym-cat span{display:flex;flex-direction:column}
+.sym{flex:none;vertical-align:middle}

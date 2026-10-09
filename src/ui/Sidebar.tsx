@@ -1,8 +1,10 @@
 import { Fragment, useState } from "react";
 import { dimGeom, dir, fits, polygonArea, roofGeom, slabArea, stairSteps } from "../core/geometry";
 import { FURNITURE, furnitureDef } from "../core/furniture";
+import { CIRCUITS, mepDef, mepOf, runLength, SYSTEMS, systemDef, type Discipline } from "../core/mep";
+import { SymbolIcon, SystemIcon } from "./MepIcons";
 import { GENERIC, WALL_TYPES, wallType, wallTypeLabel } from "../core/wallTypes";
-import { LAYERS, type Model, type RoofKind } from "../core/model";
+import { LAYERS, type Model, type RoofKind, type RunSystem } from "../core/model";
 import { ROOF_LABEL, type Editor } from "../editor/Editor";
 
 const num = (v: number) => v.toFixed(2);
@@ -50,7 +52,7 @@ function Properties({ ed, onFocusCommand }: { ed: Editor; onFocusCommand: () => 
   let title = "Valores por defecto", body: JSX.Element | null = null;
   const n = ed.sels.length;
   const key = sel ? `${sel.type}-${sel.id}` : n > 1 ? "multi" : "def";
-  const TYPE_LABEL = { wall: "Muros", opening: "Puertas y ventanas", line: "Líneas", dim: "Cotas", room: "Habitaciones", slab: "Losas", roof: "Cubiertas", stair: "Escaleras", furniture: "Mobiliario", section: "Secciones", text: "Textos" } as const;
+  const TYPE_LABEL = { wall: "Muros", opening: "Puertas y ventanas", line: "Líneas", dim: "Cotas", room: "Habitaciones", slab: "Losas", roof: "Cubiertas", stair: "Escaleras", furniture: "Mobiliario", section: "Secciones", text: "Textos", fixture: "Instalaciones", run: "Tuberías" } as const;
 
   if (sel && o && sel.type === "wall") {
     const w = o as Model["walls"][number], up = ed.levelAbove();
@@ -161,6 +163,34 @@ function Properties({ ed, onFocusCommand }: { ed: Editor; onFocusCommand: () => 
       <NumberField id={`${key}-s`} label="Altura letra (m)" value={t.size} min={0.02} onCommit={(v) => ed.edit(() => { t.size = v; })} />
       <NumberField id={`${key}-r`} label="Giro (°)" value={t.rot} min={-360} step={15} digits={0} onCommit={(v) => ed.edit(() => { t.rot = v % 360; })} />
     </>;
+  } else if (sel && o && sel.type === "fixture") {
+    const f = o as Model["fixtures"][number], d = mepDef(f.kind);
+    title = d.label;
+    ro.push(["Disciplina", d.disc === "elec" ? "Electricidad" : "Plomería"]);
+    body = <>
+      <label htmlFor={`${key}-k`}>Tipo</label>
+      <select id={`${key}-k`} value={f.kind} onChange={(e) => ed.edit(() => { f.kind = e.target.value; f.h = mepDef(f.kind).h; f.circuit = mepDef(f.kind).circuit; })}>
+        {mepOf(d.disc).map((x) => <option key={x.kind} value={x.kind}>{x.label}</option>)}
+      </select>
+      {d.disc === "elec" && f.kind !== "cuadro" && <>
+        <label htmlFor={`${key}-c`}>Circuito</label>
+        <select id={`${key}-c`} value={f.circuit} onChange={(e) => ed.edit(() => { f.circuit = e.target.value; })}>
+          {Object.entries(CIRCUITS).map(([c, n]) => <option key={c} value={c}>{c} · {n}</option>)}
+        </select>
+      </>}
+      <NumberField id={`${key}-h`} label="Altura de montaje (m)" value={f.h} min={0} onCommit={(v) => ed.edit(() => { f.h = v; })} />
+      <NumberField id={`${key}-r`} label="Giro (°)" value={f.rot} min={0} step={15} digits={0} onCommit={(v) => ed.edit(() => { f.rot = v % 360; })} />
+    </>;
+  } else if (sel && o && sel.type === "run") {
+    const r = o as Model["runs"][number];
+    title = systemDef(r.system).label;
+    ro.push(["Longitud", `${num(runLength(r))} m`], ["Tramos", String(r.pts.length - 1)]);
+    body = <>
+      <label htmlFor={`${key}-s`}>Red</label>
+      <select id={`${key}-s`} value={r.system} onChange={(e) => ed.edit(() => { r.system = e.target.value as RunSystem; })}>
+        {SYSTEMS.map((x) => <option key={x.id} value={x.id}>{x.label}</option>)}
+      </select>
+    </>;
   } else if (sel && o && sel.type === "line") {
     const l = o as Model["lines"][number];
     title = "Línea";
@@ -259,11 +289,55 @@ function Catalog({ ed }: { ed: Editor }) {
   );
 }
 
+function MepCatalog({ ed }: { ed: Editor }) {
+  const disc: Discipline = mepDef(ed.defaults.mepKind).disc;
+  return (
+    <section>
+      <h2>{disc === "elec" ? "Electricidad" : "Plomería"}</h2>
+      <div className="catalog" role="radiogroup" aria-label="Elemento a colocar">
+        {mepOf(disc).map((f) => (
+          <button key={f.kind} role="radio" aria-checked={ed.defaults.mepKind === f.kind} className="cat sym-cat" onClick={() => ed.pickFixture(f.kind)}>
+            <SymbolIcon kind={f.kind} /><span>{f.label}<small>{f.circuit ? `${f.circuit} · ` : ""}h {num(f.h)} m</small></span>
+          </button>
+        ))}
+      </div>
+      <div className="props" style={{ marginTop: 8 }}>
+        {disc === "elec"
+          ? <button className="btn full" onClick={() => ed.placeRoomLights()}>Punto de luz en cada habitación</button>
+          : <button className="btn full" onClick={() => ed.placeSanitaryPoints()}>Tomas y desagües en los aparatos sanitarios</button>}
+        <button className="btn full" onClick={() => ed.routeDiscipline(disc)}
+          title={disc === "elec" ? "Un recorrido por circuito desde el cuadro general" : "Agua fría desde la llave de paso, caliente desde el termo y desagües a la bajante"}>
+          {disc === "elec" ? "Trazar circuitos desde el cuadro" : "Trazar tuberías automáticamente"}
+        </button>
+      </div>
+      <p className="hint">Los enchufes, interruptores y apliques se pegan al muro más cercano. Fuera de un muro, <b>R</b> y Enter gira 90°.</p>
+    </section>
+  );
+}
+
+function RunCatalog({ ed }: { ed: Editor }) {
+  return (
+    <section>
+      <h2>Tubería</h2>
+      <div className="catalog" role="radiogroup" aria-label="Red">
+        {SYSTEMS.map((x) => (
+          <button key={x.id} role="radio" aria-checked={ed.defaults.runSys === x.id} className="cat sym-cat" onClick={() => ed.pickSystem(x.id)}>
+            <SystemIcon sys={x.id} /><span>{x.label}</span>
+          </button>
+        ))}
+      </div>
+      <p className="hint">Clic en cada vértice; se engancha a los puntos de las instalaciones. Enter o Esc termina el recorrido.</p>
+    </section>
+  );
+}
+
 export function Sidebar({ ed, onFocusCommand }: { ed: Editor; onFocusCommand: () => void }) {
   const counts = ed.layerCounts(), s = ed.stats();
   return (
     <aside className="side">
       {ed.tool === "furniture" && <Catalog ed={ed} />}
+      {ed.tool === "fixture" && <MepCatalog ed={ed} />}
+      {ed.tool === "run" && <RunCatalog ed={ed} />}
       <Levels ed={ed} />
       <section>
         <h2>Capas</h2>
@@ -291,7 +365,7 @@ export function Sidebar({ ed, onFocusCommand }: { ed: Editor; onFocusCommand: ()
       </section>
       <p className="hint">
         Escribe comandos como en AutoCAD: <b>M</b> muro, <b>P</b> puerta, <b>V</b> ventana, <b>L</b> línea, <b>C</b> cota,{" "}
-        <b>H</b> habitación, <b>LO</b> losa, <b>CU</b> cubierta, <b>ES</b> escalera, <b>MB</b> mobiliario, <b>MO</b> mover, <b>CO</b> copiar, <b>SI</b> simetría, <b>TR</b> recortar, <b>AL</b> alargar, <b>DE</b> desfase. Mientras dibujas, teclea una longitud (p. ej. <b>4.5</b>) y Enter.
+        <b>H</b> habitación, <b>LO</b> losa, <b>CU</b> cubierta, <b>ES</b> escalera, <b>MB</b> mobiliario, <b>EL</b> electricidad, <b>PL</b> plomería, <b>TU</b> tubería, <b>MO</b> mover, <b>CO</b> copiar, <b>SI</b> simetría, <b>TR</b> recortar, <b>AL</b> alargar, <b>DE</b> desfase. Mientras dibujas, teclea una longitud (p. ej. <b>4.5</b>) y Enter.
         Selecciona un muro y arrastra sus cuadros azules para estirarlo. Arrastra sobre el vacío para seleccionar con ventana (Mayús o Ctrl suma a la selección). Rueda para zoom; arrastra con el botón derecho, la rueda o Espacio para desplazar. F8 orto, F3 referencias.
       </p>
     </aside>

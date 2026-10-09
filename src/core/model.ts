@@ -1,5 +1,6 @@
 // Modelo del proyecto. Coordenadas en metros; el eje Y crece hacia abajo en planta.
 
+import { autoRoute, mepDef, sanitaryPoints } from "./mep";
 import { typeForThick } from "./wallTypes";
 
 export interface Wall {
@@ -128,6 +129,30 @@ export interface Text {
   rot: number;
 }
 
+/** Mecanismo eléctrico o punto de fontanería (mep.ts), colocado por su centro. */
+export interface Fixture {
+  id: number;
+  kind: string;
+  x: number;
+  y: number;
+  /** Giro en grados, como el mobiliario; el fondo del símbolo (-y) va contra el muro */
+  rot: number;
+  /** Altura de montaje sobre el suelo */
+  h: number;
+  /** Circuito eléctrico (C1, C2…); vacío en fontanería */
+  circuit: string;
+}
+
+/** Red de una tubería o canalización. */
+export type RunSystem = "elec" | "af" | "ac" | "san";
+
+/** Recorrido de tubería o canalización: polilínea en planta. */
+export interface Run {
+  id: number;
+  system: RunSystem;
+  pts: { x: number; y: number }[];
+}
+
 /** Contenido de un nivel (una planta). Los identificadores son únicos dentro del nivel. */
 export interface Model {
   walls: Wall[];
@@ -141,6 +166,8 @@ export interface Model {
   furniture: Furniture[];
   sections: Section[];
   texts: Text[];
+  fixtures: Fixture[];
+  runs: Run[];
   nid: number;
 }
 
@@ -165,7 +192,7 @@ export interface Project {
 
 export const defaultInfo = (): ProjectInfo => ({ name: "Vivienda unifamiliar", author: "", client: "", date: new Date().toISOString().slice(0, 10) });
 
-export type LayerId = "muros" | "puertas" | "ventanas" | "cotas" | "anot" | "hab" | "losas" | "cubiertas" | "escaleras" | "mobiliario" | "secciones";
+export type LayerId = "muros" | "puertas" | "ventanas" | "cotas" | "anot" | "hab" | "losas" | "cubiertas" | "escaleras" | "mobiliario" | "secciones" | "electricidad" | "plomeria";
 
 export interface Layer {
   id: LayerId;
@@ -188,9 +215,11 @@ export const LAYERS: Layer[] = [
   { id: "escaleras", name: "A-ESCALERAS", label: "Escaleras", tok: "--fg" },
   { id: "mobiliario", name: "A-MOBILIARIO", label: "Mobiliario", tok: "--anno" },
   { id: "secciones", name: "A-SECCIONES", label: "Secciones", tok: "--fg" },
+  { id: "electricidad", name: "E-ELECTRICIDAD", label: "Electricidad", tok: "--elec" },
+  { id: "plomeria", name: "P-FONTANERIA", label: "Plomería", tok: "--plum" },
 ];
 
-export const emptyModel = (): Model => ({ walls: [], openings: [], lines: [], dims: [], rooms: [], slabs: [], roofs: [], stairs: [], furniture: [], sections: [], texts: [], nid: 1 });
+export const emptyModel = (): Model => ({ walls: [], openings: [], lines: [], dims: [], rooms: [], slabs: [], roofs: [], stairs: [], furniture: [], sections: [], texts: [], fixtures: [], runs: [], nid: 1 });
 
 export const newLevel = (name: string, elev: number, content: Model = emptyModel()): Level => ({ ...content, name, elev });
 
@@ -213,6 +242,8 @@ export function normalizeModel(raw: unknown): Model {
   m.furniture = m.furniture ?? [];
   m.sections = m.sections ?? [];
   m.texts = m.texts ?? [];
+  m.fixtures = m.fixtures ?? [];
+  m.runs = m.runs ?? [];
   return m;
 }
 
@@ -240,6 +271,7 @@ export function sampleProject(): Project {
     { id: nextId(m), kind: "kitchen", x: 7.8, y: 0.43, rot: 0 },
   );
   m.roofs.push({ id: nextId(m), x1: 0, y1: 0, x2: 10, y2: 7, kind: "gable", pitch: 30, overhang: 0.5, base: 2.7, thick: 0.15 });
+  sampleInstallations(m);
   // corte transversal por el dormitorio y el estar, mirando al norte
   m.sections.push({ id: nextId(m), x1: -1.2, y1: 3, x2: 11.2, y2: 3, name: "A" });
   return { levels: [newLevel("Planta baja", 0, m)], info: defaultInfo() };
@@ -276,6 +308,22 @@ export function sampleModel(): Model {
     { id: nextId(m), x: 8, y: 3.5, name: "Estar-comedor" },
   );
   return m;
+}
+
+/** Instalaciones de la vivienda de ejemplo: mecanismos, puntos de agua y sus recorridos. */
+function sampleInstallations(m: Model) {
+  // rot: el fondo del símbolo mira al muro (0 norte, 90 este, 180 sur, 270 oeste)
+  const F = (kind: string, x: number, y: number, rot = 0, circuit = mepDef(kind).circuit) =>
+    m.fixtures.push({ id: nextId(m), kind, x, y, rot, h: mepDef(kind).h, circuit });
+  F("cuadro", 9.805, 6.2, 90);
+  F("luz", 3, 2); F("luz", 3, 5.5); F("luz", 8, 2); F("luz", 7.6, 5.2);
+  F("aplique", 3.2, 6.805, 180);
+  F("interruptor", 4.4, 3.87, 180); F("interruptor", 4.4, 4.13, 0); F("conmutador", 6.13, 5.8, 270); F("conmutador", 9.805, 4.6, 90);
+  F("enchufe", 2.0, 0.195); F("enchufe", 4.0, 0.195); F("enchufe", 0.195, 2.6, 270); F("enchufe", 9.805, 3.6, 90); F("enchufe", 8.4, 6.805, 180);
+  F("enchufe", 2.4, 6.805, 180, "C5"); F("enchufe", 6.8, 0.195, 0, "C5"); F("enchufe-fuerza", 9.3, 0.195, 0);
+  for (const f of m.furniture) for (const q of sanitaryPoints(f)) F(q.kind, q.x, q.y);
+  F("llave", 1.0, 4.3); F("termo", 6.13, 1.2, 270); F("bajante", 0.35, 4.35); F("bajante", 6.35, 0.35);
+  for (const disc of ["elec", "plum"] as const) for (const r of autoRoute(m.fixtures, disc)) m.runs.push({ id: nextId(m), ...r });
 }
 
 /** Siguiente letra libre para una sección en todo el proyecto. */

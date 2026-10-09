@@ -1,13 +1,15 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { allSections, elevation, FACADES, section, type Elevation } from "../core/elevation";
+import { allSections, elevation, FACADES, section, type Elevation, type Facade } from "../core/elevation";
 import { bounds } from "../core/geometry";
-import type { Model } from "../core/model";
+import { mepDef, type Discipline } from "../core/mep";
+import type { LayerId, Model } from "../core/model";
 import { computeRooms } from "../core/rooms";
-import { levelMarks, openingSchedule, roomSchedule, wallSchedule } from "../core/schedules";
+import { circuitSchedule, levelMarks, mepSchedule, openingSchedule, roomSchedule, runSchedule, sanitarySchedule, wallSchedule } from "../core/schedules";
 import type { Editor } from "../editor/Editor";
 import { drawElevation } from "../editor/elevationRenderer";
 import { drawPlan, type PlanColors } from "../editor/planRenderer";
+import { SymbolIcon, SystemIcon } from "./MepIcons";
 
 /** Lámina A3 apaisada, en milímetros. */
 const SHEET = { w: 420, h: 297 };
@@ -25,6 +27,9 @@ const PAPER: PlanColors = {
   dim: "#1a1a1a", anno: "#555555", accent: "#7d7d7d", fg: "#111111", muted: "#6b6b6b", danger: "#111111", panel: "#ffffff",
 };
 
+/** Base de arquitectura a medio tono para los planos de instalaciones. */
+const HALF: PlanColors = { ...PAPER, wall: "#8f8f8f", door: "#a3a3a3", window: "#a3a3a3", anno: "#a8a8a8", accent: "#b5b5b5", fg: "#3a3a3a", muted: "#9a9a9a" };
+
 /** Escala normalizada más grande en la que cabe la planta. */
 export function fitScale(m: Model) {
   const b = bounds(m), wm = b.x1 - b.x0, hm = b.y1 - b.y0;
@@ -33,16 +38,20 @@ export function fitScale(m: Model) {
 
 const n2 = (v: number) => v.toFixed(2);
 
-/** Rejilla de vistas: hasta cuatro, en 1×1, 2×1 o 2×2. */
-export const grid = (n: number) => ({ cols: n > 1 ? 2 : 1, rows: n > 2 ? 2 : 1 });
-/** Cada vista ocupa su celda; a la derecha quedan unos 16 mm para las cotas de nivel. */
-const cell = (n: number) => { const g = grid(n); return { w: PLAN.w / g.cols - 22, h: PLAN.h / g.rows - 16 }; };
-export function fitElevScale(els: Elevation[]) {
-  const c = cell(els.length);
+/** Rejilla de vistas: hasta cuatro, en 1×1, 2×1 o 2×2; las fachadas van una encima de otra. */
+export const grid = (n: number, stacked = false) => (stacked ? { cols: 1, rows: n } : { cols: n > 1 ? 2 : 1, rows: n > 2 ? 2 : 1 });
+/** Cada vista ocupa su celda; a la derecha quedan unos 22 mm para las cotas de nivel y a la izquierda sitio para las de altura. */
+const cell = (n: number, stacked = false) => { const g = grid(n, stacked); return { w: PLAN.w / g.cols - (stacked ? 34 : 22), h: PLAN.h / g.rows - 16 }; };
+export function fitElevScale(els: Elevation[], stacked = false) {
+  const c = cell(els.length, stacked);
   return SCALES.find((d) => els.every((e) => ((e.u1 - e.u0) * 1000) / d <= c.w && ((e.z1 - e.z0) * 1000) / d <= c.h)) ?? 1000;
 }
 
-type Content = "plan" | "elev" | "sec";
+/** plan, elec y plum son plantas de un nivel; fach son dos fachadas (part 0: sur y norte, 1: este y oeste). */
+export type Content = "plan" | "elec" | "plum" | "elev" | "fach" | "sec";
+const isPlan = (c: Content) => c === "plan" || c === "elec" || c === "plum";
+const FACH_PARTS: Facade[][] = [["S", "N"], ["E", "O"]];
+const facadeLabel = (f: Facade) => FACADES.find((x) => x.id === f)!.label.replace("Alzado", "Fachada");
 
 function ScaleBar({ den }: { den: number }) {
   // tramos de 1 m (o 5 m en escalas pequeñas) hasta unos 50 mm de largo
@@ -62,8 +71,9 @@ function ScaleBar({ den }: { den: number }) {
 
 type View = { label: string; el: Elevation };
 
-/** Vistas que lleva una lámina de alzados o de secciones. */
-function viewsOf(ed: Editor, content: Content): View[] {
+/** Vistas que lleva una lámina de alzados, fachadas o secciones. */
+function viewsOf(ed: Editor, content: Content, part = 0): View[] {
+  if (content === "fach") return FACH_PARTS[part].map((f) => ({ label: facadeLabel(f), el: elevation(ed.project, f) }));
   if (content === "elev") return FACADES.map((f) => ({ label: f.label, el: elevation(ed.project, f.id) }));
   if (content === "sec") return allSections(ed.project).slice(0, 4).map((s) => ({ label: `Sección ${s.name}-${s.name}'`, el: section(ed.project, s) }));
   return [];
@@ -71,7 +81,33 @@ function viewsOf(ed: Editor, content: Content): View[] {
 
 /** Escala automática de una lámina. */
 function autoScaleOf(ed: Editor, content: Content, level: number) {
-  return content === "plan" ? fitScale(ed.project.levels[level]) : fitElevScale(viewsOf(ed, content).map((v) => v.el));
+  if (isPlan(content)) return fitScale(ed.project.levels[level]);
+  // las dos láminas de fachadas van a la misma escala
+  if (content === "fach") return Math.max(...FACH_PARTS.map((_, i) => fitElevScale(viewsOf(ed, "fach", i).map((v) => v.el), true)));
+  return fitElevScale(viewsOf(ed, content).map((v) => v.el));
+}
+
+/** Capas que se ven en cada plano: la arquitectura no lleva instalaciones y cada instalación solo la suya. */
+const PLAN_LAYERS: Partial<Record<Content, Partial<Record<LayerId, boolean>>>> = {
+  plan: { electricidad: false, plomeria: false },
+  elec: { plomeria: false, electricidad: true, cotas: false, mobiliario: false, losas: false, cubiertas: false, secciones: false },
+  plum: { electricidad: false, plomeria: true, cotas: false, losas: false, cubiertas: false, secciones: false },
+};
+
+function withVis(ed: Editor, patch: Partial<Record<LayerId, boolean>> | undefined, fn: () => void) {
+  const saved = { ...ed.vis };
+  Object.assign(ed.vis, patch ?? {});
+  try { fn(); } finally { ed.vis = saved; }
+}
+
+/** ¿Tiene el nivel algo de esa instalación? */
+const hasDisc = (m: Model, d: Discipline) => m.fixtures.some((f) => mepDef(f.kind).disc === d) || m.runs.some((r) => (r.system === "elec") === (d === "elec"));
+
+/** Número de lámina: A arquitectura, E electricidad, P plomería. */
+export function sheetNumber(nLevels: number, content: Content, level: number) {
+  const k = content === "elec" ? "E" : content === "plum" ? "P" : "A";
+  const n = content === "elev" ? nLevels + 1 : content === "fach" ? nLevels + 1 + level : content === "sec" ? nLevels + 3 : level + 1;
+  return `${k}-${String(n).padStart(2, "0")}`;
 }
 
 /**
@@ -89,9 +125,11 @@ function withLevel(ed: Editor, level: number, fn: () => void) {
 function Sheet({ ed, content, level, scale, zoom = 1 }: { ed: Editor; content: Content; level: number; scale: number; zoom?: number }) {
   const canvas = useRef<HTMLCanvasElement>(null);
   const p = ed.project, info = p.info, lv = p.levels[level];
-  const views = viewsOf(ed, content), secs = allSections(p);
+  const views = viewsOf(ed, content, level), secs = allSections(p), stacked = content === "fach";
   const doors = openingSchedule(p, "door").types, windows = openingSchedule(p, "window").types, rooms = roomSchedule(p), walls = wallSchedule(p);
-  const sheetNo = `A-${String(content === "elev" ? p.levels.length + 1 : content === "sec" ? p.levels.length + 2 : level + 1).padStart(2, "0")}`;
+  const sheetNo = sheetNumber(p.levels.length, content, level);
+  const planName = content === "elec" ? "Instalación eléctrica" : content === "plum" ? "Fontanería y saneamiento" : "";
+  const finishes = content === "fach" ? [...new Set(views.flatMap((v) => v.el.faces.filter((f) => f.mat && !f.cut).map((f) => f.mat!.name)))] : [];
 
   // dibujo a escala; la planta usa la vista del editor cambiada solo mientras se dibuja
   useEffect(() => {
@@ -101,8 +139,8 @@ function Sheet({ ed, content, level, scale, zoom = 1 }: { ed: Editor; content: C
     cv.width = Math.round(W * OVERSAMPLE); cv.height = Math.round(H * OVERSAMPLE);
     const ctx = cv.getContext("2d")!;
     ctx.setTransform(OVERSAMPLE, 0, 0, OVERSAMPLE, 0, 0);
-    if (content !== "plan") {
-      const s = (1000 / scale) * PX_MM, g = grid(views.length), cw = W / g.cols, ch = H / g.rows;
+    if (!isPlan(content)) {
+      const s = (1000 / scale) * PX_MM, g = grid(views.length, stacked), cw = W / g.cols, ch = H / g.rows;
       ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, W, H);
       if (!views.length) {
         ctx.fillStyle = "#6b6b6b"; ctx.font = "14px 'IBM Plex Sans', sans-serif"; ctx.textAlign = "center";
@@ -113,30 +151,35 @@ function Sheet({ ed, content, level, scale, zoom = 1 }: { ed: Editor; content: C
         // cada dibujo centrado en su celda
         const cx = (i % g.cols) * cw, cy = Math.floor(i / g.cols) * ch;
         const w = (e.el.u1 - e.el.u0) * s, h = (e.el.z1 - e.el.z0) * s;
-        const ox = cx + (cw - 22 * PX_MM - w) / 2 + 6 * PX_MM, oy = cy + (ch - 16 * PX_MM + h) / 2 + 4 * PX_MM;
-        drawElevation(ctx, e.el, ox, oy, s, e.label);
+        const ox = cx + (cw - 22 * PX_MM - w) / 2 + (stacked ? 10 : 6) * PX_MM, oy = cy + (ch - 16 * PX_MM + h) / 2 + 4 * PX_MM;
+        drawElevation(ctx, e.el, ox, oy, s, e.label, { tags: stacked, heights: stacked });
       });
       return;
     }
-    withLevel(ed, level, () => {
+    withLevel(ed, level, () => withVis(ed, PLAN_LAYERS[content], () => {
       const b = bounds(lv), s = (1000 / scale) * PX_MM;
       ed.view.scale = s;
       ed.view.ox = W / 2 - ((b.x0 + b.x1) / 2) * s;
       ed.view.oy = H / 2 - ((b.y0 + b.y1) / 2) * s;
-      drawPlan(ctx, ed, PAPER, W, H, { print: true, marks: levelMarks(p, level) });
-    });
+      if (content === "plan") drawPlan(ctx, ed, PAPER, W, H, { print: true, marks: levelMarks(p, level) });
+      else drawPlan(ctx, ed, HALF, W, H, { print: true, circuits: content === "elec", roomLabelDy: 0.55 });
+    }));
   });
 
   return (
     <article className="sheet" style={{ transform: `scale(${zoom})` }} aria-label={`Lámina ${sheetNo}`}>
       <canvas ref={canvas} className="sheetplan" style={{ left: `${PLAN.x}mm`, top: `${PLAN.y}mm`, width: `${PLAN.w}mm`, height: `${PLAN.h}mm` }} />
       <div className="viewtitle" style={{ left: `${PLAN.x + 6}mm`, top: `${PLAN.y + PLAN.h + 1}mm` }}>
-        <span className="vt-n">{content === "elev" ? "ALZADOS" : content === "sec" ? "SECCIONES" : lv.name.toUpperCase()}</span>
-        <span className="vt-s">E 1:{scale}{content === "plan" && ` · cota ${lv.elev >= 0 ? "+" : ""}${n2(lv.elev)}`}</span>
+        <span className="vt-n">{content === "elev" ? "ALZADOS" : content === "fach" ? views.map((v) => v.label).join(" y ").toUpperCase() : content === "sec" ? "SECCIONES" : planName ? `${lv.name} · ${planName}`.toUpperCase() : lv.name.toUpperCase()}</span>
+        <span className="vt-s">E 1:{scale}{isPlan(content) && ` · cota ${lv.elev >= 0 ? "+" : ""}${n2(lv.elev)}`}</span>
         <ScaleBar den={scale} />
       </div>
       <aside className="sheetside" style={{ left: `${SHEET.w - FRAME - SIDE}mm`, top: `${FRAME}mm`, width: `${SIDE}mm`, height: `${SHEET.h - 2 * FRAME}mm` }}>
-        <div className="tables">
+        {content === "elec" || content === "plum" ? <MepTables p={p} disc={content} level={level} /> : <div className="tables">
+          {content === "fach" && <>
+            <h4>Acabados de fachada</h4>
+            {finishes.length ? <table><tbody>{finishes.map((f) => <tr key={f}><td>{f}</td></tr>)}</tbody></table> : <p className="empty">Muros sin tipo asignado.</p>}
+          </>}
           <h4>Puertas</h4>
           <ScheduleTable rows={doors} kind="door" />
           <h4>Ventanas</h4>
@@ -158,11 +201,11 @@ function Sheet({ ed, content, level, scale, zoom = 1 }: { ed: Editor; content: C
               </tbody>
             </table>
           ) : <p className="empty">Sin habitaciones definidas.</p>}
-        </div>
+        </div>}
         <div className="cajetin">
           <div className="c-proj"><small>Proyecto</small>{info.name || "—"}</div>
           <div className="c-row">
-            <div><small>Plano</small>{content === "elev" ? "Alzados norte, sur, este y oeste" : content === "sec" ? (views.length ? `Secciones ${secs.slice(0, 4).map((x) => `${x.name}-${x.name}'`).join(", ")}` : "Secciones") : lv.name}</div>
+            <div><small>Plano</small>{content === "elev" ? "Alzados norte, sur, este y oeste" : content === "fach" ? views.map((v) => v.label).join(" y ") : content === "sec" ? (views.length ? `Secciones ${secs.slice(0, 4).map((x) => `${x.name}-${x.name}'`).join(", ")}` : "Secciones") : planName ? `${planName} · ${lv.name}` : lv.name}</div>
           </div>
           <div className="c-row">
             <div><small>Autor</small>{info.author || "—"}</div>
@@ -180,12 +223,17 @@ function Sheet({ ed, content, level, scale, zoom = 1 }: { ed: Editor; content: C
   );
 }
 
-/** Láminas del juego completo: la planta de cada nivel (todas a la misma escala), los alzados y las secciones. */
+/**
+ * Láminas del juego completo: la planta de cada nivel (todas a la misma escala), las dos de fachadas,
+ * las secciones y, por cada nivel que las tenga, la de electricidad y la de plomería.
+ */
 export function sheetSet(ed: Editor): { content: Content; level: number; scale: number }[] {
-  const planScale = Math.max(...ed.project.levels.map((_, i) => autoScaleOf(ed, "plan", i)));
-  const set: { content: Content; level: number; scale: number }[] = ed.project.levels.map((_, i) => ({ content: "plan", level: i, scale: planScale }));
-  set.push({ content: "elev", level: 0, scale: autoScaleOf(ed, "elev", 0) });
+  const lvs = ed.project.levels, planScale = Math.max(...lvs.map((_, i) => autoScaleOf(ed, "plan", i)));
+  const set: { content: Content; level: number; scale: number }[] = lvs.map((_, i) => ({ content: "plan", level: i, scale: planScale }));
+  const fs = autoScaleOf(ed, "fach", 0);
+  set.push({ content: "fach", level: 0, scale: fs }, { content: "fach", level: 1, scale: fs });
   if (allSections(ed.project).length) set.push({ content: "sec", level: 0, scale: autoScaleOf(ed, "sec", 0) });
+  for (const d of ["elec", "plum"] as const) lvs.forEach((l, i) => { if (hasDisc(l, d)) set.push({ content: d, level: i, scale: planScale }); });
   return set;
 }
 
@@ -194,6 +242,7 @@ export function SheetView({ ed }: { ed: Editor }) {
   const [zoom, setZoom] = useState(1);
   const [den, setDen] = useState<number | null>(null);
   const [content, setContent] = useState<Content>("plan");
+  const [part, setPart] = useState(0);
   const [printSet, setPrintSet] = useState(false);
   const secs = allSections(ed.project);
   const autoScale = autoScaleOf(ed, content, ed.active);
@@ -240,9 +289,17 @@ export function SheetView({ ed }: { ed: Editor }) {
         {field("client", "Cliente")}
         {field("date", "Fecha", "date")}
         <label>Contenido
-          <select value={content} onChange={(e) => { setContent(e.target.value as Content); setDen(null); }}>
+          <select value={content === "fach" ? `fach${part}` : content} onChange={(e) => {
+            const v = e.target.value;
+            if (v.startsWith("fach")) { setContent("fach"); setPart(Number(v.slice(4))); } else setContent(v as Content);
+            setDen(null);
+          }}>
             <option value="plan">Planta del nivel activo</option>
-            <option value="elev">Alzados (4 fachadas)</option>
+            <option value="elec">Electricidad del nivel activo</option>
+            <option value="plum">Plomería del nivel activo</option>
+            <option value="fach0">Fachadas sur y norte</option>
+            <option value="fach1">Fachadas este y oeste</option>
+            <option value="elev">Alzados (4 en una lámina)</option>
             <option value="sec">Secciones ({secs.length > 4 ? "las 4 primeras" : secs.length})</option>
           </select>
         </label>
@@ -254,11 +311,11 @@ export function SheetView({ ed }: { ed: Editor }) {
         </label>
         <button className="btn primary" onClick={() => window.print()} title="En el diálogo de impresión elige A3 horizontal o Guardar como PDF">Imprimir / PDF</button>
         <button className="btn" onClick={() => setPrintSet(true)} disabled={printSet}
-          title="Todas las plantas, los alzados y las secciones en un solo PDF, una lámina por página">Juego completo</button>
+          title="Plantas, fachadas, secciones, electricidad y plomería en un solo PDF, una lámina por página">Juego completo</button>
       </div>
       <div className="sheethost" ref={host}>
         <div className="sheetfit" style={{ width: `${SHEET.w * PX_MM * zoom}px`, height: `${SHEET.h * PX_MM * zoom}px` }}>
-          <Sheet ed={ed} content={content} level={ed.active} scale={scale} zoom={zoom} />
+          <Sheet ed={ed} content={content} level={content === "fach" ? part : ed.active} scale={scale} zoom={zoom} />
         </div>
       </div>
       {printSet && createPortal(
@@ -285,5 +342,49 @@ function ScheduleTable({ rows, kind }: { rows: ReturnType<typeof openingSchedule
         ))}
       </tbody>
     </table>
+  );
+}
+
+/** Tablas laterales de un plano de instalaciones: leyenda con símbolos y mediciones. */
+function MepTables({ p, disc, level }: { p: Editor["project"]; disc: Discipline; level: number }) {
+  const legend = mepSchedule(p, disc, level), runs = runSchedule(p, disc, level);
+  return (
+    <div className="tables">
+      <h4>Leyenda</h4>
+      {legend.length ? (
+        <table className="legend">
+          <thead><tr><th>Símbolo</th><th>Elemento</th><th className="r">Ud.</th></tr></thead>
+          <tbody>{legend.map((r) => <tr key={r.kind}><td><SymbolIcon kind={r.kind} size={16} /></td><td>{r.label}</td><td className="r">{r.count}</td></tr>)}</tbody>
+        </table>
+      ) : <p className="empty">Sin {disc === "elec" ? "mecanismos" : "puntos de agua"} en este nivel.</p>}
+      {disc === "elec" ? <>
+        <h4>Circuitos</h4>
+        {(() => {
+          const cs = circuitSchedule(p, level);
+          return cs.length ? (
+            <table>
+              <thead><tr><th>Circ.</th><th>Uso</th><th className="r">Puntos</th><th className="r">m</th></tr></thead>
+              <tbody>{cs.map((c) => <tr key={c.circuit}><td><b>{c.circuit}</b></td><td>{c.name}</td><td className="r">{c.points}</td><td className="r">{c.length ? c.length.toFixed(1) : "—"}</td></tr>)}</tbody>
+            </table>
+          ) : <p className="empty">Sin circuitos asignados.</p>;
+        })()}
+      </> : <>
+        <h4>Aparatos sanitarios</h4>
+        {(() => {
+          const ss = sanitarySchedule(p, level);
+          return ss.length ? (
+            <table><tbody>{ss.map((r) => <tr key={r.label}><td>{r.label}</td><td className="r">{r.count}</td></tr>)}</tbody></table>
+          ) : <p className="empty">Sin aparatos sanitarios.</p>;
+        })()}
+      </>}
+      <h4>{disc === "elec" ? "Canalizaciones" : "Tuberías"}</h4>
+      {runs.length ? (
+        <table className="legend">
+          <thead><tr><th>Trazo</th><th>Red</th><th className="r">m</th></tr></thead>
+          <tbody>{runs.map((r) => <tr key={r.system}><td><SystemIcon sys={r.system} w={26} /></td><td>{r.label}</td><td className="r">{n2(r.length)}</td></tr>)}</tbody>
+        </table>
+      ) : <p className="empty">Sin recorridos dibujados.</p>}
+      <p className="note">{disc === "elec" ? "Esquema de principio: los recorridos indican la conexión de cada circuito, no el trazado exacto." : "Esquema de principio. Agua fría y caliente por falso techo o tabiquería; saneamiento con pendiente mínima del 1,5 %."}</p>
+    </div>
   );
 }
