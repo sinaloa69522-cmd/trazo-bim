@@ -5,6 +5,7 @@ import { feetInches, fmtArea } from "../core/units";
 import { FOOTING_TYPES, headers, hvac, joistBays, projectAreas, roofFraming, site } from "../core/permit";
 import { ABBREVIATIONS, CODES, DEFERRED, DESIGN_CRITERIA, GENERAL_NOTES, SCOPE, SHEET_NOTES } from "../core/permitNotes";
 import type { Editor } from "../editor/Editor";
+import { SheetLegend } from "./SheetLegend";
 
 export type PermitKind = "cover" | "notes" | "site" | "found" | "floorfr" | "wallfr" | "rooffr" | "details" | "hvac";
 export const PERMIT_KINDS: PermitKind[] = ["cover", "notes", "site", "found", "floorfr", "wallfr", "rooffr", "details", "hvac"];
@@ -52,11 +53,6 @@ export function PermitSide({ ed, content, level, set = [] }: { ed: Editor; conte
       <table><thead><tr><th>Mark</th><th>Size</th><th>Reinforcing</th></tr></thead><tbody>
         <tr><td><b>F1</b></td><td>{feetInches(FOOTING_TYPES.F1.width)} x {feetInches(FOOTING_TYPES.F1.depth)}</td><td>(2) #4 CONT.</td></tr>
         <tr><td><b>F2</b></td><td>{feetInches(FOOTING_TYPES.F2.width)} x {feetInches(FOOTING_TYPES.F2.depth)}</td><td>(1) #4 CONT.</td></tr>
-      </tbody></table>
-      <h4>Legend</h4>
-      <table className="legend"><tbody>
-        <tr><td><svg width="8mm" height="3mm" viewBox="0 0 8 3"><path d="M0 1.5h8" stroke="#111" strokeWidth=".25" strokeDasharray="1.2 .7" /></svg></td><td>FOOTING BELOW SLAB</td></tr>
-        <tr><td><svg width="8mm" height="3mm" viewBox="0 0 8 3"><circle cx="4" cy="1.5" r=".6" fill="none" stroke="#111" strokeWidth=".2" /><path d="M3 1.5h2M4 .5v2" stroke="#111" strokeWidth=".2" /></svg></td><td>1/2" ANCHOR BOLT</td></tr>
       </tbody></table>
     </>;
   } else if (content === "floorfr") {
@@ -129,6 +125,7 @@ export function PermitSide({ ed, content, level, set = [] }: { ed: Editor; conte
   return (
     <div className="tables">
       {tables}
+      <SheetLegend content={content} />
       {notes && <><h4>{content === "details" ? "Notes" : `${SHEET_TITLES[content]?.en ?? ""} notes`}</h4><NotesList notes={notes} /></>}
     </div>
   );
