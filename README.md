@@ -17,7 +17,7 @@ Herramienta web de dibujo arquitectónico que toma como referencia AutoCAD (plan
 - **Escaleras:** tramo recto de arranque a llegada (`ES`); calcula peldaños, huella y contrahuella para salvar el desnivel hasta el nivel de arriba y avisa si la huella es corta.
 - **Mobiliario:** biblioteca de camas, sofá, mesa con sillas, escritorio, armario, encimera de cocina, frigorífico, inodoro, lavabo, ducha y bañera (`MB`). Se colocan con un clic, `R` gira 90° y se pueden mover, copiar y hacer simetría. Salen en 3D, en DXF (`A-MOBILIARIO`) y en IFC como IfcFurniture o IfcSanitaryTerminal.
 - **3D:** modelo generado a partir de todas las plantas, apiladas según su cota (Three.js).
-- **Lámina (documentación):** vista "Lámina" con la planta activa en A3 a escala normalizada (automática o elegida), marcas de puertas y ventanas (P1, V1…), tablas de puertas, ventanas y superficies útiles, escala gráfica y cajetín editable (proyecto, autor, cliente, fecha). "Imprimir / PDF" la imprime o la guarda como PDF desde el navegador.
+- **Lámina (documentación):** vista "Lámina" con la planta activa en A3 a escala normalizada (automática o elegida), marcas de puertas y ventanas (P1, V1…), tablas de puertas, ventanas y superficies útiles, escala gráfica y cajetín editable (proyecto, autor, cliente, fecha). En "Contenido" se elige entre la planta y los **alzados**: las cuatro fachadas generadas del modelo, con carpinterías, cubierta, terreno y cotas de nivel. "Imprimir / PDF" la imprime o la guarda como PDF desde el navegador.
 - **Exportación IFC (IFC4):** el modelo BIM completo, con un nivel (IfcBuildingStorey) por planta, muros con sus huecos, puertas y ventanas con su marca, losas, cubiertas, escaleras y espacios con su superficie. Se abre en Revit, ArchiCAD, BIMcollab Zoom y cualquier visor IFC. Botón Exportar › IFC o comando `IFC`.
 - **Exportación DXF** por capas (`A-MUROS`, `A-PUERTAS`, `A-VENTANAS`, `A-COTAS`, `A-ANOTACION`, `A-HABITACIONES`, `A-LOSAS`, `A-CUBIERTAS`, `A-ESCALERAS`) del nivel activo.
 
@@ -42,6 +42,6 @@ npm run build      # comprobación de tipos y build de producción
 
 1. Planta 2D: empalme de esquinas, bloques propios, sombreados.
 2. BIM: cubiertas de contorno libre, escaleras con rellano, huecos en losas, tipos de muro con capas de materiales.
-3. Documentación: alzados y secciones, varias vistas por lámina, cotas automáticas.
+3. Documentación: secciones, varias vistas por lámina, cotas automáticas.
 4. Intercambio: importación IFC, materiales y propiedades en el IFC.
 5. Proyectos en la nube y colaboración.
