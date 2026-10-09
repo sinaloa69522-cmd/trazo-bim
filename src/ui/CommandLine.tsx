@@ -16,7 +16,7 @@ export function CommandLine({ ed, inputRef, onExport }: { ed: Editor; inputRef: 
               const v = el.value;
               el.value = "";
               const c = v.trim().toUpperCase();
-              if (c === "DXF" || c === "IFC") onExport(c === "DXF" ? "dxf" : "ifc"); else ed.runCommand(v);
+              if (!ed.textAt && (c === "DXF" || c === "IFC")) onExport(c === "DXF" ? "dxf" : "ifc"); else ed.runCommand(v);
             } else if (e.key === "Escape") { el.value = ""; ed.escape(); }
             else if ((e.key === "Delete" || e.key === "Backspace") && !el.value && ed.sels.length) { e.preventDefault(); ed.deleteSel(); }
           }} />

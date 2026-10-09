@@ -1,4 +1,4 @@
-import { dimGeom, dimOffset, dir, loc, pieces, roofGeom, stairSteps, type Pt } from "../core/geometry";
+import { dimGeom, dimOffset, dir, loc, pieces, roofGeom, stairSteps, textBox, type Pt } from "../core/geometry";
 import { furnitureStrokes, type Stroke } from "../core/furniture";
 import type { Dim, Model, Roof, Section, Stair, Wall } from "../core/model";
 import { RC } from "../core/rooms";
@@ -181,6 +181,17 @@ export function drawPlan(ctx: CanvasRenderingContext2D, ed: Editor, C: PlanColor
     ctx.textAlign = "left";
   }
 
+  // textos de anotación, a su tamaño en el modelo
+  if (ed.vis.anot) for (const t of m.texts) {
+    const hl = isSel("text", t.id) || (hover?.type === "text" && hover.id === t.id), s = toS(t.x, t.y);
+    ctx.save(); ctx.translate(s.x, s.y); ctx.rotate((-t.rot * Math.PI) / 180);
+    ctx.font = `${Math.max(1, t.size * ed.view.scale)}px 'IBM Plex Sans', system-ui, sans-serif`;
+    ctx.fillStyle = hl ? C.accent : C.fg; ctx.textAlign = "left"; ctx.textBaseline = "alphabetic";
+    ctx.fillText(t.text, 0, 0);
+    ctx.restore();
+    if (hl) poly(textBox(t), null, C.accent, 0.8);
+  }
+
   // marcas de tipo de puertas y ventanas
   if (opts.marks) for (const op of m.openings) {
     const w = ed.wallById(op.wallId), mk = opts.marks.get(op.id);
@@ -203,6 +214,11 @@ export function drawPlan(ctx: CanvasRenderingContext2D, ed: Editor, C: PlanColor
 
   // vistas previas
   const p: Pt = ed.snap ?? ed.mouse, draft = ed.draft;
+  if (ed.textAt) {
+    const s = toS(ed.textAt.x, ed.textAt.y), hgt = ed.defaults.textSize * ed.view.scale;
+    ctx.strokeStyle = C.accent; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.moveTo(s.x, s.y); ctx.lineTo(s.x, s.y - hgt); ctx.moveTo(s.x - 4, s.y); ctx.lineTo(s.x + 4, s.y); ctx.stroke();
+  }
   const xf = ed.previewXform();
   if (xf && draft) {
     ctx.globalAlpha = 0.55;
@@ -218,7 +234,7 @@ export function drawPlan(ctx: CanvasRenderingContext2D, ed: Editor, C: PlanColor
         if (f) strokes(furnitureStrokes(f).map((k) => ({ ...k, pts: k.pts.map(xf.map) })), C.accent, 1.2);
         continue;
       }
-      const list: { id: number }[] = ed.model[({ wall: "walls", line: "lines", dim: "dims", room: "rooms", roof: "roofs", stair: "stairs", section: "sections" } as const)[r.type]];
+      const list: { id: number }[] = ed.model[({ wall: "walls", line: "lines", dim: "dims", room: "rooms", roof: "roofs", stair: "stairs", section: "sections", text: "texts" } as const)[r.type]];
       const o = list.find((x) => x.id === r.id) as Wall | Model["lines"][number] | Model["rooms"][number] | undefined;
       if (!o) continue;
       if ("x1" in o) {
