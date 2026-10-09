@@ -14,6 +14,7 @@ import { drawPermitOverlay, type PermitPlan } from "../editor/permitRenderer";
 import { site } from "../core/permit";
 import { CoverBody, DetailsBody, NotesBody, PERMIT_KINDS, PermitSide, SheetNotes, SHEET_TITLES, TEXT_SHEETS, type PermitKind } from "./PermitSheets";
 import { SymbolIcon, SystemIcon } from "./MepIcons";
+import { mepEn, SheetLegend } from "./SheetLegend";
 
 /** Lámina apaisada, en milímetros: A3, o en EE.UU. Tabloid (ANSI B, 11" × 17"). */
 const sheetSize = () => (imperial() ? { w: 431.8, h: 279.4 } : { w: 420, h: 297 });
@@ -254,6 +255,7 @@ function Sheet({ ed, content, level, scale, zoom = 1, set }: { ed: Editor; conte
               </tbody>
             </table>
           ) : <p className="empty">{t("Sin habitaciones definidas.", "No rooms defined.")}</p>}
+          <SheetLegend content={content} />
           {en && <SheetNotes content={content} />}
         </div>}
         <div className="cajetin">
@@ -583,41 +585,41 @@ function MepTables({ p, disc, level, notes }: { p: Editor["project"]; disc: Disc
   const legend = mepSchedule(p, disc, level), runs = runSchedule(p, disc, level);
   return (
     <div className="tables">
-      <h4>Leyenda</h4>
+      <h4>{t("Leyenda", "Legend & symbols")}</h4>
       {legend.length ? (
         <table className="legend">
-          <thead><tr><th>Símbolo</th><th>Elemento</th><th className="r">Ud.</th></tr></thead>
-          <tbody>{legend.map((r) => <tr key={r.kind}><td><SymbolIcon kind={r.kind} size={16} /></td><td>{r.label}</td><td className="r">{r.count}</td></tr>)}</tbody>
+          <thead><tr><th>{t("Símbolo", "Symbol")}</th><th>{t("Elemento", "Description")}</th><th className="r">{t("Ud.", "Qty")}</th></tr></thead>
+          <tbody>{legend.map((r) => <tr key={r.kind}><td><SymbolIcon kind={r.kind} size={16} /></td><td>{mepEn.fixture(r.kind, r.label)}</td><td className="r">{r.count}</td></tr>)}</tbody>
         </table>
-      ) : <p className="empty">Sin {disc === "elec" ? "mecanismos" : "puntos de agua"} en este nivel.</p>}
+      ) : <p className="empty">{disc === "elec" ? t("Sin mecanismos en este nivel.", "No devices on this level.") : t("Sin puntos de agua en este nivel.", "No plumbing outlets on this level.")}</p>}
       {disc === "elec" ? <>
-        <h4>Circuitos</h4>
+        <h4>{t("Circuitos", "Panel schedule")}</h4>
         {(() => {
           const cs = circuitSchedule(p, level);
           return cs.length ? (
             <table>
-              <thead><tr><th>Circ.</th><th>Uso</th><th className="r">Puntos</th><th className="r">m</th></tr></thead>
-              <tbody>{cs.map((c) => <tr key={c.circuit}><td><b>{c.circuit}</b></td><td>{c.name}</td><td className="r">{c.points}</td><td className="r">{c.length ? fmtDim(c.length) : "—"}</td></tr>)}</tbody>
+              <thead><tr><th>{t("Circ.", "Ckt")}</th><th>{t("Uso", "Load")}</th><th className="r">{t("Puntos", "Points")}</th><th className="r">{lenUnit()}</th></tr></thead>
+              <tbody>{cs.map((c) => <tr key={c.circuit}><td><b>{c.circuit}</b></td><td>{mepEn.circuit(c.circuit, c.name)}</td><td className="r">{c.points}</td><td className="r">{c.length ? fmtDim(c.length) : "—"}</td></tr>)}</tbody>
             </table>
-          ) : <p className="empty">Sin circuitos asignados.</p>;
+          ) : <p className="empty">{t("Sin circuitos asignados.", "No circuits assigned.")}</p>;
         })()}
       </> : <>
-        <h4>Aparatos sanitarios</h4>
+        <h4>{t("Aparatos sanitarios", "Plumbing fixtures")}</h4>
         {(() => {
           const ss = sanitarySchedule(p, level);
           return ss.length ? (
-            <table><tbody>{ss.map((r) => <tr key={r.label}><td>{r.label}</td><td className="r">{r.count}</td></tr>)}</tbody></table>
-          ) : <p className="empty">Sin aparatos sanitarios.</p>;
+            <table><tbody>{ss.map((r) => <tr key={r.label}><td>{mepEn.sanitary(r.label)}</td><td className="r">{r.count}</td></tr>)}</tbody></table>
+          ) : <p className="empty">{t("Sin aparatos sanitarios.", "No plumbing fixtures.")}</p>;
         })()}
       </>}
-      <h4>{disc === "elec" ? "Canalizaciones" : "Tuberías"}</h4>
+      <h4>{disc === "elec" ? t("Canalizaciones", "Wiring") : t("Tuberías", "Piping")}</h4>
       {runs.length ? (
         <table className="legend">
-          <thead><tr><th>Trazo</th><th>Red</th><th className="r">{lenUnit()}</th></tr></thead>
-          <tbody>{runs.map((r) => <tr key={r.system}><td><SystemIcon sys={r.system} w={26} /></td><td>{r.label}</td><td className="r">{n2(r.length)}</td></tr>)}</tbody>
+          <thead><tr><th>{t("Trazo", "Line")}</th><th>{t("Red", "System")}</th><th className="r">{lenUnit()}</th></tr></thead>
+          <tbody>{runs.map((r) => <tr key={r.system}><td><SystemIcon sys={r.system} w={26} /></td><td>{mepEn.system(r.system, r.label)}</td><td className="r">{n2(r.length)}</td></tr>)}</tbody>
         </table>
-      ) : <p className="empty">Sin recorridos dibujados.</p>}
-      <p className="note">{disc === "elec" ? "Esquema de principio: los recorridos indican la conexión de cada circuito, no el trazado exacto." : "Esquema de principio. Agua fría y caliente por falso techo o tabiquería; saneamiento con pendiente mínima del 1,5 %."}</p>
+      ) : <p className="empty">{t("Sin recorridos dibujados.", "No runs drawn.")}</p>}
+      <p className="note">{disc === "elec" ? t("Esquema de principio: los recorridos indican la conexión de cada circuito, no el trazado exacto.", "Diagrammatic: wiring shows circuiting only, not exact routing.") : t("Esquema de principio. Agua fría y caliente por falso techo o tabiquería; saneamiento con pendiente mínima del 1,5 %.", "Diagrammatic. CW/HW in walls or ceiling; DWV at 1/4\" per ft min slope.")}</p>
       {notes && <SheetNotes content={disc} />}
     </div>
   );

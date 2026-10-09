@@ -210,6 +210,9 @@ dialog .acts span{margin-right:auto;color:var(--muted);font-size:12px}
 .sheetside .tot td{border-bottom:0;border-top:.3mm solid #111;font-weight:600}
 .sheetside .empty{font-size:7.5pt;color:#666;margin:0}
 .sheetside .legend td:first-child{width:9mm;padding:.3mm 1mm;line-height:0}
+.sheetside .symleg td{padding:.2mm 1mm;vertical-align:middle}
+.sheetside .symleg td:first-child{width:15mm}
+.sheetside .symleg svg{display:block}
 /* juego de permiso de EE.UU. */
 .sheetside .pnotes{margin:0;padding-left:4.2mm;font-size:6.3pt;line-height:1.3}
 .sheetside .pnotes li{margin-bottom:.8mm}
