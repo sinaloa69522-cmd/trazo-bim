@@ -3,9 +3,13 @@ import {
   cloneModel, emptyModel, nextId, normalizeModel, sampleModel,
   type LayerId, type Model, type Wall,
 } from "../core/model";
+import { parseDxf } from "../core/dxfImport";
 import { computeRooms, roomAt, type RoomGrid } from "../core/rooms";
+import { deleteElements, reflection, transformElements, translation, type Xform } from "../core/transform";
 
-export type Tool = "select" | "wall" | "door" | "window" | "line" | "dim" | "room" | "move" | "copy";
+export type Tool = "select" | "wall" | "door" | "window" | "line" | "dim" | "room" | "move" | "copy" | "mirror";
+/** Herramientas que actúan sobre la selección actual. */
+const MODIFY_TOOLS: Tool[] = ["move", "copy", "mirror"];
 export type SelType = "wall" | "opening" | "line" | "dim" | "room";
 export interface Selection { type: SelType; id: number }
 export interface SnapPt extends Pt { kind: "end" | "mid" | null }
@@ -31,7 +35,7 @@ const COMMANDS: Record<string, Tool> = {
   M: "wall", MURO: "wall", P: "door", PUERTA: "door", V: "window", VENTANA: "window",
   L: "line", LINEA: "line", "LÍNEA": "line", C: "dim", COTA: "dim", S: "select", SEL: "select",
   H: "room", HAB: "room", HABITACION: "room", "HABITACIÓN": "room",
-  MO: "move", MOVER: "move", CO: "copy", COPIA: "copy",
+  MO: "move", MOVER: "move", CO: "copy", COPIA: "copy", SI: "mirror", SIMETRIA: "mirror", "SIMETRÍA": "mirror",
 };
 
 /**
@@ -44,7 +48,13 @@ export class Editor {
   vis: Record<LayerId, boolean> = { muros: true, puertas: true, ventanas: true, cotas: true, anot: true, hab: true };
   defaults = { thick: 0.15, height: 2.7, doorW: 0.9, doorH: 2.1, winW: 1.2, winH: 1.2, sill: 0.9 };
   tool: Tool = "select";
-  sel: Selection | null = null;
+  /** Elementos seleccionados. */
+  sels: Selection[] = [];
+  /** La selección cuando hay exactamente un elemento; null si no hay ninguno o hay varios. */
+  get sel(): Selection | null { return this.sels.length === 1 ? this.sels[0] : null; }
+  set sel(s: Selection | null) { this.sels = s ? [s] : []; }
+  /** Ventana de selección en curso, en coordenadas del dibujo. */
+  box: { a: Pt; b: Pt } | null = null;
   ortho = true;
   osnap = true;
   view = { scale: 55, ox: 120, oy: 90 };
@@ -102,6 +112,7 @@ export class Editor {
 
   // ---------- consultas ----------
   wallById(id: number) { return this.model.walls.find((w) => w.id === id); }
+  isSelected(type: SelType, id: number) { return this.sels.some((s) => s.type === type && s.id === id); }
   selObj(): (Seg & { id: number }) | Model["openings"][number] | Model["rooms"][number] | null {
     if (!this.sel) return null;
     const m = this.model;
@@ -126,6 +137,7 @@ export class Editor {
       case "room": return "HABITACIÓN  Haz clic dentro de un espacio cerrado por muros:";
       case "move": return n ? "MOVER  Precisa punto de destino:" : "MOVER  Precisa punto base:";
       case "copy": return n ? "COPIA  Precisa punto de destino [Esc termina]:" : "COPIA  Precisa punto base:";
+      case "mirror": return n ? "SIMETRÍA  Segundo punto del eje:" : "SIMETRÍA  Primer punto del eje de simetría:";
     }
   }
   stats() {
@@ -171,16 +183,63 @@ export class Editor {
 
   // ---------- herramientas ----------
   setTool(t: Tool) {
-    if ((t === "move" || t === "copy") && !this.selObj()) { this.message = "Selecciona primero un elemento y luego usa Mover o Copiar."; t = "select"; }
-    if ((t === "move" || t === "copy") && this.sel?.type === "opening") { this.message = "Para mover una puerta o ventana, bórrala e insértala de nuevo (por ahora)."; t = "select"; }
-    this.tool = t; this.draft = null; this.openCand = null;
-    if (t !== "select" && t !== "move" && t !== "copy") this.sel = null;
+    if (MODIFY_TOOLS.includes(t) && !this.sels.length) { this.message = "Selecciona primero uno o varios elementos."; t = "select"; }
+    if (MODIFY_TOOLS.includes(t) && this.sels.every((s) => s.type === "opening")) {
+      this.message = "Las puertas y ventanas se mueven con su muro. Selecciona el muro."; t = "select";
+    }
+    this.tool = t; this.draft = null; this.openCand = null; this.box = null;
+    if (t !== "select" && !MODIFY_TOOLS.includes(t)) this.sels = [];
     this.refresh3d();
   }
   toggleOrtho() { this.ortho = !this.ortho; this.log(`ORTO ${this.ortho ? "activado" : "desactivado"}.`); }
   toggleOsnap() { this.osnap = !this.osnap; this.log(`REFENT ${this.osnap ? "activado" : "desactivado"}.`); }
   setLayer(id: LayerId, on: boolean) { this.vis[id] = on; this.sel = null; this.refresh3d(); }
   select(s: Selection | null) { this.sel = s; this.refresh3d(); }
+  /** Añade o quita un elemento de la selección (Ctrl o Mayús + clic). */
+  toggleSelect(s: Selection) {
+    this.sels = this.isSelected(s.type, s.id) ? this.sels.filter((x) => !(x.type === s.type && x.id === s.id)) : [...this.sels, s];
+    this.refresh3d();
+  }
+
+  /**
+   * Selección por ventana, como en AutoCAD: de izquierda a derecha selecciona lo que queda
+   * completamente dentro; de derecha a izquierda (captura), también lo que la cruza.
+   */
+  selectBox(a: Pt, b: Pt, additive: boolean) {
+    const crossing = b.x < a.x;
+    const x0 = Math.min(a.x, b.x), x1 = Math.max(a.x, b.x), y0 = Math.min(a.y, b.y), y1 = Math.max(a.y, b.y);
+    const inside = (x: number, y: number) => x >= x0 && x <= x1 && y >= y0 && y <= y1;
+    const segHit = (s: Seg) => {
+      if (inside(s.x1, s.y1) && inside(s.x2, s.y2)) return true;
+      if (!crossing) return false;
+      if (inside(s.x1, s.y1) || inside(s.x2, s.y2)) return true;
+      const edges: Seg[] = [
+        { x1: x0, y1: y0, x2: x1, y2: y0 }, { x1: x1, y1: y0, x2: x1, y2: y1 },
+        { x1: x1, y1: y1, x2: x0, y2: y1 }, { x1: x0, y1: y1, x2: x0, y2: y0 },
+      ];
+      return edges.some((e) => segmentsCross(s, e));
+    };
+    const m = this.model, found: Selection[] = [];
+    if (this.vis.muros) for (const w of m.walls) if (segHit(w)) found.push({ type: "wall", id: w.id });
+    for (const o of m.openings) {
+      const w = this.wallById(o.wallId);
+      if (!w || (o.kind === "door" && !this.vis.puertas) || (o.kind === "window" && !this.vis.ventanas)) continue;
+      const c = loc(w, o.t * dir(w).L, 0);
+      if (inside(c.x, c.y) && !found.some((f) => f.type === "wall" && f.id === w.id)) found.push({ type: "opening", id: o.id });
+    }
+    if (this.vis.anot) for (const l of m.lines) if (segHit(l)) found.push({ type: "line", id: l.id });
+    if (this.vis.cotas) for (const d of m.dims) if (segHit(d)) found.push({ type: "dim", id: d.id });
+    if (this.vis.hab) for (const r of m.rooms) {
+      const c = this.rooms?.rooms.get(r.id), p = c?.ok ? { x: c.cx, y: c.cy } : r;
+      if (inside(p.x, p.y)) found.push({ type: "room", id: r.id });
+    }
+    const merged = additive ? [...this.sels] : [];
+    for (const f of found) if (!merged.some((x) => x.type === f.type && x.id === f.id)) merged.push(f);
+    this.sels = merged;
+    this.box = null;
+    this.message = merged.length ? `${merged.length} elemento${merged.length > 1 ? "s" : ""} seleccionado${merged.length > 1 ? "s" : ""}.` : "Ningún elemento dentro de la ventana.";
+    this.refresh3d();
+  }
 
   // ---------- referencias y selección ----------
   snapPoint(wx: number, wy: number, fromOv?: Pt | null, skip?: Set<object>): SnapPt {
@@ -195,7 +254,7 @@ export class Editor {
         if (skip?.has(s)) continue;
         test(s.x1, s.y1, "end"); test(s.x2, s.y2, "end"); test((s.x1 + s.x2) / 2, (s.y1 + s.y2) / 2, "mid");
       }
-      if (this.draft && this.tool !== "move" && this.tool !== "copy") for (const q of this.draft.pts) test(q.x, q.y, "end");
+      if (this.draft && !MODIFY_TOOLS.includes(this.tool)) for (const q of this.draft.pts) test(q.x, q.y, "end");
       if (r) return r;
     }
     let x = wx, y = wy;
@@ -239,7 +298,7 @@ export class Editor {
   // ---------- acciones ----------
   commitPoint(p: Pt) {
     const m = this.model;
-    if (this.tool === "move" || this.tool === "copy") return this.moveCopy(p);
+    if (MODIFY_TOOLS.includes(this.tool)) return this.modify(p);
     if (this.tool === "wall" || this.tool === "line") {
       if (!this.draft) { this.draft = { pts: [p] }; this.emit(); return; }
       const last = this.draft.pts[this.draft.pts.length - 1];
@@ -269,30 +328,70 @@ export class Editor {
     }
   }
 
-  private moveCopy(p: Pt) {
-    const o = this.selObj();
-    if (!o || !this.sel) { this.setTool("select"); return; }
+  /** Mover, copiar o simetría sobre toda la selección. */
+  private modify(p: Pt) {
+    if (!this.sels.length) { this.setTool("select"); return; }
     if (!this.draft) { this.draft = { pts: [p] }; this.emit(); return; }
-    const bp = this.draft.pts[0], dx = p.x - bp.x, dy = p.y - bp.y;
-    if (Math.hypot(dx, dy) < 1e-6) return;
+    const bp = this.draft.pts[0];
+    if (Math.hypot(p.x - bp.x, p.y - bp.y) < 1e-6) return;
+    const xf: Xform = this.tool === "mirror" ? reflection(bp, p) : translation(p.x - bp.x, p.y - bp.y);
     this.snapshot();
-    const shift = (x: object) => {
-      if ("x1" in x) { const s = x as Seg; s.x1 += dx; s.y1 += dy; s.x2 += dx; s.y2 += dy; }
-      else { const r = x as Pt; r.x += dx; r.y += dy; }
-    };
-    const type = this.sel.type;
-    if (this.tool === "move") {
-      shift(o); this.message = "Elemento movido."; this.draft = null; this.tool = "select"; this.changed(); return;
+    const copy = this.tool !== "move";
+    const result = transformElements(this.model, this.sels, xf, copy);
+    const n = result.length;
+    if (this.tool === "copy") {
+      this.message = `${n} copia${n > 1 ? "s" : ""} creada${n > 1 ? "s" : ""}. Haz clic para otra copia o Esc para terminar.`;
+    } else {
+      this.message = this.tool === "move" ? `${n} elemento${n > 1 ? "s" : ""} movido${n > 1 ? "s" : ""}.` : `Simetría creada con ${n} elemento${n > 1 ? "s" : ""}. Los originales se conservan.`;
+      if (this.tool === "mirror") this.sels = result;
+      this.draft = null; this.tool = "select";
     }
-    const m = this.model, c = JSON.parse(JSON.stringify(o));
-    c.id = nextId(m); shift(c);
-    if (type === "wall") m.walls.push(c);
-    if (type === "line") m.lines.push(c);
-    if (type === "dim") m.dims.push(c);
-    if (type === "room") { c.name = `${(o as Model["rooms"][number]).name} (copia)`; m.rooms.push(c); }
-    if (type === "wall") for (const op of m.openings.filter((x) => x.wallId === o.id)) m.openings.push({ ...op, id: nextId(m), wallId: c.id });
-    this.message = "Copia creada. Haz clic para otra copia o Esc para terminar.";
     this.changed();
+  }
+
+  /** Vista previa de la transformación en curso (para dibujarla). */
+  previewXform(): Xform | null {
+    if (!MODIFY_TOOLS.includes(this.tool) || !this.draft?.pts.length || !this.mouse.in) return null;
+    const bp = this.draft.pts[0], p = this.snap ?? this.mouse;
+    if (Math.hypot(p.x - bp.x, p.y - bp.y) < 1e-6) return null;
+    return this.tool === "mirror" ? reflection(bp, p) : translation(p.x - bp.x, p.y - bp.y);
+  }
+
+  /** Convierte las líneas seleccionadas en muros con el espesor y la altura por defecto. */
+  linesToWalls() {
+    const lines = this.sels.filter((s) => s.type === "line");
+    if (!lines.length) { this.log("Selecciona líneas para convertirlas en muros."); return; }
+    this.snapshot();
+    const m = this.model, ids = new Set(lines.map((s) => s.id)), made: Selection[] = [];
+    for (const l of m.lines.filter((l) => ids.has(l.id))) {
+      const w: Wall = { id: nextId(m), x1: l.x1, y1: l.y1, x2: l.x2, y2: l.y2, thick: this.defaults.thick, height: this.defaults.height };
+      m.walls.push(w);
+      made.push({ type: "wall", id: w.id });
+    }
+    m.lines = m.lines.filter((l) => !ids.has(l.id));
+    this.sels = made;
+    this.message = `${made.length} línea${made.length > 1 ? "s" : ""} convertida${made.length > 1 ? "s" : ""} en muros de ${this.defaults.thick.toFixed(2)} m.`;
+    this.changed();
+  }
+
+  /** Importa un DXF como líneas de anotación y las deja seleccionadas. */
+  importDxf(text: string, fileName = "DXF") {
+    const r = parseDxf(text);
+    if (!r.segments.length) { this.log(`${fileName}: no se encontraron líneas ni polilíneas para importar.`); return; }
+    this.snapshot();
+    const m = this.model, made: Selection[] = [];
+    for (const s of r.segments) {
+      const id = nextId(m);
+      m.lines.push({ id, x1: s.a.x, y1: s.a.y, x2: s.b.x, y2: s.b.y });
+      made.push({ type: "line", id });
+    }
+    this.vis.anot = true;
+    this.tool = "select"; this.draft = null;
+    this.sels = made;
+    const skipped = Object.entries(r.skipped).map(([k, v]) => `${v} ${k}`).join(", ");
+    this.message = `${fileName}: ${made.length} líneas importadas (unidades: ${r.unitsLabel})${skipped ? `; sin importar: ${skipped}` : ""}. Usa "Convertir en muros" para pasarlas a muros.`;
+    this.changed();
+    this.fitRequest?.();
   }
 
   placeOpening(wx: number, wy: number) {
@@ -326,22 +425,20 @@ export class Editor {
   finishDraft() { if (this.draft) { this.draft = null; this.log("Comando terminado."); } }
 
   deleteSel() {
-    const s = this.sel, m = this.model;
-    if (!s) return;
+    if (!this.sels.length) return;
     this.snapshot();
-    if (s.type === "wall") { m.walls = m.walls.filter((w) => w.id !== s.id); m.openings = m.openings.filter((o) => o.wallId !== s.id); }
-    if (s.type === "opening") m.openings = m.openings.filter((o) => o.id !== s.id);
-    if (s.type === "line") m.lines = m.lines.filter((o) => o.id !== s.id);
-    if (s.type === "dim") m.dims = m.dims.filter((o) => o.id !== s.id);
-    if (s.type === "room") m.rooms = m.rooms.filter((o) => o.id !== s.id);
-    this.sel = null; this.message = "Elemento borrado."; this.changed();
+    const n = this.sels.length;
+    deleteElements(this.model, this.sels);
+    this.sels = [];
+    this.message = n > 1 ? `${n} elementos borrados.` : "Elemento borrado.";
+    this.changed();
   }
 
   /** Aplica un cambio de propiedad con deshacer. */
   edit(fn: () => void) { this.snapshot(); fn(); this.changed(); }
 
   escape() {
-    if (this.draft && (this.tool === "move" || this.tool === "copy")) { this.setTool("select"); return; }
+    if (MODIFY_TOOLS.includes(this.tool)) { this.setTool("select"); return; }
     if (this.draft) this.finishDraft();
     else if (this.tool !== "select") this.setTool("select");
     else this.select(null);
@@ -361,7 +458,7 @@ export class Editor {
     if (s === "Z" || s === "ZOOM" || s === "ENCUADRAR") { this.fitRequest?.(); return; }
     const num = s.replace(",", ".");
     const lengthOk = this.draft?.pts.length &&
-      (["wall", "line", "move", "copy"].includes(this.tool) || (this.tool === "dim" && this.draft.pts.length === 1));
+      (["wall", "line", "move", "copy", "mirror"].includes(this.tool) || (this.tool === "dim" && this.draft.pts.length === 1));
     if (/^-?\d*\.?\d+$/.test(num) && lengthOk) {
       const L = parseFloat(num), from = this.draft!.pts[this.draft!.pts.length - 1], p = this.snap ?? this.mouse;
       let dx = p.x - from.x, dy = p.y - from.y;
@@ -378,7 +475,7 @@ export class Editor {
       this.commitPoint({ x, y });
       return;
     }
-    this.log(`Comando desconocido: "${raw}". Prueba M, P, V, L, C, H, MO, CO, B (borrar), U (deshacer), Z (encuadrar).`);
+    this.log(`Comando desconocido: "${raw}". Prueba M, P, V, L, C, H, MO, CO, SI, B (borrar), U (deshacer), Z (encuadrar).`);
   }
   /** La vista de planta registra aquí cómo encuadrar, porque conoce su tamaño. */
   fitRequest: (() => void) | null = null;
@@ -396,21 +493,24 @@ export class Editor {
   }
   pointerLeave() { this.mouse.in = false; this.hover = null; this.emit(); }
 
-  /** Clic principal. Devuelve "pan" si el lienzo debe empezar a desplazar la vista. */
-  pointerDown(sx: number, sy: number): { pan: boolean; pick?: Selection | null } {
+  /**
+   * Clic principal. Con la herramienta de selección, si no hay nada bajo el cursor (o solo una habitación)
+   * devuelve box=true: el lienzo decide al soltar si fue un clic o una ventana de selección.
+   */
+  pointerDown(sx: number, sy: number, additive = false): { box: boolean; pick?: Selection | null } {
     const w = this.toW(sx, sy);
     this.mouse = { x: w.x, y: w.y, in: true };
     if (this.tool === "select") {
       const g = this.grips().find((g) => { const s = this.toS(g.x, g.y); return Math.hypot(s.x - sx, s.y - sy) < 9; });
-      if (g) { this.startGrip(g.k, g); return { pan: false }; }
+      if (g && !additive) { this.startGrip(g.k, g); return { box: false }; }
       const h = this.pick(w.x, w.y);
-      if (h && h.type !== "room") { this.select(h); return { pan: false }; }
-      return { pan: true, pick: h };
+      if (h && h.type !== "room") { if (additive) this.toggleSelect(h); else this.select(h); return { box: false }; }
+      return { box: true, pick: h };
     }
-    if (this.tool === "door" || this.tool === "window") { this.placeOpening(w.x, w.y); return { pan: false }; }
-    if (this.tool === "room") { this.placeRoom(w.x, w.y); return { pan: false }; }
+    if (this.tool === "door" || this.tool === "window") { this.placeOpening(w.x, w.y); return { box: false }; }
+    if (this.tool === "room") { this.placeRoom(w.x, w.y); return { box: false }; }
     this.commitPoint(this.snapPoint(w.x, w.y));
-    return { pan: false };
+    return { box: false };
   }
   pointerUp() { if (this.grip) { this.grip = null; this.snap = null; this.changed(); } }
 
@@ -468,4 +568,11 @@ export class Editor {
 
   /** Copia independiente del modelo, útil para pruebas. */
   exportModel(): Model { return cloneModel(this.model); }
+}
+
+/** ¿Se cortan los segmentos p y q? */
+function segmentsCross(p: Seg, q: Seg) {
+  const o = (ax: number, ay: number, bx: number, by: number, cx: number, cy: number) => Math.sign((bx - ax) * (cy - ay) - (by - ay) * (cx - ax));
+  return o(p.x1, p.y1, p.x2, p.y2, q.x1, q.y1) !== o(p.x1, p.y1, p.x2, p.y2, q.x2, q.y2) &&
+    o(q.x1, q.y1, q.x2, q.y2, p.x1, p.y1) !== o(q.x1, q.y1, q.x2, q.y2, p.x2, p.y2);
 }

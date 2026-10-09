@@ -34,6 +34,7 @@ export function App() {
   });
   const [dxfOpen, setDxfOpen] = useState(false);
   const cmdRef = useRef<HTMLInputElement>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
   const view3d = useRef<View3DHandle>(null);
   const spaceDown = useRef(false);
 
@@ -47,7 +48,7 @@ export function App() {
       else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "z" && !inField) { e.preventDefault(); ed.undo(); }
       else if (inField) return;
       else if (e.key === "Escape") ed.escape();
-      else if ((e.key === "Delete" || e.key === "Backspace") && ed.sel) { e.preventDefault(); ed.deleteSel(); }
+      else if ((e.key === "Delete" || e.key === "Backspace") && ed.sels.length) { e.preventDefault(); ed.deleteSel(); }
       else if (e.key === " ") { spaceDown.current = true; e.preventDefault(); }
       else if (e.key === "Enter") ed.runCommand("");
       else if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) cmdRef.current?.focus();
@@ -79,6 +80,12 @@ export function App() {
         <button className="btn" onClick={() => ed.undo()} title="Deshacer (Ctrl+Z)">Deshacer</button>
         <button className="btn" onClick={() => { ed.loadSample(); ed.fitRequest?.(); view3d.current?.fit(); }}>Ejemplo</button>
         <button className="btn" onClick={() => ed.clear()}>Nuevo</button>
+        <button className="btn" onClick={() => fileRef.current?.click()}>Importar DXF</button>
+        <input ref={fileRef} type="file" accept=".dxf" hidden onChange={async (e) => {
+          const f = e.target.files?.[0];
+          e.target.value = "";
+          if (f) { ed.importDxf(await f.text(), f.name); view3d.current?.fit(); }
+        }} />
         <button className="btn primary" onClick={() => setDxfOpen(true)}>Exportar DXF</button>
       </header>
 

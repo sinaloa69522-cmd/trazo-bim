@@ -1,7 +1,7 @@
 import { dimGeom, dimOffset, dir, loc, pieces, type Pt } from "../core/geometry";
 import type { Dim, Wall } from "../core/model";
 import { RC } from "../core/rooms";
-import type { Editor } from "./Editor";
+import type { Editor, SelType } from "./Editor";
 
 export type PlanColors = Record<
   "plan-bg" | "grid" | "grid-major" | "wall" | "door" | "window" | "dim" | "anno" | "accent" | "fg" | "muted" | "danger" | "panel",
@@ -12,7 +12,7 @@ const MONO = "11px 'IBM Plex Mono', ui-monospace, monospace";
 
 /** Dibuja la planta completa en un canvas 2D. W y H en píxeles CSS. */
 export function drawPlan(ctx: CanvasRenderingContext2D, ed: Editor, C: PlanColors, W: number, H: number) {
-  const m = ed.model, sel = ed.sel;
+  const m = ed.model;
   const toS = (x: number, y: number) => ed.toS(x, y);
   ctx.fillStyle = C["plan-bg"];
   ctx.fillRect(0, 0, W, H);
@@ -49,7 +49,7 @@ export function drawPlan(ctx: CanvasRenderingContext2D, ed: Editor, C: PlanColor
   };
   const quad = (w: Wall | { x1: number; y1: number; x2: number; y2: number }, a: number, b: number, n0: number, n1: number) =>
     [loc(w, a, n0), loc(w, b, n0), loc(w, b, n1), loc(w, a, n1)];
-  const isSel = (type: string, id: number) => sel?.type === type && sel.id === id;
+  const isSel = (type: SelType, id: number) => ed.isSelected(type, id);
 
   // habitaciones (relleno)
   const rg = ed.rooms;
@@ -116,14 +116,29 @@ export function drawPlan(ctx: CanvasRenderingContext2D, ed: Editor, C: PlanColor
 
   // vistas previas
   const p: Pt = ed.snap ?? ed.mouse, draft = ed.draft;
-  if ((ed.tool === "move" || ed.tool === "copy") && draft?.pts.length && ed.mouse.in) {
-    const o = ed.selObj() as { x1: number; y1: number; x2: number; y2: number } | null, bp = draft.pts[0], dx = p.x - bp.x, dy = p.y - bp.y;
-    if (o && "x1" in o) {
-      ctx.globalAlpha = 0.6;
-      seg({ x: o.x1 + dx, y: o.y1 + dy }, { x: o.x2 + dx, y: o.y2 + dy }, C.accent, ed.sel?.type === "wall" ? Math.max(2, (o as Wall).thick * ed.view.scale) : 1.5);
-      ctx.globalAlpha = 1;
+  const xf = ed.previewXform();
+  if (xf && draft) {
+    ctx.globalAlpha = 0.55;
+    for (const r of ed.sels) {
+      if (r.type === "opening") continue;
+      const o = ed.model[({ wall: "walls", line: "lines", dim: "dims", room: "rooms" } as const)[r.type]].find((x) => x.id === r.id);
+      if (!o) continue;
+      if ("x1" in o) {
+        const a = xf.map({ x: o.x1, y: o.y1 }), b = xf.map({ x: o.x2, y: o.y2 });
+        seg(a, b, C.accent, r.type === "wall" ? Math.max(2, (o as Wall).thick * ed.view.scale) : 1.5);
+      } else {
+        const c = ed.rooms?.rooms.get(o.id), q = xf.map(c?.ok ? { x: c.cx, y: c.cy } : o), s = toS(q.x, q.y);
+        ctx.fillStyle = C.accent; ctx.beginPath(); ctx.arc(s.x, s.y, 4, 0, Math.PI * 2); ctx.fill();
+      }
     }
-    seg(bp, p, C.accent, 1, [5, 4]); lengthTag(ctx, ed, C, bp, p);
+    ctx.globalAlpha = 1;
+    const bp = draft.pts[0];
+    if (ed.tool === "mirror") {
+      // eje de simetría prolongado
+      const dx = p.x - bp.x, dy = p.y - bp.y, k = 1000 / ed.view.scale / (Math.hypot(dx, dy) || 1);
+      seg({ x: bp.x - dx * k, y: bp.y - dy * k }, { x: bp.x + dx * k, y: bp.y + dy * k }, C.accent, 1, [10, 4, 2, 4]);
+    } else seg(bp, p, C.accent, 1, [5, 4]);
+    lengthTag(ctx, ed, C, bp, p);
   } else if (draft?.pts.length) {
     const last = draft.pts[draft.pts.length - 1];
     if (ed.tool === "wall") {
@@ -140,6 +155,15 @@ export function drawPlan(ctx: CanvasRenderingContext2D, ed: Editor, C: PlanColor
   if (ed.openCand && ed.mouse.in) {
     const { w, t, ok } = ed.openCand, { L } = dir(w), width = ed.tool === "door" ? ed.defaults.doorW : ed.defaults.winW, h = w.thick / 2;
     ctx.globalAlpha = 0.55; poly(quad(w, t * L - width / 2, t * L + width / 2, -h - 0.03, h + 0.03), ok ? C.accent : C.danger); ctx.globalAlpha = 1;
+  }
+
+  // ventana de selección: azul continua (dentro) o verde discontinua (captura)
+  if (ed.box) {
+    const a = toS(ed.box.a.x, ed.box.a.y), b = toS(ed.box.b.x, ed.box.b.y), crossing = b.x < a.x;
+    const col = crossing ? C.window : C.accent;
+    ctx.fillStyle = col; ctx.globalAlpha = 0.08; ctx.fillRect(a.x, a.y, b.x - a.x, b.y - a.y); ctx.globalAlpha = 1;
+    ctx.strokeStyle = col; ctx.lineWidth = 1; ctx.setLineDash(crossing ? [6, 4] : []);
+    ctx.strokeRect(a.x + 0.5, a.y + 0.5, b.x - a.x, b.y - a.y); ctx.setLineDash([]);
   }
 
   // marcador de referencia a objetos y cursor en cruz

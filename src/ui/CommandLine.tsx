@@ -17,7 +17,7 @@ export function CommandLine({ ed, inputRef, onExport }: { ed: Editor; inputRef: 
               el.value = "";
               if (v.trim().toUpperCase() === "DXF") onExport(); else ed.runCommand(v);
             } else if (e.key === "Escape") { el.value = ""; ed.escape(); }
-            else if ((e.key === "Delete" || e.key === "Backspace") && !el.value && ed.sel) { e.preventDefault(); ed.deleteSel(); }
+            else if ((e.key === "Delete" || e.key === "Backspace") && !el.value && ed.sels.length) { e.preventDefault(); ed.deleteSel(); }
           }} />
       </div>
       <div className="status">

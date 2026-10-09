@@ -22,7 +22,9 @@ function Properties({ ed, onFocusCommand }: { ed: Editor; onFocusCommand: () => 
   const sel = ed.sel, o = ed.selObj(), d = ed.defaults;
   const ro: [string, string][] = [];
   let title = "Valores por defecto", body: JSX.Element | null = null;
-  const key = sel ? `${sel.type}-${sel.id}` : "def";
+  const n = ed.sels.length;
+  const key = sel ? `${sel.type}-${sel.id}` : n > 1 ? "multi" : "def";
+  const TYPE_LABEL = { wall: "Muros", opening: "Puertas y ventanas", line: "Líneas", dim: "Cotas", room: "Habitaciones" } as const;
 
   if (sel && o && sel.type === "wall") {
     const w = o as Model["walls"][number];
@@ -61,6 +63,12 @@ function Properties({ ed, onFocusCommand }: { ed: Editor; onFocusCommand: () => 
   } else if (sel && o && sel.type === "dim") {
     title = "Cota alineada";
     ro.push(["Valor", `${num(dimGeom(o as Model["dims"][number]).L)} m`]);
+  } else if (n > 1) {
+    title = `${n} elementos seleccionados`;
+    for (const [t, label] of Object.entries(TYPE_LABEL)) {
+      const c = ed.sels.filter((x) => x.type === t).length;
+      if (c) ro.push([label, String(c)]);
+    }
   } else {
     body = <>
       <NumberField id="def-t" label="Espesor muro" value={d.thick} onCommit={(v) => { d.thick = v; ed.emit(); }} />
@@ -77,13 +85,17 @@ function Properties({ ed, onFocusCommand }: { ed: Editor; onFocusCommand: () => 
       <div className="props">
         {ro.map(([k, v]) => <Fragment key={k}><label>{k}</label><span className="ro">{v}</span></Fragment>)}
         {body}
-        {sel && sel.type !== "opening" && (
+        {n > 0 && ed.sels.some((x) => x.type !== "opening") && (
           <div className="full" style={{ display: "flex", gap: 6 }}>
-            <button className="btn" style={{ flex: 1 }} onClick={() => { ed.setTool("move"); onFocusCommand(); }}>Mover</button>
-            <button className="btn" style={{ flex: 1 }} onClick={() => { ed.setTool("copy"); onFocusCommand(); }}>Copiar</button>
+            {([["move", "Mover"], ["copy", "Copiar"], ["mirror", "Simetría"]] as const).map(([t, label]) => (
+              <button key={t} className="btn" style={{ flex: 1 }} onClick={() => { ed.setTool(t); onFocusCommand(); }}>{label}</button>
+            ))}
           </div>
         )}
-        {sel && <button className="btn full" onClick={() => ed.deleteSel()}>Borrar elemento</button>}
+        {ed.sels.some((x) => x.type === "line") && (
+          <button className="btn full" onClick={() => ed.linesToWalls()}>Convertir líneas en muros</button>
+        )}
+        {n > 0 && <button className="btn full" onClick={() => ed.deleteSel()}>{n > 1 ? `Borrar ${n} elementos` : "Borrar elemento"}</button>}
       </div>
     </div>
   );
@@ -119,8 +131,8 @@ export function Sidebar({ ed, onFocusCommand }: { ed: Editor; onFocusCommand: ()
       </section>
       <p className="hint">
         Escribe comandos como en AutoCAD: <b>M</b> muro, <b>P</b> puerta, <b>V</b> ventana, <b>L</b> línea, <b>C</b> cota,{" "}
-        <b>H</b> habitación, <b>MO</b> mover, <b>CO</b> copiar. Mientras dibujas, teclea una longitud (p. ej. <b>4.5</b>) y Enter.
-        Selecciona un muro y arrastra sus cuadros azules para estirarlo. Rueda para zoom, arrastra el fondo para desplazar. F8 orto, F3 referencias.
+        <b>H</b> habitación, <b>MO</b> mover, <b>CO</b> copiar, <b>SI</b> simetría. Mientras dibujas, teclea una longitud (p. ej. <b>4.5</b>) y Enter.
+        Selecciona un muro y arrastra sus cuadros azules para estirarlo. Arrastra sobre el vacío para seleccionar con ventana (Mayús o Ctrl suma a la selección). Rueda para zoom; arrastra con el botón derecho, la rueda o Espacio para desplazar. F8 orto, F3 referencias.
       </p>
     </aside>
   );

@@ -78,7 +78,7 @@ export class Viewer3D {
   schedule() { clearTimeout(this.timer); this.timer = window.setTimeout(() => this.build(), 60); }
 
   build() {
-    const { model: m, vis, sel } = this.ed;
+    const { model: m, vis } = this.ed, isSel = (t: "wall" | "opening", id: number) => this.ed.isSelected(t, id);
     this.ren.setClearColor(new THREE.Color(this.background() || "#e4e8e6"));
     for (const c of [...this.group.children]) {
       this.group.remove(c);
@@ -104,10 +104,10 @@ export class Viewer3D {
     this.group.add(floor);
     if (vis.muros) for (const w of m.walls) {
       const { solids, ops } = pieces(m, w), H = w.height;
-      const mat = sel?.type === "wall" && sel.id === w.id ? this.mat.sel : this.mat.wall;
+      const mat = isSel("wall", w.id) ? this.mat.sel : this.mat.wall;
       for (const [a, c] of solids) box(w, a, c, 0, H, w.thick, mat);
       for (const { o, a, b: bb } of ops) {
-        const top = Math.min(H, o.sill + o.height), om = sel?.type === "opening" && sel.id === o.id;
+        const top = Math.min(H, o.sill + o.height), om = isSel("opening", o.id);
         box(w, a, bb, top, H, w.thick, mat);
         if (o.sill > 0) box(w, a, bb, 0, o.sill, w.thick, mat);
         if (o.kind === "door" && vis.puertas) box(w, a + 0.02, bb - 0.02, 0, top - 0.02, 0.045, om ? this.mat.sel : this.mat.door);
