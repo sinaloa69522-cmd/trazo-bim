@@ -37,6 +37,7 @@ export function toDxf(m: Model, rooms: RoomGrid | null): string {
       line("A-VENTANAS", loc(w, a, h / 3), loc(w, b, h / 3));
     }
   }
+  for (const sl of m.slabs ?? []) sl.pts.forEach((p, i) => line("A-LOSAS", p, sl.pts[(i + 1) % sl.pts.length]));
   for (const l of m.lines) line("A-ANOTACION", { x: l.x1, y: l.y1 }, { x: l.x2, y: l.y2 });
   for (const d of m.dims) {
     const g = dimGeom(d), sg = Math.sign(d.off || 1);

@@ -52,6 +52,11 @@ button,input,select,textarea{font:inherit;color:inherit}
 .layer{display:grid;grid-template-columns:auto 12px 1fr auto;align-items:center;gap:8px;padding:4px 0}
 .layer .sw{width:12px;height:12px;border-radius:2px}
 .layer .n{font-family:var(--f-mono);font-size:11px;color:var(--muted)}
+.levels{display:flex;flex-direction:column;gap:2px;margin-bottom:10px}
+.level{display:flex;justify-content:space-between;align-items:center;gap:8px;border:1px solid transparent;background:transparent;border-radius:4px;padding:5px 8px;cursor:pointer;text-align:left}
+.level:hover{background:var(--accent-soft)}
+.level[aria-checked="true"]{border-color:var(--accent);background:var(--accent-soft);font-weight:600}
+.level .n{font-family:var(--f-mono);font-size:11px;color:var(--muted);font-variant-numeric:tabular-nums}
 .props{display:grid;grid-template-columns:1fr 92px;gap:6px 10px;align-items:center}
 .props label{color:var(--muted)}
 .props input,.props select{width:100%;padding:4px 6px;border:1px solid var(--line);border-radius:4px;background:var(--plan-bg);font-family:var(--f-mono);font-size:12px;font-variant-numeric:tabular-nums}

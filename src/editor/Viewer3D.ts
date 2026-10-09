@@ -24,6 +24,7 @@ export class Viewer3D {
     door: new THREE.MeshStandardMaterial({ color: 0x9a6640, roughness: 0.7 }),
     glass: new THREE.MeshStandardMaterial({ color: 0x8fc5e8, transparent: true, opacity: 0.35, roughness: 0.1, metalness: 0.1 }),
     frame: new THREE.MeshStandardMaterial({ color: 0x40464a, roughness: 0.5 }),
+    slab: new THREE.MeshStandardMaterial({ color: 0xb9b6ae, roughness: 0.95 }),
     edge: new THREE.LineBasicMaterial({ color: 0x2b3330, transparent: true, opacity: 0.55 }),
   };
 
@@ -78,16 +79,17 @@ export class Viewer3D {
   schedule() { clearTimeout(this.timer); this.timer = window.setTimeout(() => this.build(), 60); }
 
   build() {
-    const { model: m, vis } = this.ed, isSel = (t: "wall" | "opening", id: number) => this.ed.isSelected(t, id);
+    const { project, vis, active } = this.ed;
     this.ren.setClearColor(new THREE.Color(this.background() || "#e4e8e6"));
     for (const c of [...this.group.children]) {
       this.group.remove(c);
       (c as THREE.Mesh).geometry?.dispose();
     }
+    let base = 0; // cota del nivel que se está construyendo
     const box = (w: Wall, sa: number, sb: number, z0: number, z1: number, th: number, mat: THREE.Material, edges = true) => {
       if (sb - sa < 1e-3 || z1 - z0 < 1e-3) return;
       const { ux, uy } = dir(w), g = new THREE.BoxGeometry(sb - sa, z1 - z0, th), mesh = new THREE.Mesh(g, mat), c = loc(w, (sa + sb) / 2, 0);
-      mesh.position.set(c.x, (z0 + z1) / 2, c.y);
+      mesh.position.set(c.x, base + (z0 + z1) / 2, c.y);
       mesh.rotation.y = -Math.atan2(uy, ux);
       mesh.castShadow = mesh.receiveShadow = true;
       this.group.add(mesh);
@@ -97,38 +99,68 @@ export class Viewer3D {
         this.group.add(e);
       }
     };
-    const b = bounds(m);
+    const b = projectBounds(this.ed);
     const floor = new THREE.Mesh(new THREE.BoxGeometry(b.x1 - b.x0, 0.1, b.y1 - b.y0), this.mat.floor);
-    floor.position.set((b.x0 + b.x1) / 2, -0.05, (b.y0 + b.y1) / 2);
+    floor.position.set((b.x0 + b.x1) / 2, -0.32, (b.y0 + b.y1) / 2);
     floor.receiveShadow = true;
     this.group.add(floor);
-    if (vis.muros) for (const w of m.walls) {
-      const { solids, ops } = pieces(m, w), H = w.height;
-      const mat = isSel("wall", w.id) ? this.mat.sel : this.mat.wall;
-      for (const [a, c] of solids) box(w, a, c, 0, H, w.thick, mat);
-      for (const { o, a, b: bb } of ops) {
-        const top = Math.min(H, o.sill + o.height), om = isSel("opening", o.id);
-        box(w, a, bb, top, H, w.thick, mat);
-        if (o.sill > 0) box(w, a, bb, 0, o.sill, w.thick, mat);
-        if (o.kind === "door" && vis.puertas) box(w, a + 0.02, bb - 0.02, 0, top - 0.02, 0.045, om ? this.mat.sel : this.mat.door);
-        if (o.kind === "window" && vis.ventanas) {
-          const fm = om ? this.mat.sel : this.mat.frame;
-          box(w, a, bb, o.sill, o.sill + 0.05, w.thick * 0.6, fm, false);
-          box(w, a, bb, top - 0.05, top, w.thick * 0.6, fm, false);
-          box(w, a + 0.03, bb - 0.03, o.sill + 0.05, top - 0.05, 0.02, this.mat.glass, false);
+
+    project.levels.forEach((m, li) => {
+      base = m.elev;
+      const isSel = (t: "wall" | "opening" | "slab", id: number) => li === active && this.ed.isSelected(t, id);
+      // losas: el contorno se extruye hacia abajo desde la cota del nivel
+      if (vis.losas) for (const sl of m.slabs) {
+        if (sl.pts.length < 3) continue;
+        const shape = new THREE.Shape(sl.pts.map((p) => new THREE.Vector2(p.x, p.y)));
+        const g = new THREE.ExtrudeGeometry(shape, { depth: sl.thick, bevelEnabled: false });
+        const mesh = new THREE.Mesh(g, isSel("slab", sl.id) ? this.mat.sel : this.mat.slab);
+        mesh.rotation.x = Math.PI / 2; // (x, y) de la planta pasa a (x, z); la extrusión baja
+        mesh.position.y = base;
+        mesh.castShadow = mesh.receiveShadow = true;
+        this.group.add(mesh);
+        const e = new THREE.LineSegments(new THREE.EdgesGeometry(g), this.mat.edge);
+        e.rotation.copy(mesh.rotation); e.position.copy(mesh.position);
+        this.group.add(e);
+      }
+      if (vis.muros) for (const w of m.walls) {
+        const { solids, ops } = pieces(m, w), H = w.height;
+        const mat = isSel("wall", w.id) ? this.mat.sel : this.mat.wall;
+        for (const [a, c] of solids) box(w, a, c, 0, H, w.thick, mat);
+        for (const { o, a, b: bb } of ops) {
+          const top = Math.min(H, o.sill + o.height), om = isSel("opening", o.id);
+          box(w, a, bb, top, H, w.thick, mat);
+          if (o.sill > 0) box(w, a, bb, 0, o.sill, w.thick, mat);
+          if (o.kind === "door" && vis.puertas) box(w, a + 0.02, bb - 0.02, 0, top - 0.02, 0.045, om ? this.mat.sel : this.mat.door);
+          if (o.kind === "window" && vis.ventanas) {
+            const fm = om ? this.mat.sel : this.mat.frame;
+            box(w, a, bb, o.sill, o.sill + 0.05, w.thick * 0.6, fm, false);
+            box(w, a, bb, top - 0.05, top, w.thick * 0.6, fm, false);
+            box(w, a + 0.03, bb - 0.03, o.sill + 0.05, top - 0.05, 0.02, this.mat.glass, false);
+          }
         }
       }
-    }
+    });
     this.dirty = true;
   }
 
   fit() {
-    const b = bounds(this.ed.model), cx = (b.x0 + b.x1) / 2, cz = (b.y0 + b.y1) / 2, r = Math.max(b.x1 - b.x0, b.y1 - b.y0);
-    this.ctl.target.set(cx, 1, cz);
-    this.cam.position.set(cx + r * 1.0, r * 1.1, cz + r * 1.3);
+    const b = projectBounds(this.ed), cx = (b.x0 + b.x1) / 2, cz = (b.y0 + b.y1) / 2;
+    const top = Math.max(...this.ed.project.levels.map((l) => l.elev)) + 3;
+    const r = Math.max(b.x1 - b.x0, b.y1 - b.y0, top * 1.5);
+    this.ctl.target.set(cx, top / 3, cz);
+    this.cam.position.set(cx + r * 1.0, top / 3 + r * 1.1, cz + r * 1.3);
     this.sun.position.set(cx + 12, 20, cz + 8);
     this.sun.target.position.set(cx, 0, cz);
     this.ctl.update();
     this.dirty = true;
   }
+}
+
+/** Extensión de todos los niveles juntos. */
+function projectBounds(ed: Editor) {
+  const bs = ed.project.levels.map((l) => bounds(l));
+  return {
+    x0: Math.min(...bs.map((b) => b.x0)), y0: Math.min(...bs.map((b) => b.y0)),
+    x1: Math.max(...bs.map((b) => b.x1)), y1: Math.max(...bs.map((b) => b.y1)),
+  };
 }

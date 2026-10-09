@@ -1,6 +1,6 @@
-import { bounds, dimOffset, dir, distSeg, dimGeom, fits, loc, type Pt } from "../core/geometry";
+import { bounds, dimOffset, dir, distSeg, dimGeom, fits, loc, pointInPolygon, polygonArea, type Pt } from "../core/geometry";
 import {
-  cloneModel, emptyModel, nextId, normalizeModel, sampleModel,
+  cloneModel, emptyProject, newLevel, nextId, normalizeProject, sampleProject, type Level, type Project,
   type LayerId, type Model, type Wall,
 } from "../core/model";
 import { parseDxf } from "../core/dxfImport";
@@ -8,12 +8,12 @@ import { extend, offset, trim, type Linear } from "../core/modify";
 import { computeRooms, roomAt, type RoomGrid } from "../core/rooms";
 import { deleteElements, reflection, transformElements, translation, type Xform } from "../core/transform";
 
-export type Tool = "select" | "wall" | "door" | "window" | "line" | "dim" | "room" | "move" | "copy" | "mirror" | "trim" | "extend" | "offset";
+export type Tool = "select" | "wall" | "door" | "window" | "line" | "dim" | "room" | "move" | "copy" | "mirror" | "trim" | "extend" | "offset" | "slab";
 /** Herramientas que actúan pulsando directamente sobre un muro o una línea. */
 const PICK_TOOLS: Tool[] = ["trim", "extend", "offset"];
 /** Herramientas que actúan sobre la selección actual. */
 const MODIFY_TOOLS: Tool[] = ["move", "copy", "mirror"];
-export type SelType = "wall" | "opening" | "line" | "dim" | "room";
+export type SelType = "wall" | "opening" | "line" | "dim" | "room" | "slab";
 export interface Selection { type: SelType; id: number }
 export interface SnapPt extends Pt { kind: "end" | "mid" | null }
 export interface OpeningCandidate { w: Wall; t: number; ok: boolean }
@@ -39,7 +39,7 @@ const COMMANDS: Record<string, Tool> = {
   L: "line", LINEA: "line", "LÍNEA": "line", C: "dim", COTA: "dim", S: "select", SEL: "select",
   H: "room", HAB: "room", HABITACION: "room", "HABITACIÓN": "room",
   MO: "move", MOVER: "move", CO: "copy", COPIA: "copy", SI: "mirror", SIMETRIA: "mirror", "SIMETRÍA": "mirror",
-  TR: "trim", RECORTAR: "trim", AL: "extend", ALARGAR: "extend", DE: "offset", DESFASE: "offset", EQ: "offset", EQUIDISTANCIA: "offset",
+  LO: "slab", LOSA: "slab", TR: "trim", RECORTAR: "trim", AL: "extend", ALARGAR: "extend", DE: "offset", DESFASE: "offset", EQ: "offset", EQUIDISTANCIA: "offset",
 };
 
 /**
@@ -47,10 +47,15 @@ const COMMANDS: Record<string, Tool> = {
  * La planta, el visor 3D y la interfaz React se suscriben a sus cambios.
  */
 export class Editor {
-  model: Model = emptyModel();
+  project: Project = emptyProject();
+  /** Índice del nivel en el que se dibuja. */
+  active = 0;
+  /** El nivel activo: todas las herramientas trabajan sobre él. */
+  get model(): Level { return this.project.levels[this.active]; }
+  set model(m: Model) { this.project.levels[this.active] = { ...this.model, ...m }; }
   rooms: RoomGrid | null = null;
-  vis: Record<LayerId, boolean> = { muros: true, puertas: true, ventanas: true, cotas: true, anot: true, hab: true };
-  defaults = { thick: 0.15, height: 2.7, doorW: 0.9, doorH: 2.1, winW: 1.2, winH: 1.2, sill: 0.9 };
+  vis: Record<LayerId, boolean> = { muros: true, puertas: true, ventanas: true, cotas: true, anot: true, hab: true, losas: true };
+  defaults = { thick: 0.15, height: 2.7, doorW: 0.9, doorH: 2.1, winW: 1.2, winH: 1.2, sill: 0.9, slabThick: 0.2 };
   tool: Tool = "select";
   /** Elementos seleccionados. */
   sels: Selection[] = [];
@@ -81,7 +86,7 @@ export class Editor {
 
   constructor(private storage: Storage | null = null) {
     const saved = this.load();
-    this.model = saved ?? sampleModel();
+    this.project = saved ?? sampleProject();
     this.rooms = computeRooms(this.model);
   }
 
@@ -102,28 +107,84 @@ export class Editor {
   refresh3d() { this.modelListeners.forEach((f) => f()); this.emit(); }
 
   // ---------- persistencia e historial ----------
-  private save() { try { this.storage?.setItem(STORAGE_KEY, JSON.stringify(this.model)); } catch { /* sin almacenamiento */ } }
-  private load(): Model | null {
-    try { const s = this.storage?.getItem(STORAGE_KEY); return s ? normalizeModel(JSON.parse(s)) : null; } catch { return null; }
+  private save() { try { this.storage?.setItem(STORAGE_KEY, JSON.stringify(this.project)); } catch { /* sin almacenamiento */ } }
+  private load(): Project | null {
+    try { const s = this.storage?.getItem(STORAGE_KEY); return s ? normalizeProject(JSON.parse(s)) : null; } catch { return null; }
   }
-  snapshot() { this.history.push(JSON.stringify(this.model)); if (this.history.length > 200) this.history.shift(); }
+  snapshot() { this.history.push(JSON.stringify({ p: this.project, a: this.active })); if (this.history.length > 200) this.history.shift(); }
   undo() {
     const s = this.history.pop();
     if (!s) { this.log("Nada que deshacer."); return; }
-    this.model = JSON.parse(s); this.sel = null; this.log("Deshecho."); this.changed();
+    const h = JSON.parse(s) as { p: Project; a: number };
+    this.project = h.p; this.active = Math.min(h.a, h.p.levels.length - 1);
+    this.sel = null; this.log("Deshecho."); this.changed();
   }
   log(t: string) { this.message = t; this.emit(); }
 
-  loadSample() { this.snapshot(); this.model = sampleModel(); this.sel = null; this.log("Vivienda de ejemplo cargada."); this.changed(); }
-  clear() { this.snapshot(); this.model = emptyModel(); this.sel = null; this.log("Dibujo nuevo. Usa Deshacer si te equivocaste."); this.changed(); this.setTool("wall"); }
+  loadSample() { this.snapshot(); this.project = sampleProject(); this.active = 0; this.sel = null; this.log("Vivienda de ejemplo cargada."); this.changed(); }
+  clear() { this.snapshot(); this.project = emptyProject(); this.active = 0; this.sel = null; this.log("Dibujo nuevo. Usa Deshacer si te equivocaste."); this.changed(); this.setTool("wall"); }
+
+  // ---------- niveles ----------
+  /** Nivel inmediatamente inferior al activo (se muestra de referencia en planta). */
+  levelBelow(): Level | null {
+    const cur = this.model;
+    const below = this.project.levels.filter((l) => l.elev < cur.elev).sort((a, b) => b.elev - a.elev);
+    return below[0] ?? null;
+  }
+  setActiveLevel(i: number) {
+    if (i < 0 || i >= this.project.levels.length || i === this.active) return;
+    this.active = i; this.sels = []; this.draft = null; this.offsetTarget = null;
+    this.rooms = computeRooms(this.model);
+    this.message = `Nivel activo: ${this.model.name} (cota ${this.model.elev.toFixed(2)} m).`;
+    this.refresh3d();
+  }
+  /** Altura de planta del nivel activo: la del muro más alto, o 3 m si no hay muros. */
+  private storyHeight() {
+    const hs = this.model.walls.map((w) => w.height);
+    return Math.max(hs.length ? Math.max(...hs) : 2.7, 2.7) + 0.3;
+  }
+  /** Crea un nivel encima del activo, vacío o como copia (muros, huecos, losas…) del activo. */
+  addLevel(copy: boolean) {
+    this.snapshot();
+    const top = Math.max(...this.project.levels.map((l) => l.elev));
+    const elev = Math.round((Math.max(top, this.model.elev) + this.storyHeight()) * 100) / 100;
+    const n = this.project.levels.length;
+    const content = copy ? cloneModel(this.model) : undefined;
+    const lv = newLevel(n === 1 ? "Planta 1" : `Planta ${n}`, elev, content);
+    this.project.levels.push(lv);
+    this.project.levels.sort((a, b) => a.elev - b.elev);
+    this.active = this.project.levels.indexOf(lv);
+    this.sels = [];
+    this.message = copy ? `${lv.name} creada como copia, a ${elev.toFixed(2)} m.` : `${lv.name} creada a ${elev.toFixed(2)} m. El nivel de abajo se ve en gris como referencia.`;
+    this.changed();
+  }
+  renameLevel(name: string) { this.edit(() => { this.model.name = name; }); }
+  setLevelElevation(elev: number) {
+    this.edit(() => {
+      const lv = this.model;
+      lv.elev = elev;
+      this.project.levels.sort((a, b) => a.elev - b.elev);
+      this.active = this.project.levels.indexOf(lv);
+    });
+  }
+  deleteLevel() {
+    if (this.project.levels.length < 2) { this.log("El proyecto necesita al menos un nivel."); return; }
+    this.snapshot();
+    const name = this.model.name;
+    this.project.levels.splice(this.active, 1);
+    this.active = Math.max(0, this.active - 1);
+    this.sels = [];
+    this.message = `Nivel "${name}" borrado. Usa Deshacer si te equivocaste.`;
+    this.changed();
+  }
 
   // ---------- consultas ----------
   wallById(id: number) { return this.model.walls.find((w) => w.id === id); }
   isSelected(type: SelType, id: number) { return this.sels.some((s) => s.type === type && s.id === id); }
-  selObj(): (Seg & { id: number }) | Model["openings"][number] | Model["rooms"][number] | null {
+  selObj(): (Seg & { id: number }) | Model["openings"][number] | Model["rooms"][number] | Model["slabs"][number] | null {
     if (!this.sel) return null;
     const m = this.model;
-    const list = { wall: m.walls, line: m.lines, dim: m.dims, opening: m.openings, room: m.rooms }[this.sel.type] as { id: number }[];
+    const list = { wall: m.walls, line: m.lines, dim: m.dims, opening: m.openings, room: m.rooms, slab: m.slabs }[this.sel.type] as { id: number }[];
     return (list.find((o) => o.id === this.sel!.id) as never) ?? null;
   }
   grips(): { k: 0 | 1 | "mid"; x: number; y: number }[] {
@@ -145,6 +206,7 @@ export class Editor {
       case "move": return n ? "MOVER  Precisa punto de destino:" : "MOVER  Precisa punto base:";
       case "copy": return n ? "COPIA  Precisa punto de destino [Esc termina]:" : "COPIA  Precisa punto base:";
       case "mirror": return n ? "SIMETRÍA  Segundo punto del eje:" : "SIMETRÍA  Primer punto del eje de simetría:";
+      case "slab": return n < 3 ? `LOSA  Precisa ${n ? "siguiente" : "primer"} vértice del contorno:` : "LOSA  Siguiente vértice [Enter o clic en el primero cierra]:";
       case "trim": return "RECORTAR  Haz clic en el tramo de muro o línea que quieres quitar:";
       case "extend": return "ALARGAR  Haz clic cerca del extremo que quieres alargar:";
       case "offset": return this.offsetTarget
@@ -168,7 +230,7 @@ export class Editor {
     return {
       muros: m.walls.length, puertas: m.openings.filter((o) => o.kind === "door").length,
       ventanas: m.openings.filter((o) => o.kind === "window").length,
-      cotas: m.dims.length, anot: m.lines.length, hab: m.rooms.length,
+      cotas: m.dims.length, anot: m.lines.length, hab: m.rooms.length, losas: m.slabs.length,
     };
   }
 
@@ -245,6 +307,10 @@ export class Editor {
       const c = this.rooms?.rooms.get(r.id), p = c?.ok ? { x: c.cx, y: c.cy } : r;
       if (inside(p.x, p.y)) found.push({ type: "room", id: r.id });
     }
+    if (this.vis.losas) for (const sl of m.slabs) {
+      const edgesOf = sl.pts.map((p, i) => { const q = sl.pts[(i + 1) % sl.pts.length]; return { x1: p.x, y1: p.y, x2: q.x, y2: q.y }; });
+      if (crossing ? edgesOf.some(segHit) : sl.pts.every((p) => inside(p.x, p.y))) found.push({ type: "slab", id: sl.id });
+    }
     const merged = additive ? [...this.sels] : [];
     for (const f of found) if (!merged.some((x) => x.type === f.type && x.id === f.id)) merged.push(f);
     this.sels = merged;
@@ -294,6 +360,7 @@ export class Editor {
     if (this.vis.anot) for (const l of m.lines) { const r = distSeg(wx, wy, l.x1, l.y1, l.x2, l.y2); if (r.d < tol) take(r.d, { type: "line", id: l.id }); }
     if (this.vis.cotas) for (const d of m.dims) { const g = dimGeom(d), r = distSeg(wx, wy, g.a.x, g.a.y, g.b.x, g.b.y); if (r.d < tol * 2) take(r.d, { type: "dim", id: d.id }); }
     if (!best && this.vis.hab) { const r = roomAt(m, this.rooms, wx, wy); if (r) best = { type: "room", id: r.id }; }
+    if (!best && this.vis.losas) for (const sl of m.slabs) if (pointInPolygon({ x: wx, y: wy }, sl.pts)) best = { type: "slab", id: sl.id };
     return best;
   }
 
@@ -328,6 +395,14 @@ export class Editor {
       this.draft.pts.push(p);
       if (this.draft.pts.length > 2 && Math.hypot(p.x - first.x, p.y - first.y) < 0.01) { this.draft = null; this.message = "Contorno cerrado."; }
       this.changed();
+      return;
+    }
+    if (this.tool === "slab") {
+      if (!this.draft) { this.draft = { pts: [p] }; this.emit(); return; }
+      const first = this.draft.pts[0], last = this.draft.pts[this.draft.pts.length - 1];
+      if (this.draft.pts.length >= 3 && Math.hypot(p.x - first.x, p.y - first.y) < 0.01) { this.closeSlab(); return; }
+      if (Math.hypot(p.x - last.x, p.y - last.y) < 0.05) return;
+      this.draft.pts.push(p); this.emit();
       return;
     }
     if (this.tool === "dim") {
@@ -434,6 +509,19 @@ export class Editor {
     this.changed();
   }
 
+  /** Cierra el contorno de la losa en curso y la crea. */
+  closeSlab() {
+    const pts = this.draft?.pts ?? [];
+    if (pts.length < 3) { this.log("Una losa necesita al menos 3 vértices."); return; }
+    this.snapshot();
+    const sl = { id: nextId(this.model), pts: pts.map((p) => ({ ...p })), thick: this.defaults.slabThick };
+    this.model.slabs.push(sl);
+    this.draft = null;
+    this.sels = [{ type: "slab", id: sl.id }];
+    this.message = `Losa de ${polygonArea(sl.pts).toFixed(2)} m² y ${sl.thick.toFixed(2)} m de espesor creada.`;
+    this.changed();
+  }
+
   finishDraft() { if (this.draft) { this.draft = null; this.log("Comando terminado."); } }
 
   /** Muro o línea bajo el cursor. */
@@ -502,6 +590,7 @@ export class Editor {
   runCommand(raw: string) {
     const s = raw.trim().toUpperCase().replace(/\s+/g, "");
     if (!s) {
+      if (this.draft && this.tool === "slab") { this.closeSlab(); return; }
       if (this.draft && this.tool !== "dim") { this.finishDraft(); return; }
       if (this.lastCmd) this.runCommand(this.lastCmd);
       return;
@@ -517,7 +606,7 @@ export class Editor {
       return;
     }
     const lengthOk = this.draft?.pts.length &&
-      (["wall", "line", "move", "copy", "mirror"].includes(this.tool) || (this.tool === "dim" && this.draft.pts.length === 1));
+      (["wall", "line", "move", "copy", "mirror", "slab"].includes(this.tool) || (this.tool === "dim" && this.draft.pts.length === 1));
     if (/^-?\d*\.?\d+$/.test(num) && lengthOk) {
       const L = parseFloat(num), from = this.draft!.pts[this.draft!.pts.length - 1], p = this.snap ?? this.mouse;
       let dx = p.x - from.x, dy = p.y - from.y;
@@ -534,7 +623,7 @@ export class Editor {
       this.commitPoint({ x, y });
       return;
     }
-    this.log(`Comando desconocido: "${raw}". Prueba M, P, V, L, C, H, MO, CO, SI, TR, AL, DE, B (borrar), U (deshacer), Z (encuadrar).`);
+    this.log(`Comando desconocido: "${raw}". Prueba M, P, V, L, C, H, LO, MO, CO, SI, TR, AL, DE, B (borrar), U (deshacer), Z (encuadrar).`);
   }
   /** La vista de planta registra aquí cómo encuadrar, porque conoce su tamaño. */
   fitRequest: (() => void) | null = null;
