@@ -4,6 +4,7 @@ import {
   type LayerId, type Model, type RoofKind, type RunSystem, type Wall,
 } from "../core/model";
 import { autoDims } from "../core/autodim";
+import { fmtArea, fmtLen, fmtSmall, imperial, parseLen, setUnitSystem, FT, IN, type UnitSystem } from "../core/units";
 import type { CadImportResult } from "../core/cadImport";
 import { parseDxf } from "../core/dxfImport";
 import { parseProjectFile, projectFileName, readProjectImages, serializeProject } from "../core/projectFile";
@@ -67,8 +68,19 @@ export const DISC_LAYER: Record<Discipline, LayerId> = { elec: "electricidad", p
  * Estado del editor y toda la lógica de interacción, sin DOM.
  * La planta, el visor 3D y la interfaz React se suscriben a sus cambios.
  */
+/** Medidas por defecto de cada sistema de unidades. */
+const METRIC_DEFAULTS = { wallType: GENERIC, thick: 0.15, height: 2.7, doorW: 0.9, doorH: 2.1, winW: 1.2, winH: 1.2, sill: 0.9, slabThick: 0.2, pitch: 30, overhang: 0.5, stairW: 1, textSize: 0.25 };
+/** EE.UU.: muro exterior de montantes 2x6 (6 1/2" con placas), techo a 9', puerta 3'-0" × 6'-8", ventana 3'-0" × 4'-0", pendiente 6:12. */
+const US_DEFAULTS = {
+  wallType: "us-2x6", thick: 6.5 * IN, height: 9 * FT, doorW: 3 * FT, doorH: 80 * IN, winW: 3 * FT, winH: 4 * FT, sill: 32 * IN,
+  slabThick: 4 * IN, pitch: 26.57, overhang: 18 * IN, stairW: 3 * FT, textSize: 9 * IN,
+};
+
 export class Editor {
-  project: Project = emptyProject();
+  private _project: Project = emptyProject();
+  /** Al cambiar de proyecto (abrir, deshacer, ejemplo…) las medidas pasan a escribirse en sus unidades. */
+  get project(): Project { return this._project; }
+  set project(p: Project) { this._project = p; setUnitSystem(p.units ?? "metric"); }
   /** Índice del nivel en el que se dibuja. */
   active = 0;
   /** El nivel activo: todas las herramientas trabajan sobre él. */
@@ -76,7 +88,7 @@ export class Editor {
   set model(m: Model) { this.project.levels[this.active] = { ...this.model, ...m }; }
   rooms: RoomGrid | null = null;
   vis: Record<LayerId, boolean> = { muros: true, puertas: true, ventanas: true, cotas: true, anot: true, hab: true, losas: true, cubiertas: true, escaleras: true, mobiliario: true, secciones: true, electricidad: true, plomeria: true, calcos: true, sombreados: true };
-  defaults = { wallType: GENERIC, thick: 0.15, height: 2.7, doorW: 0.9, doorH: 2.1, winW: 1.2, winH: 1.2, sill: 0.9, slabThick: 0.2, roofKind: "gable" as RoofKind, pitch: 30, overhang: 0.5, stairW: 1, furnKind: "bed2", furnRot: 0, textSize: 0.25, mepKind: "enchufe", mepRot: 0, runSys: "af" as RunSystem, hatchPattern: "diagonal", hatchScale: 1, hatchAngle: 0, hatchMode: "room" as "room" | "poly" };
+  defaults = { ...METRIC_DEFAULTS, roofKind: "gable" as RoofKind, furnKind: "bed2", furnRot: 0, mepKind: "enchufe", mepRot: 0, runSys: "af" as RunSystem, hatchPattern: "diagonal", hatchScale: 1, hatchAngle: 0, hatchMode: "room" as "room" | "poly" };
   tool: Tool = "select";
   /** Elementos seleccionados. */
   sels: Selection[] = [];
@@ -110,6 +122,7 @@ export class Editor {
   constructor(private storage: Storage | null = null) {
     const saved = this.load();
     this.project = saved ?? sampleProject();
+    if (this.project.units === "imperial") Object.assign(this.defaults, US_DEFAULTS);
     this.loadImages();
     this.rooms = computeRooms(this.model);
   }
@@ -147,10 +160,24 @@ export class Editor {
     this.project = h.p; this.active = Math.min(h.a, h.p.levels.length - 1);
     this.sel = null; this.log("Deshecho."); this.changed();
   }
+  /**
+   * Cambia las unidades del proyecto. Las medidas por defecto pasan a las habituales de cada sitio
+   * (en EE.UU. muro de 2x6, puerta de 3'-0" × 6'-8"…); lo ya dibujado no cambia.
+   */
+  setUnits(u: UnitSystem) {
+    if ((this.project.units ?? "metric") === u) return;
+    this.snapshot();
+    this.project = { ...this.project, units: u };
+    Object.assign(this.defaults, u === "imperial" ? US_DEFAULTS : METRIC_DEFAULTS);
+    this.log(u === "imperial"
+      ? `Unidades de EE.UU.: pies y pulgadas. Teclea 12'6", 12' o 6" (un número solo son pies). Muro por defecto 2x6, puerta 3'-0" × 6'-8".`
+      : "Unidades métricas: metros.");
+    this.changed();
+  }
   log(t: string) { this.message = t; this.emit(); }
 
-  loadSample() { this.snapshot(); this.project = { ...sampleProject(), info: this.project.info, budget: this.project.budget }; this.active = 0; this.sel = null; this.log("Vivienda de ejemplo cargada."); this.changed(); }
-  clear() { this.snapshot(); this.project = { ...emptyProject(), info: this.project.info, budget: this.project.budget }; this.active = 0; this.sel = null; this.log("Dibujo nuevo. Usa Deshacer si te equivocaste."); this.changed(); this.setTool("wall"); }
+  loadSample() { this.snapshot(); this.project = { ...sampleProject(), info: this.project.info, budget: this.project.budget, units: this.project.units }; this.active = 0; this.sel = null; this.log("Vivienda de ejemplo cargada."); this.changed(); }
+  clear() { this.snapshot(); this.project = { ...emptyProject(), info: this.project.info, budget: this.project.budget, units: this.project.units }; this.active = 0; this.sel = null; this.log("Dibujo nuevo. Usa Deshacer si te equivocaste."); this.changed(); this.setTool("wall"); }
 
   // ---------- archivo del proyecto ----------
   /** Contenido y nombre del archivo .trazo del proyecto; lo marca como guardado. */
@@ -197,7 +224,7 @@ export class Editor {
     if (i < 0 || i >= this.project.levels.length || i === this.active) return;
     this.active = i; this.sels = []; this.draft = null; this.offsetTarget = null;
     this.rooms = computeRooms(this.model);
-    this.message = `Nivel activo: ${this.model.name} (cota ${this.model.elev.toFixed(2)} m).`;
+    this.message = `Nivel activo: ${this.model.name} (cota ${fmtLen(this.model.elev)}).`;
     this.refresh3d();
   }
   /** Altura de planta del nivel activo: la del muro más alto, o 3 m si no hay muros. */
@@ -226,7 +253,7 @@ export class Editor {
     this.project.levels.sort((a, b) => a.elev - b.elev);
     this.active = this.project.levels.indexOf(lv);
     this.sels = [];
-    this.message = copy ? `${lv.name} creada como copia, a ${elev.toFixed(2)} m.${moved ? " La cubierta ha subido a la nueva planta." : ""}` : `${lv.name} creada a ${elev.toFixed(2)} m. El nivel de abajo se ve en gris como referencia.`;
+    this.message = copy ? `${lv.name} creada como copia, a ${fmtLen(elev)}.${moved ? " La cubierta ha subido a la nueva planta." : ""}` : `${lv.name} creada a ${fmtLen(elev)}. El nivel de abajo se ve en gris como referencia.`;
     this.changed();
   }
   renameLevel(name: string) { this.edit(() => { this.model.name = name; }); }
@@ -273,16 +300,16 @@ export class Editor {
       case "wall": return n ? "MURO  Siguiente punto o longitud [Enter termina]:" : "MURO  Precisa punto inicial:";
       case "line": return n ? "LÍNEA  Siguiente punto o longitud [Enter termina]:" : "LÍNEA  Precisa primer punto:";
       case "dim": return n === 0 ? "COTA  Origen de la primera línea de referencia:" : n === 1 ? "COTA  Origen de la segunda línea:" : "COTA  Posición de la línea de cota:";
-      case "door": return `PUERTA  Haz clic sobre un muro (ancho ${d.doorW.toFixed(2)} m):`;
-      case "window": return `VENTANA  Haz clic sobre un muro (ancho ${d.winW.toFixed(2)} m):`;
+      case "door": return `PUERTA  Haz clic sobre un muro (ancho ${fmtLen(d.doorW)}):`;
+      case "window": return `VENTANA  Haz clic sobre un muro (ancho ${fmtLen(d.winW)}):`;
       case "room": return "HABITACIÓN  Haz clic dentro de un espacio cerrado por muros:";
       case "move": return n ? "MOVER  Precisa punto de destino:" : "MOVER  Precisa punto base:";
       case "copy": return n ? "COPIA  Precisa punto de destino [Esc termina]:" : "COPIA  Precisa punto base:";
       case "mirror": return n ? "SIMETRÍA  Segundo punto del eje:" : "SIMETRÍA  Primer punto del eje de simetría:";
       case "slab": return n < 3 ? `LOSA  Precisa ${n ? "siguiente" : "primer"} vértice del contorno:` : "LOSA  Siguiente vértice [Enter o clic en el primero cierra]:";
       case "roof": return n ? "CUBIERTA  Esquina opuesta del perímetro:" : `CUBIERTA  Primera esquina del perímetro (${ROOF_LABEL[d.roofKind].toLowerCase()}, ${d.pitch}°):`;
-      case "stair": return n ? "ESCALERA  Punto de llegada (o longitud):" : `ESCALERA  Punto de arranque (ancho ${d.stairW.toFixed(2)} m):`;
-      case "text": return this.textAt ? "TEXTO  Escribe el texto y pulsa Intro [Esc cancela]:" : `TEXTO  Punto de inserción (altura ${d.textSize.toFixed(2)} m):`;
+      case "stair": return n ? "ESCALERA  Punto de llegada (o longitud):" : `ESCALERA  Punto de arranque (ancho ${fmtLen(d.stairW)}):`;
+      case "text": return this.textAt ? "TEXTO  Escribe el texto y pulsa Intro [Esc cancela]:" : `TEXTO  Punto de inserción (altura ${fmtLen(d.textSize)}):`;
       case "hole": return n ? "HUECO  Esquina opuesta del hueco:" : "HUECO EN LOSA  Primera esquina del hueco (dentro de una losa):";
       case "section": return n ? "SECCIÓN  Punto final de la línea de corte (se mira a su izquierda):" : "SECCIÓN  Primer punto de la línea de corte:";
       case "fixture": return `${mepDef(d.mepKind).disc === "elec" ? "ELECTRICIDAD" : "PLOMERÍA"}  Haz clic para colocar ${mepDef(d.mepKind).label.toLowerCase()}${mepDef(d.mepKind).wall ? " (se pega al muro más cercano)" : ""} [R gira, Esc termina]:`;
@@ -293,10 +320,10 @@ export class Editor {
       case "furniture": return `MOBILIARIO  Haz clic para colocar ${furnitureDef(d.furnKind).label.toLowerCase()} [R gira 90°, Esc termina]:`;
       case "trim": return "RECORTAR  Haz clic en el tramo de muro o línea que quieres quitar:";
       case "extend": return "ALARGAR  Haz clic cerca del extremo que quieres alargar:";
-      case "calibrate": return n === 0 ? "CALIBRAR  Primer punto de una medida conocida:" : n === 1 ? "CALIBRAR  Segundo punto de la medida:" : `CALIBRAR  Mide ${this.calibDist().toFixed(3)} en el dibujo. Escribe la medida real en metros y Enter:`;
+      case "calibrate": return n === 0 ? "CALIBRAR  Primer punto de una medida conocida:" : n === 1 ? "CALIBRAR  Segundo punto de la medida:" : `CALIBRAR  Mide ${imperial() ? fmtLen(this.calibDist()) : `${this.calibDist().toFixed(3)} m`} en el dibujo. Escribe la medida real${imperial() ? " (12'6\")" : " en metros"} y Enter:`;
       case "offset": return this.offsetTarget
         ? "DESFASE  Haz clic en el lado donde va la copia:"
-        : `DESFASE  Elige un muro o línea, o teclea otra distancia <${this.offsetDist.toFixed(2)} m>:`;
+        : `DESFASE  Elige un muro o línea, o teclea otra distancia <${fmtLen(this.offsetDist)}>:`;
     }
   }
   stats() {
@@ -465,7 +492,8 @@ export class Editor {
     let x = wx, y = wy;
     const orth = from && this.ortho && this.tool !== "roof" && this.tool !== "hole" && (this.tool !== "dim" || this.draft?.pts.length === 1);
     if (orth) { if (Math.abs(x - from!.x) > Math.abs(y - from!.y)) y = from!.y; else x = from!.x; }
-    const g = (v: number) => Math.round(v * 10) / 10;
+    // en métrico se redondea a 10 cm; en pies y pulgadas, a la pulgada
+    const g = imperial() ? (v: number) => Math.round(v / IN) * IN : (v: number) => Math.round(v * 10) / 10;
     if (orth && y === from!.y) x = g(x);
     else if (orth && x === from!.x) y = g(y);
     else { x = g(x); y = g(y); }
@@ -542,7 +570,7 @@ export class Editor {
       if (this.tool === "wall") {
         const w: Wall = { id: nextId(m), type: this.defaults.wallType, x1: last.x, y1: last.y, x2: p.x, y2: p.y, thick: this.defaults.thick, height: this.defaults.height, attach: true };
         m.walls.push(w);
-        this.message = `Muro de ${dir(w).L.toFixed(2)} m creado.`;
+        this.message = `Muro de ${fmtLen(dir(w).L)} creado.`;
       } else {
         m.lines.push({ id: nextId(m), x1: last.x, y1: last.y, x2: p.x, y2: p.y });
         this.message = "Línea creada.";
@@ -590,7 +618,7 @@ export class Editor {
         m.stairs.push(st);
         const k = stairSteps(st);
         this.sels = [{ type: "stair", id }];
-        this.message = `Escalera de ${k.n} peldaños: huella ${(k.tread * 100).toFixed(0)} cm, contrahuella ${(k.riser * 100).toFixed(1)} cm.` +
+        this.message = `Escalera de ${k.n} peldaños: huella ${fmtSmall(k.tread)}, contrahuella ${fmtSmall(k.riser)}.` +
           (k.tread < 0.25 ? " La huella es corta: alarga el tramo." : "");
       }
       this.draft = null;
@@ -702,7 +730,7 @@ export class Editor {
     }
     m.lines = m.lines.filter((l) => !ids.has(l.id));
     this.sels = made;
-    this.message = `${made.length} línea${made.length > 1 ? "s" : ""} convertida${made.length > 1 ? "s" : ""} en muros de ${this.defaults.thick.toFixed(2)} m.`;
+    this.message = `${made.length} línea${made.length > 1 ? "s" : ""} convertida${made.length > 1 ? "s" : ""} en muros de ${fmtLen(this.defaults.thick)}.`;
     this.changed();
   }
 
@@ -777,7 +805,7 @@ export class Editor {
     this.vis.calcos = true;
     this.tool = "select"; this.draft = null;
     this.sels = [{ type: "underlay", id }];
-    this.message = `${name}: calco de ${w.toFixed(2)} × ${h.toFixed(2)} m. Para ponerlo a escala usa Calibrar (comando CAL) sobre una medida conocida.` +
+    this.message = `${name}: calco de ${fmtLen(w)} × ${fmtLen(h)}. Para ponerlo a escala usa Calibrar (comando CAL) sobre una medida conocida.` +
       (kept ? "" : " Es demasiado grande para guardarlo en el navegador: guarda el proyecto en archivo para no perderlo.");
     this.changed();
     this.fitRequest?.();
@@ -803,7 +831,7 @@ export class Editor {
     }
     transformElements(m, this.sels.filter((x) => x.type !== "underlay"), xf, false);
     this.draft = null; this.tool = "select";
-    this.message = `Escala corregida: × ${k.toFixed(4)}. La medida marcada vale ahora ${real.toFixed(3)} m.`;
+    this.message = `Escala corregida: × ${k.toFixed(4)}. La medida marcada vale ahora ${fmtLen(real)}.`;
     this.changed();
   }
 
@@ -830,7 +858,7 @@ export class Editor {
     const g = computeRooms(m), c = g?.rooms.get(r.id);
     if (!c?.ok) { m.rooms.pop(); this.log("Ahí no hay un espacio cerrado por muros. Las puertas y ventanas cuentan como cerradas."); return; }
     m.rooms.pop(); this.snapshot(); m.rooms.push(r);
-    this.message = `${r.name}: ${c.area.toFixed(2)} m². Cambia el nombre en Propiedades.`;
+    this.message = `${r.name}: ${fmtArea(c.area)}. Cambia el nombre en Propiedades.`;
     this.sel = { type: "room", id: r.id };
     this.changed();
   }
@@ -920,7 +948,7 @@ export class Editor {
     this.snapshot();
     const r = { id: nextId(this.model), system: this.defaults.runSys, pts: pts.map((q) => ({ x: q.x, y: q.y })) };
     this.model.runs.push(r);
-    this.message = `${systemDef(r.system).label}: ${runLength(r).toFixed(2)} m. Haz clic para empezar otra o Esc para terminar.`;
+    this.message = `${systemDef(r.system).label}: ${fmtLen(runLength(r))}. Haz clic para empezar otra o Esc para terminar.`;
     this.changed();
   }
   /** Coloca las tomas de agua y los desagües que les falten a los aparatos sanitarios del nivel. */
@@ -961,7 +989,7 @@ export class Editor {
     for (const r of runs) m.runs.push({ id: nextId(m), ...r });
     this.vis[DISC_LAYER[disc]] = true;
     const L = runs.reduce((s, r) => s + runLength(r), 0);
-    this.message = disc === "elec" ? `${runs.length} circuitos trazados desde el cuadro (${L.toFixed(1)} m de canalización).` : `${runs.length} recorridos de agua y saneamiento trazados (${L.toFixed(1)} m).`;
+    this.message = disc === "elec" ? `${runs.length} circuitos trazados desde el cuadro (${fmtLen(L)} de canalización).` : `${runs.length} recorridos de agua y saneamiento trazados (${fmtLen(L)}).`;
     this.changed();
   }
 
@@ -974,7 +1002,7 @@ export class Editor {
     this.model.slabs.push(sl);
     this.draft = null;
     this.sels = [{ type: "slab", id: sl.id }];
-    this.message = `Losa de ${polygonArea(sl.pts).toFixed(2)} m² y ${sl.thick.toFixed(2)} m de espesor creada.`;
+    this.message = `Losa de ${fmtArea(polygonArea(sl.pts))} y ${fmtLen(sl.thick)} de espesor creada.`;
     this.changed();
   }
 
@@ -987,7 +1015,7 @@ export class Editor {
     this.vis.sombreados = true;
     this.draft = null;
     this.sels = [{ type: "hatch", id: h.id }];
-    this.message = `Sombreado ${hatchPattern(h.pattern)?.label.toLowerCase() ?? ""} de ${hatchArea(h.loops).toFixed(2)} m² en ${what}. Haz clic en otra zona o Esc para terminar.`;
+    this.message = `Sombreado ${hatchPattern(h.pattern)?.label.toLowerCase() ?? ""} de ${fmtArea(hatchArea(h.loops))} en ${what}. Haz clic en otra zona o Esc para terminar.`;
     this.changed();
   }
   /** Cierra el contorno del sombreado en curso. */
@@ -1034,7 +1062,7 @@ export class Editor {
       const made = offset(this.model, this.offsetTarget, this.offsetDist, p);
       if (!made) { this.history.pop(); this.offsetTarget = null; this.emit(); return; }
       this.offsetTarget = null;
-      this.message = `Copia desfasada ${this.offsetDist.toFixed(2)} m. Elige otro elemento o pulsa Esc.`;
+      this.message = `Copia desfasada ${fmtLen(this.offsetDist)}. Elige otro elemento o pulsa Esc.`;
       this.changed();
       return;
     }
@@ -1108,17 +1136,17 @@ export class Editor {
     if (s === "Z" || s === "ZOOM" || s === "ENCUADRAR") { this.fitRequest?.(); return; }
     if (this.tool === "furniture" && (s === "R" || s === "GIRAR")) { this.rotateFurniturePreview(); return; }
     if (this.tool === "fixture" && (s === "R" || s === "GIRAR")) { this.rotateFixturePreview(); return; }
-    const num = s.replace(",", ".");
-    if (this.tool === "calibrate" && (this.draft?.pts.length ?? 0) >= 2 && /^\d*\.?\d+$/.test(num)) { this.calibrate(parseFloat(num)); return; }
-    if (this.tool === "offset" && /^\d*\.?\d+$/.test(num)) {
-      const v = parseFloat(num);
-      if (v > 0) { this.offsetDist = v; this.log(`Distancia de desfase: ${v.toFixed(2)} m.`); }
+    // longitudes en las unidades del proyecto: 4.5, 30cm, 12'6", 6"…
+    const len = parseLen(raw);
+    if (this.tool === "calibrate" && (this.draft?.pts.length ?? 0) >= 2 && len > 0) { this.calibrate(len); return; }
+    if (this.tool === "offset" && len > 0) {
+      this.offsetDist = len; this.log(`Distancia de desfase: ${fmtLen(len)}.`);
       return;
     }
     const lengthOk = this.draft?.pts.length &&
       (["wall", "line", "move", "copy", "mirror", "slab", "stair", "run", "hatch"].includes(this.tool) || (this.tool === "dim" && this.draft.pts.length === 1));
-    if (/^-?\d*\.?\d+$/.test(num) && lengthOk) {
-      const L = parseFloat(num), from = this.draft!.pts[this.draft!.pts.length - 1], p = this.snap ?? this.mouse;
+    if (Number.isFinite(len) && lengthOk) {
+      const L = len, from = this.draft!.pts[this.draft!.pts.length - 1], p = this.snap ?? this.mouse;
       let dx = p.x - from.x, dy = p.y - from.y;
       if (this.ortho) { if (Math.abs(dx) > Math.abs(dy)) dy = 0; else dx = 0; }
       const n = Math.hypot(dx, dy);
@@ -1126,9 +1154,11 @@ export class Editor {
       this.commitPoint({ x: from.x + (dx / n) * L, y: from.y + (dy / n) * L });
       return;
     }
-    const mm = s.replace(/,/g, ";").match(/^(@?)(-?\d*\.?\d+);(-?\d*\.?\d+)$/);
-    if (mm && !["select", "door", "window", "room"].includes(this.tool)) {
-      let x = parseFloat(mm[2]), y = -parseFloat(mm[3]);
+    // coordenadas x;y o @dx;dy (en métrico también x,y)
+    const mm = raw.trim().match(/^(@?)\s*([^;]+);([^;]+)$/) ?? (imperial() ? null : s.match(/^(@?)(-?\d*\.?\d+),(-?\d*\.?\d+)$/));
+    const cx = mm ? parseLen(mm[2]) : NaN, cy = mm ? parseLen(mm[3]) : NaN;
+    if (mm && Number.isFinite(cx) && Number.isFinite(cy) && !["select", "door", "window", "room"].includes(this.tool)) {
+      let x = cx, y = -cy;
       if (mm[1] && this.draft?.pts.length) { const f = this.draft.pts[this.draft.pts.length - 1]; x += f.x; y += f.y; }
       this.commitPoint({ x, y });
       return;
@@ -1238,7 +1268,7 @@ export class Editor {
     this.snapshot();
     sl.holes.push(ring);
     if (lv === this.model) this.sels = [{ type: "slab", id: sl.id }];
-    this.message = `Hueco de ${polygonArea(ring).toFixed(2)} m² abierto en la losa${lv === this.model ? "" : ` de ${lv.name}`}.`;
+    this.message = `Hueco de ${fmtArea(polygonArea(ring))} abierto en la losa${lv === this.model ? "" : ` de ${lv.name}`}.`;
     return true;
   }
 

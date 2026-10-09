@@ -28,12 +28,24 @@ const ellipse = (cx: number, cy: number, rx: number, ry: number, n = 20): Stroke
 const line = (x0: number, y0: number, x1: number, y1: number): Stroke => ({ pts: [{ x: x0, y: y0 }, { x: x1, y: y1 }] });
 const box = (w: number, d: number) => rect(-w / 2, -d / 2, w / 2, d / 2);
 
+/** Cama doble de ancho w y 80" de largo, con dos almohadas. */
+function usBed(kind: string, label: string, w: number): FurnitureDef {
+  const d = 2.032, x = w / 2, y = d / 2;
+  return {
+    kind, label, w, d, h: 0.55, ifc: { cls: "IFCFURNITURE", type: "BED" },
+    draw: () => [box(w, d), rect(-x + 0.1, -y + 0.08, -0.06, -y + 0.4), rect(0.06, -y + 0.08, x - 0.1, -y + 0.4), line(-x, -y + 0.65, x, -y + 0.65), line(-x, y - 0.9, x, y - 1.2)],
+  };
+}
+
 /** El lado -y local es el fondo (cabecero, respaldo, pared); el +y es el frente. */
 export const FURNITURE: FurnitureDef[] = [
   {
     kind: "bed2", label: "Cama doble", w: 1.6, d: 2.0, h: 0.5, ifc: { cls: "IFCFURNITURE", type: "BED" },
     draw: () => [box(1.6, 2), rect(-0.7, -0.92, -0.08, -0.6), rect(0.08, -0.92, 0.7, -0.6), line(-0.8, -0.35, 0.8, -0.35), line(-0.8, 0.1, 0.8, -0.2)],
   },
+  // medidas de colchón de EE.UU.: queen 60" × 80", king 76" × 80"
+  usBed("bedq", "Cama queen (EE.UU.)", 1.524),
+  usBed("bedk", "Cama king (EE.UU.)", 1.93),
   {
     kind: "bed1", label: "Cama individual", w: 0.9, d: 2.0, h: 0.5, ifc: { cls: "IFCFURNITURE", type: "BED" },
     draw: () => [box(0.9, 2), rect(-0.35, -0.92, 0.35, -0.6), line(-0.45, -0.35, 0.45, -0.35), line(-0.45, 0.1, 0.45, -0.15)],

@@ -6,20 +6,24 @@ import { SymbolIcon, SystemIcon } from "./MepIcons";
 import { GENERIC, WALL_TYPES, wallType, wallTypeLabel } from "../core/wallTypes";
 import { LAYERS, type Model, type RoofKind, type RunSystem } from "../core/model";
 import { ROOF_LABEL, type Editor } from "../editor/Editor";
+import { fmtArea, fmtDim, fmtElev, fmtField, fmtLen, fmtSmall, imperial, lenUnit, parseLen } from "../core/units";
 import { HATCH_PATTERNS, hatchArea, hatchPattern, hatchSegments, IMPORTED, patternLines } from "../core/hatch";
 
-const num = (v: number) => v.toFixed(2);
 
-function NumberField({ id, label, value, onCommit, min = 0.01, step = 0.01, digits = 2 }:
-  { id: string; label: string; value: number; onCommit: (v: number) => void; min?: number; step?: number; digits?: number }) {
+/** Campo numérico. Las longitudes (etiqueta "(m)" o len) se muestran y se teclean en las unidades del proyecto. */
+function NumberField({ id, label, value, onCommit, min = 0.01, step = 0.01, digits = 2, len }:
+  { id: string; label: string; value: number; onCommit: (v: number) => void; min?: number; step?: number; digits?: number; len?: boolean }) {
   const [draft, setDraft] = useState<string | null>(null);
+  const isLen = len ?? / \(m\)$/.test(label), ft = isLen && imperial();
+  const text = isLen ? `${label.replace(/ \(m\)$/, "")}${ft || / \(m\)$/.test(label) ? ` (${lenUnit()})` : ""}` : label;
   return (
     <>
-      <label htmlFor={id}>{label}</label>
-      <input id={id} type="number" step={step} min={min} value={draft ?? value.toFixed(digits)}
+      <label htmlFor={id}>{text}</label>
+      <input id={id} type={ft ? "text" : "number"} inputMode={ft ? "text" : "decimal"} step={step} min={min}
+        value={draft ?? (isLen ? fmtField(value, digits) : value.toFixed(digits))}
         onChange={(e) => setDraft(e.target.value)}
         onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
-        onBlur={(e) => { const v = parseFloat(e.target.value); setDraft(null); if (v >= min && v !== value) onCommit(v); }} />
+        onBlur={(e) => { const v = isLen ? parseLen(e.target.value) : parseFloat(e.target.value); setDraft(null); if (v >= min && Math.abs(v - value) > 1e-9) onCommit(v); }} />
     </>
   );
 }
@@ -30,7 +34,7 @@ function WallTypeField({ id, value, label = "Tipo de muro", onChange }: { id: st
       <label htmlFor={id} className="full">{label}</label>
       <select id={id} className="full" value={value} onChange={(e) => e.target.value && onChange(e.target.value)}>
         {!value && <option value="">Elige un tipo…</option>}
-        {WALL_TYPES.map((t) => <option key={t.id} value={t.id}>{t.id === GENERIC ? t.name : `${t.name} (${t.thick.toFixed(2)} m)`}</option>)}
+        {WALL_TYPES.map((t) => <option key={t.id} value={t.id}>{t.id === GENERIC ? t.name : `${t.name} (${fmtLen(t.thick)})`}</option>)}
       </select>
     </>
   );
@@ -84,14 +88,14 @@ function Properties({ ed, onFocusCommand }: { ed: Editor; onFocusCommand: () => 
   if (sel && o && sel.type === "wall") {
     const w = o as Model["walls"][number], up = ed.levelAbove();
     title = wallTypeLabel(w);
-    ro.push(["Longitud", `${num(dir(w).L)} m`], ["Área de muro", `${num(dir(w).L * w.height)} m²`], ["Material", wallType(w.type).material]);
+    ro.push(["Longitud", `${fmtLen(dir(w).L)}`], ["Área de muro", `${fmtArea(dir(w).L * w.height)}`], ["Material", wallType(w.type).material]);
     body = <>
       <WallTypeField id={`${key}-ty`} value={w.type} onChange={(t) => ed.setWallType([w.id], t)} />
       {w.type === GENERIC
         ? <NumberField id={`${key}-t`} label="Espesor (m)" value={w.thick} onCommit={(v) => ed.edit(() => { w.thick = v; })} />
-        : <><label>Espesor (m)</label><span className="ro" title="Lo fija el tipo; elige Muro genérico para cambiarlo">{num(w.thick)}</span></>}
+        : <><label>Espesor</label><span className="ro" title="Lo fija el tipo; elige Muro genérico para cambiarlo">{fmtLen(w.thick)}</span></>}
       {w.attach && up
-        ? <><label>Altura (m)</label><span className="ro" title={`Llega a la losa de ${up.name}`}>{num(w.height)}</span></>
+        ? <><label>Altura</label><span className="ro" title={`Llega a la losa de ${up.name}`}>{fmtLen(w.height)}</span></>
         : <NumberField id={`${key}-h`} label="Altura (m)" value={w.height} onCommit={(v) => ed.edit(() => { w.height = v; })} />}
       <label className="check full">
         <input type="checkbox" checked={w.attach} onChange={(e) => ed.edit(() => { w.attach = e.target.checked; })} />
@@ -113,7 +117,7 @@ function Properties({ ed, onFocusCommand }: { ed: Editor; onFocusCommand: () => 
   } else if (sel && o && sel.type === "room") {
     const r = o as Model["rooms"][number], c = ed.rooms?.rooms.get(r.id);
     title = "Habitación";
-    ro.push(["Superficie útil", c?.ok ? `${num(c.area)} m²` : "sin cerrar"]);
+    ro.push(["Superficie útil", c?.ok ? `${fmtArea(c.area)}` : "sin cerrar"]);
     body = <>
       <label htmlFor={`${key}-n`}>Nombre</label>
       <input id={`${key}-n`} type="text" defaultValue={r.name}
@@ -123,8 +127,8 @@ function Properties({ ed, onFocusCommand }: { ed: Editor; onFocusCommand: () => 
   } else if (sel && o && sel.type === "slab") {
     const sl = o as Model["slabs"][number];
     title = "Losa";
-    ro.push(["Superficie", `${num(slabArea(sl))} m²`], ["Vértices", String(sl.pts.length)]);
-    if (sl.holes.length) ro.push(["Huecos", `${sl.holes.length} (${num(sl.holes.reduce((s, h) => s + polygonArea(h), 0))} m²)`]);
+    ro.push(["Superficie", `${fmtArea(slabArea(sl))}`], ["Vértices", String(sl.pts.length)]);
+    if (sl.holes.length) ro.push(["Huecos", `${sl.holes.length} (${fmtArea(sl.holes.reduce((s, h) => s + polygonArea(h), 0))})`]);
     body = <>
       <NumberField id={`${key}-t`} label="Espesor (m)" value={sl.thick} onCommit={(v) => ed.edit(() => { sl.thick = v; })} />
       {sl.holes.length > 0 && <button className="btn full" onClick={() => ed.clearHoles(sl.id)}>Quitar huecos</button>}
@@ -132,7 +136,7 @@ function Properties({ ed, onFocusCommand }: { ed: Editor; onFocusCommand: () => 
   } else if (sel && o && sel.type === "roof") {
     const r = o as Model["roofs"][number], g = roofGeom(r);
     title = `Cubierta ${ROOF_LABEL[r.kind].toLowerCase()}`;
-    ro.push(["Superficie en planta", `${num(polygonArea(g.outline))} m²`], ["Altura cumbrera", `${num(g.top)} m`]);
+    ro.push(["Superficie en planta", `${fmtArea(polygonArea(g.outline))}`], ["Altura cumbrera", `${fmtLen(g.top)}`]);
     body = <>
       <RoofKindField id={`${key}-k`} value={r.kind} onChange={(k) => ed.edit(() => { r.kind = k; })} />
       {r.kind !== "flat" && <NumberField id={`${key}-p`} label="Pendiente (°)" value={r.pitch} min={1} step={1} digits={0} onCommit={(v) => ed.edit(() => { r.pitch = Math.min(75, v); })} />}
@@ -142,8 +146,8 @@ function Properties({ ed, onFocusCommand }: { ed: Editor; onFocusCommand: () => 
   } else if (sel && o && sel.type === "stair") {
     const st = o as Model["stairs"][number], k = stairSteps(st);
     title = "Escalera recta";
-    ro.push(["Peldaños", String(k.n)], ["Huella", `${(k.tread * 100).toFixed(1)} cm`], ["Contrahuella", `${(k.riser * 100).toFixed(1)} cm`],
-      ["Longitud", `${num(k.L)} m`]);
+    ro.push(["Peldaños", String(k.n)], ["Huella", fmtSmall(k.tread)], ["Contrahuella", fmtSmall(k.riser)],
+      ["Longitud", `${fmtLen(k.L)}`]);
     if (k.tread < 0.25) ro.push(["Aviso", "huella corta"]);
     body = <>
       <NumberField id={`${key}-w`} label="Ancho (m)" value={st.width} onCommit={(v) => ed.edit(() => { st.width = v; })} />
@@ -153,7 +157,7 @@ function Properties({ ed, onFocusCommand }: { ed: Editor; onFocusCommand: () => 
   } else if (sel && o && sel.type === "furniture") {
     const f = o as Model["furniture"][number], d = furnitureDef(f.kind);
     title = d.label;
-    ro.push(["Medidas (m)", `${num(d.w)}×${num(d.d)}`]);
+    ro.push(["Medidas", `${fmtDim(d.w)} × ${fmtDim(d.d)}`]);
     body = <>
       <label htmlFor={`${key}-k`}>Pieza</label>
       <select id={`${key}-k`} value={f.kind} onChange={(e) => ed.edit(() => { f.kind = e.target.value; })}>
@@ -165,7 +169,7 @@ function Properties({ ed, onFocusCommand }: { ed: Editor; onFocusCommand: () => 
   } else if (sel && o && sel.type === "section") {
     const se = o as Model["sections"][number];
     title = `Sección ${se.name}-${se.name}'`;
-    ro.push(["Longitud del corte", `${num(Math.hypot(se.x2 - se.x1, se.y2 - se.y1))} m`], ["Se ve", "a la izquierda de la línea"]);
+    ro.push(["Longitud del corte", `${fmtLen(Math.hypot(se.x2 - se.x1, se.y2 - se.y1))}`], ["Se ve", "a la izquierda de la línea"]);
     body = <>
       <label htmlFor={`${key}-n`}>Letra</label>
       <input id={`${key}-n`} type="text" defaultValue={se.name} maxLength={4}
@@ -211,7 +215,7 @@ function Properties({ ed, onFocusCommand }: { ed: Editor; onFocusCommand: () => 
   } else if (sel && o && sel.type === "run") {
     const r = o as Model["runs"][number];
     title = systemDef(r.system).label;
-    ro.push(["Longitud", `${num(runLength(r))} m`], ["Tramos", String(r.pts.length - 1)]);
+    ro.push(["Longitud", `${fmtLen(runLength(r))}`], ["Tramos", String(r.pts.length - 1)]);
     body = <>
       <label htmlFor={`${key}-s`}>Red</label>
       <select id={`${key}-s`} value={r.system} onChange={(e) => ed.edit(() => { r.system = e.target.value as RunSystem; })}>
@@ -221,11 +225,11 @@ function Properties({ ed, onFocusCommand }: { ed: Editor; onFocusCommand: () => 
   } else if (sel && o && sel.type === "line") {
     const l = o as Model["lines"][number];
     title = "Línea";
-    ro.push(["Longitud", `${num(Math.hypot(l.x2 - l.x1, l.y2 - l.y1))} m`]);
+    ro.push(["Longitud", `${fmtLen(Math.hypot(l.x2 - l.x1, l.y2 - l.y1))}`]);
   } else if (sel && o && sel.type === "underlay") {
     const u = o as Model["underlays"][number];
     title = "Calco";
-    ro.push(["Imagen", u.name], ["Tamaño", `${num(u.w)} × ${num(u.h)} m`]);
+    ro.push(["Imagen", u.name], ["Tamaño", `${fmtLen(u.w)} × ${fmtLen(u.h)}`]);
     body = <>
       <label htmlFor={`${key}-op`}>Opacidad</label>
       <input id={`${key}-op`} type="range" min={0.1} max={1} step={0.05} value={u.opacity}
@@ -235,7 +239,7 @@ function Properties({ ed, onFocusCommand }: { ed: Editor; onFocusCommand: () => 
   } else if (sel && o && sel.type === "hatch") {
     const h = o as Model["hatches"][number], lib = hatchPattern(h.pattern);
     title = "Sombreado";
-    ro.push(["Superficie", `${num(hatchArea(h.loops))} m²`]);
+    ro.push(["Superficie", `${fmtArea(hatchArea(h.loops))}`]);
     if (h.loops.length > 1) ro.push(["Islas", String(h.loops.length - 1)]);
     if (h.name) ro.push(["Trama de origen", h.name]);
     body = <>
@@ -247,7 +251,7 @@ function Properties({ ed, onFocusCommand }: { ed: Editor; onFocusCommand: () => 
     </>;
   } else if (sel && o && sel.type === "dim") {
     title = "Cota alineada";
-    ro.push(["Valor", `${num(dimGeom(o as Model["dims"][number]).L)} m`]);
+    ro.push(["Valor", `${fmtLen(dimGeom(o as Model["dims"][number]).L)}`]);
   } else if (n > 1) {
     title = `${n} elementos seleccionados`;
     for (const [t, label] of Object.entries(TYPE_LABEL)) {
@@ -260,16 +264,16 @@ function Properties({ ed, onFocusCommand }: { ed: Editor; onFocusCommand: () => 
   } else {
     body = <>
       <WallTypeField id="def-ty" value={d.wallType} onChange={(t) => { d.wallType = t; if (t !== GENERIC) d.thick = wallType(t).thick; ed.emit(); }} />
-      {d.wallType === GENERIC && <NumberField id="def-t" label="Espesor muro" value={d.thick} onCommit={(v) => { d.thick = v; ed.emit(); }} />}
-      <NumberField id="def-h" label="Altura muro" value={d.height} onCommit={(v) => { d.height = v; ed.emit(); }} />
-      <NumberField id="def-dw" label="Ancho puerta" value={d.doorW} onCommit={(v) => { d.doorW = v; ed.emit(); }} />
-      <NumberField id="def-ww" label="Ancho ventana" value={d.winW} onCommit={(v) => { d.winW = v; ed.emit(); }} />
-      <NumberField id="def-s" label="Antepecho" value={d.sill} onCommit={(v) => { d.sill = v; ed.emit(); }} />
-      <NumberField id="def-sl" label="Espesor losa" value={d.slabThick} onCommit={(v) => { d.slabThick = v; ed.emit(); }} />
+      {d.wallType === GENERIC && <NumberField id="def-t" label="Espesor muro" len value={d.thick} onCommit={(v) => { d.thick = v; ed.emit(); }} />}
+      <NumberField id="def-h" label="Altura muro" len value={d.height} onCommit={(v) => { d.height = v; ed.emit(); }} />
+      <NumberField id="def-dw" label="Ancho puerta" len value={d.doorW} onCommit={(v) => { d.doorW = v; ed.emit(); }} />
+      <NumberField id="def-ww" label="Ancho ventana" len value={d.winW} onCommit={(v) => { d.winW = v; ed.emit(); }} />
+      <NumberField id="def-s" label="Antepecho" len value={d.sill} onCommit={(v) => { d.sill = v; ed.emit(); }} />
+      <NumberField id="def-sl" label="Espesor losa" len value={d.slabThick} onCommit={(v) => { d.slabThick = v; ed.emit(); }} />
       <RoofKindField id="def-rk" value={d.roofKind} onChange={(k) => { d.roofKind = k; ed.emit(); }} />
       <NumberField id="def-rp" label="Pendiente (°)" value={d.pitch} min={1} step={1} digits={0} onCommit={(v) => { d.pitch = Math.min(75, v); ed.emit(); }} />
-      <NumberField id="def-tx" label="Altura texto" value={d.textSize} min={0.02} onCommit={(v) => { d.textSize = v; ed.emit(); }} />
-      <NumberField id="def-sw" label="Ancho escalera" value={d.stairW} onCommit={(v) => { d.stairW = v; ed.emit(); }} />
+      <NumberField id="def-tx" label="Altura texto" len value={d.textSize} min={0.02} onCommit={(v) => { d.textSize = v; ed.emit(); }} />
+      <NumberField id="def-sw" label="Ancho escalera" len value={d.stairW} onCommit={(v) => { d.stairW = v; ed.emit(); }} />
     </>;
   }
 
@@ -307,7 +311,7 @@ function Levels({ ed }: { ed: Editor }) {
       <div className="levels" role="radiogroup" aria-label="Nivel activo">
         {[...levels].map((l, i) => ({ l, i })).reverse().map(({ l, i }) => (
           <button key={i} role="radio" aria-checked={i === ed.active} className="level" onClick={() => ed.setActiveLevel(i)}>
-            <span>{l.name}</span><span className="n">{l.elev >= 0 ? "+" : ""}{l.elev.toFixed(2)}</span>
+            <span>{l.name}</span><span className="n">{fmtElev(l.elev)}</span>
           </button>
         ))}
       </div>
@@ -334,7 +338,7 @@ function Catalog({ ed }: { ed: Editor }) {
       <div className="catalog" role="radiogroup" aria-label="Pieza a colocar">
         {FURNITURE.map((f) => (
           <button key={f.kind} role="radio" aria-checked={ed.defaults.furnKind === f.kind} className="cat" onClick={() => ed.pickFurniture(f.kind)}>
-            {f.label}<small>{num(f.w)} × {num(f.d)}</small>
+            {f.label}<small>{fmtDim(f.w)} × {fmtDim(f.d)}</small>
           </button>
         ))}
       </div>
@@ -351,7 +355,7 @@ function MepCatalog({ ed }: { ed: Editor }) {
       <div className="catalog" role="radiogroup" aria-label="Elemento a colocar">
         {mepOf(disc).map((f) => (
           <button key={f.kind} role="radio" aria-checked={ed.defaults.mepKind === f.kind} className="cat sym-cat" onClick={() => ed.pickFixture(f.kind)}>
-            <SymbolIcon kind={f.kind} /><span>{f.label}<small>{f.circuit ? `${f.circuit} · ` : ""}h {num(f.h)} m</small></span>
+            <SymbolIcon kind={f.kind} /><span>{f.label}<small>{f.circuit ? `${f.circuit} · ` : ""}h {fmtLen(f.h)}</small></span>
           </button>
         ))}
       </div>
@@ -456,10 +460,10 @@ export function Sidebar({ ed, onFocusCommand, onClose }: { ed: Editor; onFocusCo
       <section>
         <h2>Resumen</h2>
         <dl className="stats">
-          <dt>Muros</dt><dd>{num(s.wallLength)} m</dd>
-          <dt>Superficie de muro neta</dt><dd>{s.wallArea.toFixed(1)} m²</dd>
+          <dt>Muros</dt><dd>{fmtLen(s.wallLength)}</dd>
+          <dt>Superficie de muro neta</dt><dd>{fmtArea(s.wallArea)}</dd>
           <dt>Puertas / ventanas</dt><dd>{s.doors} / {s.windows}</dd>
-          <dt>Superficie útil</dt><dd>{num(s.usefulArea)} m²</dd>
+          <dt>Superficie útil</dt><dd>{fmtArea(s.usefulArea)}</dd>
         </dl>
       </section>
       <p className="hint">

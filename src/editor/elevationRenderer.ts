@@ -1,3 +1,4 @@
+import { fmtDim, fmtElev } from "../core/units";
 import type { EFace, Elevation, FaceKind } from "../core/elevation";
 
 const FILL: Record<FaceKind, string> = {
@@ -49,7 +50,7 @@ export function drawElevation(ctx: CanvasRenderingContext2D, el: Elevation, ox: 
     ctx.beginPath(); ctx.setLineDash([6, 2, 1, 2]); ctx.moveTo(X(el.u1) + 0.05 * s, y); ctx.lineTo(x1, y);
     ctx.lineWidth = 0.4; ctx.stroke(); ctx.setLineDash([]);
     ctx.beginPath(); ctx.moveTo(x0, y); ctx.lineTo(x0 - 3, y - 4); ctx.lineTo(x0 + 3, y - 4); ctx.closePath(); ctx.fill();
-    ctx.fillText(`${l.elev >= 0 ? "+" : ""}${l.elev.toFixed(2)}`, x0 + 5, y - 2);
+    ctx.fillText(fmtElev(l.elev), x0 + 5, y - 2);
     ctx.fillText(l.name, x0 + 5, y + 7);
   }
   if (opts.heights) heightDims(ctx, el, X, Y);
@@ -139,7 +140,7 @@ function heightDims(ctx: CanvasRenderingContext2D, el: Elevation, X: Px, Y: Px) 
     for (const y of [ya, yb]) { ctx.moveTo(x - 2.5, y + 2.5); ctx.lineTo(x + 2.5, y - 2.5); ctx.moveTo(x - 3, y); ctx.lineTo(x + 3, y); }
     ctx.stroke();
     ctx.save(); ctx.translate(x - 2, (ya + yb) / 2); ctx.rotate(-Math.PI / 2);
-    ctx.textAlign = "center"; ctx.fillText((zb - za).toFixed(2), 0, 0); ctx.restore();
+    ctx.textAlign = "center"; ctx.fillText(fmtDim(zb - za), 0, 0); ctx.restore();
   };
   ctx.save();
   ctx.strokeStyle = "#111"; ctx.fillStyle = "#111"; ctx.lineWidth = 0.4; ctx.font = `6.5px ${MONO}`;
