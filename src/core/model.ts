@@ -310,8 +310,12 @@ export function normalizeProject(raw: unknown): Project {
   const info = { ...defaultInfo(), ...(r?.info ?? {}) };
   const budget = { ...defaultBudget(), ...(r?.budget ?? {}) };
   const units = { ...(r?.units === "imperial" ? { units: "imperial" as const } : {}), ...(r?.foundation ? { foundation: r.foundation } : {}) };
-  if (Array.isArray(r?.levels) && r.levels.length)
-    return { levels: r.levels.map((l, i) => ({ ...normalizeModel(l), name: l.name ?? `Nivel ${i}`, elev: l.elev ?? 0 })), info, budget, ...units };
+  if (Array.isArray(r?.levels) && r.levels.length) {
+    const p: Project = { levels: r.levels.map((l, i) => ({ ...normalizeModel(l), name: l.name ?? `Nivel ${i}`, elev: l.elev ?? 0 })), info, budget, ...units };
+    // proyectos guardados con la cubierta atrapada bajo una planta añadida después
+    liftBuriedRoofs(p);
+    return p;
+  }
   return { levels: [newLevel("Planta baja", 0, normalizeModel(raw))], info, budget, ...units };
 }
 
@@ -392,6 +396,33 @@ export function nextSectionName(p: Project): string {
     const n = i < 26 ? String.fromCharCode(65 + i) : `S${i - 25}`;
     if (!used.has(n)) return n;
   }
+}
+
+/**
+ * Sube al nivel de encima las cubiertas que han quedado enterradas bajo él: las que tienen dentro de su planta
+ * la mayoría de los muros del nivel de arriba (un porche o un tejadillo fuera de esa huella no se toca).
+ * Arrancan sobre los muros de su nuevo nivel. Devuelve cuántas se han movido.
+ */
+export function liftBuriedRoofs(p: Project): number {
+  const lv = [...p.levels].sort((a, b) => a.elev - b.elev);
+  let n = 0;
+  lv.forEach((l, i) => {
+    const up = lv[i + 1];
+    if (!up || !up.walls.length || !l.roofs.length) return;
+    const keep = l.roofs.filter((r) => {
+      const x0 = Math.min(r.x1, r.x2), x1 = Math.max(r.x1, r.x2), y0 = Math.min(r.y1, r.y2), y1 = Math.max(r.y1, r.y2), e = 0.05;
+      const inside = up.walls.filter((w) => {
+        const x = (w.x1 + w.x2) / 2, y = (w.y1 + w.y2) / 2;
+        return x > x0 - e && x < x1 + e && y > y0 - e && y < y1 + e;
+      }).length;
+      // la cubierta corona la planta si su arranque queda por encima del nivel de arriba
+      const buried = inside * 2 > up.walls.length && l.elev + r.base < up.elev + 0.5;
+      if (buried) { up.roofs.push({ ...r, id: nextId(up), base: Math.max(...up.walls.map((w) => w.height)) }); n++; }
+      return !buried;
+    });
+    l.roofs = keep;
+  });
+  return n;
 }
 
 /**

@@ -1,6 +1,6 @@
 import { bounds, dimOffset, dir, distSeg, dimGeom, fits, loc, onSlab, pointInPolygon, polygonArea, roofGeom, stairSteps, textBox, type Pt } from "../core/geometry";
 import {
-  attachWalls, cloneModel, emptyProject, newLevel, nextId, nextSectionName, normalizeProject, sampleProject, type Level, type Project, type ProjectInfo,
+  attachWalls, liftBuriedRoofs, cloneModel, emptyProject, newLevel, nextId, nextSectionName, normalizeProject, sampleProject, type Level, type Project, type ProjectInfo,
   type LayerId, type Model, type RoofKind, type RunSystem, type Wall,
 } from "../core/model";
 import { autoDims } from "../core/autodim";
@@ -145,6 +145,8 @@ export class Editor {
   private changed() {
     this.dirty = true;
     attachWalls(this.project);
+    // una cubierta que ha quedado dentro de la planta de arriba sube a coronarla
+    if (liftBuriedRoofs(this.project)) this.message += " La cubierta ha subido a la planta de arriba.";
     this.rooms = computeRooms(this.model);
     this.save();
     this.modelListeners.forEach((f) => f());

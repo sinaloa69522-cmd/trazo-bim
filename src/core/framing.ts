@@ -93,15 +93,17 @@ function roofFrame(r: Roof, e: number): Member[] {
   const P = (u: number, v: number, z: number): P3 => (alongX ? { x: u, y: v, z } : { x: v, y: u, z });
   const short = V1 - V0, s = 24 * IN;
   if (r.kind === "flat") {
-    const m = floorJoist(short), d = actualDepth(m), z = e + r.base - d / 2;
+    // viguetas de cubierta apoyadas sobre la doble solera (el arranque)
+    const m = floorJoist(short), d = actualDepth(m), z = e + r.base + d / 2;
     for (let u = U0 + s / 2; u < U1; u += s) out.push({ kind: "rafter", a: P(u, V0, z), b: P(u, V1, z), w: T, h: d, size: nominal(m) });
     return out;
   }
   const tan = Math.tan((Math.max(1, Math.min(75, r.pitch)) * Math.PI) / 180), half = short / 2, vm = (V0 + V1) / 2;
   const m = rafterSize(half), d = actualDepth(/TRUSS/.test(m) ? "2x8" : m), z0 = e + r.base - r.overhang * tan;
-  // eje de la pieza: medio canto por debajo del plano del faldón
+  // el plano del arranque pasa por la cara superior de la doble solera: los cabios se apoyan en ella
+  // (con su corte de asiento), así que su eje va medio canto por encima de ese plano
   const drop = d / 2 / Math.cos(Math.atan(tan));
-  const Z = (dv: number) => z0 + dv * tan - drop;
+  const Z = (dv: number) => z0 + dv * tan + drop;
   const hip = r.kind === "hip", inset = hip ? Math.min(half, (U1 - U0) / 2) : 0;
   const rafter = (a: P3, b: P3) => out.push({ kind: "rafter", a, b, w: T, h: d, size: nominal(m) });
   for (let u = U0 + s / 2; u < U1; u += s) {
@@ -125,7 +127,8 @@ function roofFrame(r: Roof, e: number): Member[] {
   }
   // cumbrera dos escuadrías más alta que los cabios; limatesas iguales
   const rs = nominal(m).replace(/2x(\d+)/, (_, n) => `2x${Math.min(14, Number(n) + 2)}`), rd = actualDepth(rs);
-  const zr = z0 + half * tan - rd / 2;
+  // cumbrera enrasada por arriba con los cabios
+  const zr = z0 + half * tan + 2 * drop - rd / 2;
   if (U1 - inset - (U0 + inset) > 1e-3) out.push({ kind: "ridge", a: P(U0 + inset, vm, zr), b: P(U1 - inset, vm, zr), w: T, h: rd, size: rs });
   if (hip) for (const [u, ue] of [[U0, U0 + inset], [U1, U1 - inset]]) for (const v of [V0, V1])
     out.push({ kind: "ridge", a: P(u, v, Z(0)), b: P(ue, vm, Z(half)), w: T, h: rd, size: rs });
