@@ -3,6 +3,8 @@ import { Editor, type Tool } from "../editor/Editor";
 import { mepDef, type Discipline } from "../core/mep";
 import { CommandLine } from "./CommandLine";
 import { ExportDialog, type ExportFormat } from "./ExportDialog";
+import { ImportPdfDialog } from "./ImportPdfDialog";
+import { importKind, readDwg, readImage } from "../editor/fileImport";
 import { PlanView } from "./PlanView";
 import { BudgetView } from "./BudgetView";
 import { SheetView } from "./SheetView";
@@ -34,6 +36,8 @@ const TOOLS: { tool: Tool; label: string; key: string; icon: JSX.Element; disc?:
   { tool: "offset", label: "Desfase", key: "DE", icon: <path d="M2 5h12M2 11h12" /> },
 ];
 
+const IMPORT_ACCEPT = ".dwg,.dxf,.pdf,.png,.jpg,.jpeg,.webp";
+
 /** Descarga un texto como archivo. */
 function download(name: string, text: string, type = "application/json") {
   const a = document.createElement("a");
@@ -63,10 +67,26 @@ export function App() {
   const openRef = useRef<HTMLInputElement>(null);
   const [dragging, setDragging] = useState(false);
   const save = () => { const f = ed.saveFile(); download(f.name, f.text); };
-  /** Abre un .trazo o importa un .dxf, según la extensión. */
+  const [pdfFile, setPdfFile] = useState<File | null>(null);
+  /** Abre un .trazo o importa un DXF, DWG, PDF o imagen, según la extensión. */
   const openAny = async (f: File) => {
-    const text = await f.text();
-    if (/\.dxf$/i.test(f.name)) ed.importDxf(text, f.name); else ed.openFile(text, f.name);
+    const kind = importKind(f.name);
+    try {
+      if (kind === "pdf") { setPdfFile(f); return; }
+      if (kind === "dwg") {
+        ed.log(`${f.name}: leyendo el DWG (la primera vez se descarga el lector, unos 9 MB)…`);
+        ed.importSegments(await readDwg(await f.arrayBuffer()), f.name);
+      } else if (kind === "image") {
+        const img = await readImage(f);
+        // sin escala conocida: 20 m de ancho, para calibrar después
+        ed.addUnderlay(img.url, f.name, { w: img.w, h: img.h }, 20);
+      } else if (kind === "dxf") ed.importDxf(await f.text(), f.name);
+      else if (kind === "trazo") ed.openFile(await f.text(), f.name);
+      else { ed.log(`${f.name}: formato no admitido. Se pueden abrir .trazo e importar DWG, DXF, PDF e imágenes.`); return; }
+    } catch (e) {
+      ed.log(`${f.name}: ${(e as Error).message}`);
+      return;
+    }
     view3d.current?.fit();
   };
   const view3d = useRef<View3DHandle>(null);
@@ -124,16 +144,16 @@ export function App() {
         <button className="btn" onClick={save} title={`Guardar el proyecto en un archivo .trazo (Ctrl+S)${ed.dirty ? ": hay cambios sin guardar en archivo" : ""}`}>
           Guardar{ed.dirty && <span className="dot" aria-label="cambios sin guardar" />}
         </button>
-        <input ref={openRef} type="file" accept=".trazo,.json,.dxf" hidden onChange={(e) => {
+        <input ref={openRef} type="file" accept={`.trazo,.json,${IMPORT_ACCEPT}`} hidden onChange={(e) => {
           const f = e.target.files?.[0];
           e.target.value = "";
           if (f) void openAny(f);
         }} />
-        <button className="btn" onClick={() => fileRef.current?.click()}>Importar DXF</button>
-        <input ref={fileRef} type="file" accept=".dxf" hidden onChange={async (e) => {
+        <button className="btn" onClick={() => fileRef.current?.click()} title="DWG y DXF de AutoCAD como líneas; PDF como líneas o calco; imágenes como calco">Importar</button>
+        <input ref={fileRef} type="file" accept={IMPORT_ACCEPT} hidden onChange={(e) => {
           const f = e.target.files?.[0];
           e.target.value = "";
-          if (f) { ed.importDxf(await f.text(), f.name); view3d.current?.fit(); }
+          if (f) void openAny(f);
         }} />
         <div className="group exp" role="group" aria-label="Exportar">
           <span className="glbl">Exportar</span>
@@ -160,7 +180,8 @@ export function App() {
       </div>
 
       <CommandLine ed={ed} inputRef={cmdRef} onExport={setExporting} />
-      {dragging && <div className="dropzone">Suelta un proyecto .trazo para abrirlo, o un .dxf para importarlo</div>}
+      {dragging && <div className="dropzone">Suelta un proyecto .trazo para abrirlo, o un DWG, DXF, PDF o imagen para importarlo</div>}
+      {pdfFile && <ImportPdfDialog ed={ed} file={pdfFile} onClose={() => { setPdfFile(null); view3d.current?.fit(); }} />}
       {exporting && <ExportDialog ed={ed} format={exporting} onClose={() => setExporting(null)} />}
     </div>
   );

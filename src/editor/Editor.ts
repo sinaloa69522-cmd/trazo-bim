@@ -4,21 +4,22 @@ import {
   type LayerId, type Model, type RoofKind, type RunSystem, type Wall,
 } from "../core/model";
 import { autoDims } from "../core/autodim";
+import type { CadImportResult } from "../core/cadImport";
 import { parseDxf } from "../core/dxfImport";
-import { parseProjectFile, projectFileName, serializeProject } from "../core/projectFile";
+import { parseProjectFile, projectFileName, readProjectImages, serializeProject } from "../core/projectFile";
 import { FURNITURE, furnitureDef, furnitureOutline } from "../core/furniture";
 import { autoRoute, discOfSystem, isElectric, MEP, mepDef, mepOf, runLength, sanitaryPoints, systemDef, type Discipline } from "../core/mep";
 import { extend, offset, trim, type Linear } from "../core/modify";
 import { GENERIC, wallType } from "../core/wallTypes";
 import { computeRooms, roomAt, type RoomGrid } from "../core/rooms";
-import { deleteElements, reflection, transformElements, translation, type Xform } from "../core/transform";
+import { deleteElements, reflection, scaling, transformElements, translation, type Xform } from "../core/transform";
 
-export type Tool = "select" | "wall" | "door" | "window" | "line" | "dim" | "room" | "move" | "copy" | "mirror" | "trim" | "extend" | "offset" | "slab" | "roof" | "stair" | "furniture" | "section" | "hole" | "text" | "fixture" | "run";
+export type Tool = "select" | "wall" | "door" | "window" | "line" | "dim" | "room" | "move" | "copy" | "mirror" | "trim" | "extend" | "offset" | "slab" | "roof" | "stair" | "furniture" | "section" | "hole" | "text" | "fixture" | "run" | "calibrate";
 /** Herramientas que actúan pulsando directamente sobre un muro o una línea. */
 const PICK_TOOLS: Tool[] = ["trim", "extend", "offset"];
 /** Herramientas que actúan sobre la selección actual. */
 const MODIFY_TOOLS: Tool[] = ["move", "copy", "mirror"];
-export type SelType = "wall" | "opening" | "line" | "dim" | "room" | "slab" | "roof" | "stair" | "furniture" | "section" | "text" | "fixture" | "run";
+export type SelType = "wall" | "opening" | "line" | "dim" | "room" | "slab" | "roof" | "stair" | "furniture" | "section" | "text" | "fixture" | "run" | "underlay";
 export interface Selection { type: SelType; id: number }
 export interface SnapPt extends Pt { kind: "end" | "mid" | null }
 export interface OpeningCandidate { w: Wall; t: number; ok: boolean }
@@ -70,7 +71,7 @@ export class Editor {
   get model(): Level { return this.project.levels[this.active]; }
   set model(m: Model) { this.project.levels[this.active] = { ...this.model, ...m }; }
   rooms: RoomGrid | null = null;
-  vis: Record<LayerId, boolean> = { muros: true, puertas: true, ventanas: true, cotas: true, anot: true, hab: true, losas: true, cubiertas: true, escaleras: true, mobiliario: true, secciones: true, electricidad: true, plomeria: true };
+  vis: Record<LayerId, boolean> = { muros: true, puertas: true, ventanas: true, cotas: true, anot: true, hab: true, losas: true, cubiertas: true, escaleras: true, mobiliario: true, secciones: true, electricidad: true, plomeria: true, calcos: true };
   defaults = { wallType: GENERIC, thick: 0.15, height: 2.7, doorW: 0.9, doorH: 2.1, winW: 1.2, winH: 1.2, sill: 0.9, slabThick: 0.2, roofKind: "gable" as RoofKind, pitch: 30, overhang: 0.5, stairW: 1, furnKind: "bed2", furnRot: 0, textSize: 0.25, mepKind: "enchufe", mepRot: 0, runSys: "af" as RunSystem };
   tool: Tool = "select";
   /** Elementos seleccionados. */
@@ -105,6 +106,7 @@ export class Editor {
   constructor(private storage: Storage | null = null) {
     const saved = this.load();
     this.project = saved ?? sampleProject();
+    this.loadImages();
     this.rooms = computeRooms(this.model);
   }
 
@@ -149,7 +151,7 @@ export class Editor {
   // ---------- archivo del proyecto ----------
   /** Contenido y nombre del archivo .trazo del proyecto; lo marca como guardado. */
   saveFile(): { name: string; text: string } {
-    const f = { name: projectFileName(this.project.info.name), text: serializeProject(this.project) };
+    const f = { name: projectFileName(this.project.info.name), text: serializeProject(this.project, new Date(), this.usedImages()) };
     this.dirty = false;
     this.log(`Proyecto guardado como ${f.name}.`);
     return f;
@@ -158,6 +160,7 @@ export class Editor {
   openFile(text: string, fileName = "archivo"): boolean {
     let p: Project;
     try { p = parseProjectFile(text); } catch (e) { this.log(`${fileName}: ${(e as Error).message}`); return false; }
+    for (const [k, v] of Object.entries(readProjectImages(text))) this.storeImage(k, v);
     this.snapshot();
     this.project = p; this.active = 0; this.sels = []; this.draft = null; this.tool = "select";
     const n = p.levels.length;
@@ -245,10 +248,10 @@ export class Editor {
   // ---------- consultas ----------
   wallById(id: number) { return this.model.walls.find((w) => w.id === id); }
   isSelected(type: SelType, id: number) { return this.sels.some((s) => s.type === type && s.id === id); }
-  selObj(): (Seg & { id: number }) | Model["openings"][number] | Model["rooms"][number] | Model["slabs"][number] | Model["roofs"][number] | Model["stairs"][number] | Model["furniture"][number] | Model["sections"][number] | Model["texts"][number] | Model["fixtures"][number] | Model["runs"][number] | null {
+  selObj(): (Seg & { id: number }) | Model["openings"][number] | Model["rooms"][number] | Model["slabs"][number] | Model["roofs"][number] | Model["stairs"][number] | Model["furniture"][number] | Model["sections"][number] | Model["texts"][number] | Model["fixtures"][number] | Model["runs"][number] | Model["underlays"][number] | null {
     if (!this.sel) return null;
     const m = this.model;
-    const list = { wall: m.walls, line: m.lines, dim: m.dims, opening: m.openings, room: m.rooms, slab: m.slabs, roof: m.roofs, stair: m.stairs, furniture: m.furniture, section: m.sections, text: m.texts, fixture: m.fixtures, run: m.runs }[this.sel.type] as { id: number }[];
+    const list = { wall: m.walls, line: m.lines, dim: m.dims, opening: m.openings, room: m.rooms, slab: m.slabs, roof: m.roofs, stair: m.stairs, furniture: m.furniture, section: m.sections, text: m.texts, fixture: m.fixtures, run: m.runs, underlay: m.underlays }[this.sel.type] as { id: number }[];
     return (list.find((o) => o.id === this.sel!.id) as never) ?? null;
   }
   grips(): { k: 0 | 1 | "mid"; x: number; y: number }[] {
@@ -283,6 +286,7 @@ export class Editor {
       case "furniture": return `MOBILIARIO  Haz clic para colocar ${furnitureDef(d.furnKind).label.toLowerCase()} [R gira 90°, Esc termina]:`;
       case "trim": return "RECORTAR  Haz clic en el tramo de muro o línea que quieres quitar:";
       case "extend": return "ALARGAR  Haz clic cerca del extremo que quieres alargar:";
+      case "calibrate": return n === 0 ? "CALIBRAR  Primer punto de una medida conocida:" : n === 1 ? "CALIBRAR  Segundo punto de la medida:" : `CALIBRAR  Mide ${this.calibDist().toFixed(3)} en el dibujo. Escribe la medida real en metros y Enter:`;
       case "offset": return this.offsetTarget
         ? "DESFASE  Haz clic en el lado donde va la copia:"
         : `DESFASE  Elige un muro o línea, o teclea otra distancia <${this.offsetDist.toFixed(2)} m>:`;
@@ -308,6 +312,7 @@ export class Editor {
       cubiertas: m.roofs.length, escaleras: m.stairs.length, mobiliario: m.furniture.length, secciones: m.sections.length,
       electricidad: m.fixtures.filter((f) => mepDef(f.kind).disc === "elec").length + m.runs.filter((r) => r.system === "elec").length,
       plomeria: m.fixtures.filter((f) => mepDef(f.kind).disc === "plum").length + m.runs.filter((r) => r.system !== "elec").length,
+      calcos: m.underlays.length,
     };
   }
 
@@ -316,7 +321,8 @@ export class Editor {
   toW(sx: number, sy: number): Pt { return { x: (sx - this.view.ox) / this.view.scale, y: (sy - this.view.oy) / this.view.scale }; }
   fit(width: number, height: number) {
     if (!width) return;
-    const b = bounds(this.model);
+    // los calcos también cuentan al encuadrar en pantalla (en las láminas no se dibujan)
+    const b = bounds(this.model, this.vis.calcos ? this.model.underlays.flatMap((u) => [{ x: u.x, y: u.y }, { x: u.x + u.w, y: u.y + u.h }]) : []);
     const s = Math.max(5, Math.min(400, Math.min(width / (b.x1 - b.x0), height / (b.y1 - b.y0))));
     this.view.scale = s;
     this.view.ox = width / 2 - ((b.x0 + b.x1) / 2) * s;
@@ -339,7 +345,12 @@ export class Editor {
       this.message = "Las puertas y ventanas se mueven con su muro. Selecciona el muro."; t = "select";
     }
     this.tool = t; this.draft = null; this.openCand = null; this.box = null; this.offsetTarget = null; this.textAt = null;
-    if (t !== "select" && !MODIFY_TOOLS.includes(t)) this.sels = [];
+    if (t === "calibrate") {
+      // sin selección, se calibra el único calco del nivel
+      if (!this.sels.length && this.model.underlays.length === 1) this.sels = [{ type: "underlay", id: this.model.underlays[0].id }];
+      if (!this.sels.length) { this.message = "Selecciona el calco o las líneas importadas que quieres poner a escala."; this.tool = "select"; }
+    }
+    if (t !== "select" && t !== "calibrate" && !MODIFY_TOOLS.includes(t)) this.sels = [];
     this.refresh3d();
   }
   toggleOrtho() { this.ortho = !this.ortho; this.log(`ORTO ${this.ortho ? "activado" : "desactivado"}.`); }
@@ -384,6 +395,7 @@ export class Editor {
       if (crossing ? bx.some((p) => inside(p.x, p.y)) : bx.every((p) => inside(p.x, p.y))) found.push({ type: "text", id: t.id });
     }
     if (this.vis.cotas) for (const d of m.dims) if (segHit(d)) found.push({ type: "dim", id: d.id });
+    if (this.vis.calcos) for (const u of m.underlays) if (inside(u.x, u.y) && inside(u.x + u.w, u.y + u.h)) found.push({ type: "underlay", id: u.id });
     if (this.vis.hab) for (const r of m.rooms) {
       const c = this.rooms?.rooms.get(r.id), p = c?.ok ? { x: c.cx, y: c.cy } : r;
       if (inside(p.x, p.y)) found.push({ type: "room", id: r.id });
@@ -472,6 +484,11 @@ export class Editor {
     }
     if (this.vis.mobiliario) for (const f of m.furniture)
       if (pointInPolygon({ x: wx, y: wy }, furnitureOutline(f))) take(0.15 + Math.hypot(wx - f.x, wy - f.y) * 0.01, { type: "furniture", id: f.id });
+    // el calco se elige por su marco, para no estorbar al seleccionar lo que hay encima
+    if (this.vis.calcos) for (const u of m.underlays) {
+      const c = [{ x: u.x, y: u.y }, { x: u.x + u.w, y: u.y }, { x: u.x + u.w, y: u.y + u.h }, { x: u.x, y: u.y + u.h }];
+      for (let i = 0; i < 4; i++) { const a = c[i], b = c[(i + 1) % 4], q = distSeg(wx, wy, a.x, a.y, b.x, b.y); if (q.d < tol) take(q.d + 0.3, { type: "underlay", id: u.id }); }
+    }
     if (!best && this.vis.hab) { const r = roomAt(m, this.rooms, wx, wy); if (r) best = { type: "room", id: r.id }; }
     if (!best && this.vis.cubiertas) for (const r of m.roofs) if (pointInPolygon({ x: wx, y: wy }, roofGeom(r).outline)) best = { type: "roof", id: r.id };
     if (!best && this.vis.losas) for (const sl of m.slabs) if (onSlab({ x: wx, y: wy }, sl)) best = { type: "slab", id: sl.id };
@@ -492,6 +509,13 @@ export class Editor {
   commitPoint(p: Pt) {
     const m = this.model;
     if (MODIFY_TOOLS.includes(this.tool)) return this.modify(p);
+    if (this.tool === "calibrate") {
+      const pts = this.draft?.pts ?? [];
+      if (pts.length >= 2) { this.log("Escribe la medida real en metros y pulsa Enter."); return; }
+      if (pts.length === 1 && Math.hypot(p.x - pts[0].x, p.y - pts[0].y) < 1e-6) return;
+      this.draft = { pts: [...pts, p] }; this.emit();
+      return;
+    }
     if (this.tool === "wall" || this.tool === "line") {
       if (!this.draft) { this.draft = { pts: [p] }; this.emit(); return; }
       const last = this.draft.pts[this.draft.pts.length - 1];
@@ -654,9 +678,11 @@ export class Editor {
   }
 
   /** Importa un DXF como líneas de anotación y las deja seleccionadas. */
-  importDxf(text: string, fileName = "DXF") {
-    const r = parseDxf(text);
-    if (!r.segments.length) { this.log(`${fileName}: no se encontraron líneas ni polilíneas para importar.`); return; }
+  importDxf(text: string, fileName = "DXF") { this.importSegments(parseDxf(text), fileName); }
+
+  /** Pasa a líneas de anotación los segmentos leídos de un DXF, DWG o PDF y los deja seleccionados. */
+  importSegments(r: CadImportResult, fileName: string, note = "") {
+    if (!r.segments.length) { this.log(`${fileName}: no se encontraron líneas para importar.${note ? ` ${note}` : ""}`); return; }
     this.snapshot();
     const m = this.model, made: Selection[] = [];
     for (const s of r.segments) {
@@ -668,9 +694,74 @@ export class Editor {
     this.tool = "select"; this.draft = null;
     this.sels = made;
     const skipped = Object.entries(r.skipped).map(([k, v]) => `${v} ${k}`).join(", ");
-    this.message = `${fileName}: ${made.length} líneas importadas (unidades: ${r.unitsLabel})${skipped ? `; sin importar: ${skipped}` : ""}. Usa "Convertir en muros" para pasarlas a muros.`;
+    const moved = r.moved ? ` Se trajo al origen (estaba a ${Math.round(r.moved.x)}, ${Math.round(r.moved.y)} m).` : "";
+    this.message = `${fileName}: ${made.length} líneas importadas (unidades: ${r.unitsLabel})${skipped ? `; sin importar: ${skipped}` : ""}.${moved}${note ? ` ${note}` : ""} Usa "Convertir en muros" para pasarlas a muros.`;
     this.changed();
     this.fitRequest?.();
+  }
+
+  // ---------- calcos ----------
+  /** Imágenes de los calcos (data URL), fuera del proyecto para no copiarlas en cada paso de deshacer. */
+  images = new Map<string, string>();
+  /** Guarda la imagen en el navegador; si no cabe, avisa: se conserva al guardar el proyecto en archivo. */
+  private storeImage(key: string, url: string) {
+    this.images.set(key, url);
+    try { this.storage?.setItem(`${STORAGE_KEY}:img:${key}`, url); return true; } catch { return false; }
+  }
+  private loadImages() {
+    for (const l of this.project.levels) for (const u of l.underlays) {
+      if (this.images.has(u.img)) continue;
+      try { const v = this.storage?.getItem(`${STORAGE_KEY}:img:${u.img}`); if (v) this.images.set(u.img, v); } catch { /* sin almacenamiento */ }
+    }
+  }
+  /** Imágenes que usa el proyecto, para guardarlas con él. */
+  usedImages(): Record<string, string> {
+    const out: Record<string, string> = {};
+    for (const l of this.project.levels) for (const u of l.underlays) { const v = this.images.get(u.img); if (v) out[u.img] = v; }
+    return out;
+  }
+
+  /**
+   * Pone una imagen como calco del nivel activo, con su esquina superior izquierda en (x, y) y w metros de ancho.
+   * px es el tamaño de la imagen en píxeles, para conservar la proporción.
+   */
+  addUnderlay(url: string, name: string, px: { w: number; h: number }, w: number, at: Pt = { x: 0, y: 0 }) {
+    const key = `i${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+    const kept = this.storeImage(key, url);
+    this.snapshot();
+    const m = this.model, id = nextId(m), h = (w * px.h) / px.w;
+    m.underlays.push({ id, img: key, name, x: at.x, y: at.y, w, h, opacity: 0.5 });
+    this.vis.calcos = true;
+    this.tool = "select"; this.draft = null;
+    this.sels = [{ type: "underlay", id }];
+    this.message = `${name}: calco de ${w.toFixed(2)} × ${h.toFixed(2)} m. Para ponerlo a escala usa Calibrar (comando CAL) sobre una medida conocida.` +
+      (kept ? "" : " Es demasiado grande para guardarlo en el navegador: guarda el proyecto en archivo para no perderlo.");
+    this.changed();
+    this.fitRequest?.();
+  }
+
+  /** Distancia entre los dos puntos marcados al calibrar. */
+  calibDist() {
+    const p = this.draft?.pts;
+    return p && p.length > 1 ? Math.hypot(p[1].x - p[0].x, p[1].y - p[0].y) : 0;
+  }
+
+  /** Escala la selección (calcos, líneas importadas…) para que la medida marcada valga real metros. */
+  calibrate(real: number) {
+    const p = this.draft?.pts, d = this.calibDist();
+    if (!p || d < 1e-6 || !(real > 0)) { this.log("Marca dos puntos de una medida conocida y escribe cuánto mide en metros."); return; }
+    const k = real / d, xf = scaling(p[0], k), m = this.model;
+    this.snapshot();
+    for (const s of this.sels.filter((x) => x.type === "underlay")) {
+      const u = m.underlays.find((x) => x.id === s.id);
+      if (!u) continue;
+      const c = xf.map(u);
+      u.x = c.x; u.y = c.y; u.w *= k; u.h *= k;
+    }
+    transformElements(m, this.sels.filter((x) => x.type !== "underlay"), xf, false);
+    this.draft = null; this.tool = "select";
+    this.message = `Escala corregida: × ${k.toFixed(4)}. La medida marcada vale ahora ${real.toFixed(3)} m.`;
+    this.changed();
   }
 
   placeOpening(wx: number, wy: number) {
@@ -846,6 +937,7 @@ export class Editor {
 
   finishDraft() {
     if (this.draft && this.tool === "run") { this.finishRun(); return; }
+    if (this.draft && this.tool === "calibrate") { this.draft = null; this.setTool("select"); this.log("Calibración cancelada."); return; }
     if (this.draft) { this.draft = null; this.log("Comando terminado."); }
   }
 
@@ -900,6 +992,9 @@ export class Editor {
     this.changed();
   }
 
+  /** Guarda un ajuste visual (opacidad de un calco) sin paso de deshacer. */
+  touch() { this.changed(); }
+
   /** Aplica un cambio de propiedad con deshacer. */
   edit(fn: () => void) { this.snapshot(); fn(); this.changed(); }
 
@@ -932,6 +1027,7 @@ export class Editor {
       if (this.lastCmd) this.runCommand(this.lastCmd);
       return;
     }
+    if (s === "CAL" || s === "CALIBRAR") { this.lastCmd = s; this.setTool("calibrate"); if (this.tool === "calibrate") this.log("Calibrar: marca dos puntos de una medida conocida."); return; }
     if (s === "AC" || s === "ACOTAR") { this.lastCmd = s; this.autoDimension(); return; }
     if (DISC_COMMANDS[s]) { this.lastCmd = s; this.pickDiscipline(DISC_COMMANDS[s]); return; }
     if (COMMANDS[s]) { this.lastCmd = s; this.setTool(COMMANDS[s]); if (this.tool === COMMANDS[s]) this.log(`Comando: ${s}`); return; }
@@ -941,6 +1037,7 @@ export class Editor {
     if (this.tool === "furniture" && (s === "R" || s === "GIRAR")) { this.rotateFurniturePreview(); return; }
     if (this.tool === "fixture" && (s === "R" || s === "GIRAR")) { this.rotateFixturePreview(); return; }
     const num = s.replace(",", ".");
+    if (this.tool === "calibrate" && (this.draft?.pts.length ?? 0) >= 2 && /^\d*\.?\d+$/.test(num)) { this.calibrate(parseFloat(num)); return; }
     if (this.tool === "offset" && /^\d*\.?\d+$/.test(num)) {
       const v = parseFloat(num);
       if (v > 0) { this.offsetDist = v; this.log(`Distancia de desfase: ${v.toFixed(2)} m.`); }

@@ -63,7 +63,8 @@ describe("importar DXF", () => {
     const m = sampleModel();
     const r = parseDxf(toDxf(m, computeRooms(m)));
     expect(r.segments.length).toBeGreaterThan(50);
-    expect(r.skipped.ARC).toBe(3);
+    // los arcos de las puertas también se leen
+    expect(r.skipped.ARC).toBeUndefined();
     expect(r.unitsLabel).toBe("m");
     // las coordenadas vuelven con el eje Y de la planta
     expect(r.segments.some((s) => s.a.y > 6.9 && s.a.y < 7.2)).toBe(true);

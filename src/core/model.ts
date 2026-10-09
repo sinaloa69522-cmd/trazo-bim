@@ -156,6 +156,23 @@ export interface Run {
   pts: { x: number; y: number }[];
 }
 
+/**
+ * Calco: imagen de referencia (plano escaneado, PDF, foto) bajo el dibujo, como los subyacentes de Revit.
+ * (x, y) es la esquina superior izquierda; la imagen se guarda aparte, en el almacén de imágenes del proyecto.
+ */
+export interface Underlay {
+  id: number;
+  /** Clave de la imagen en el almacén */
+  img: string;
+  name: string;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  /** 0..1 */
+  opacity: number;
+}
+
 /** Contenido de un nivel (una planta). Los identificadores son únicos dentro del nivel. */
 export interface Model {
   walls: Wall[];
@@ -171,6 +188,7 @@ export interface Model {
   texts: Text[];
   fixtures: Fixture[];
   runs: Run[];
+  underlays: Underlay[];
   nid: number;
 }
 
@@ -197,7 +215,7 @@ export interface Project {
 
 export const defaultInfo = (): ProjectInfo => ({ name: "Vivienda unifamiliar", author: "", client: "", date: new Date().toISOString().slice(0, 10) });
 
-export type LayerId = "muros" | "puertas" | "ventanas" | "cotas" | "anot" | "hab" | "losas" | "cubiertas" | "escaleras" | "mobiliario" | "secciones" | "electricidad" | "plomeria";
+export type LayerId = "muros" | "puertas" | "ventanas" | "cotas" | "anot" | "hab" | "losas" | "cubiertas" | "escaleras" | "mobiliario" | "secciones" | "electricidad" | "plomeria" | "calcos";
 
 export interface Layer {
   id: LayerId;
@@ -222,9 +240,10 @@ export const LAYERS: Layer[] = [
   { id: "secciones", name: "A-SECCIONES", label: "Secciones", tok: "--fg" },
   { id: "electricidad", name: "E-ELECTRICIDAD", label: "Electricidad", tok: "--elec" },
   { id: "plomeria", name: "P-FONTANERIA", label: "Plomería", tok: "--plum" },
+  { id: "calcos", name: "A-CALCOS", label: "Calcos", tok: "--muted" },
 ];
 
-export const emptyModel = (): Model => ({ walls: [], openings: [], lines: [], dims: [], rooms: [], slabs: [], roofs: [], stairs: [], furniture: [], sections: [], texts: [], fixtures: [], runs: [], nid: 1 });
+export const emptyModel = (): Model => ({ walls: [], openings: [], lines: [], dims: [], rooms: [], slabs: [], roofs: [], stairs: [], furniture: [], sections: [], texts: [], fixtures: [], runs: [], underlays: [], nid: 1 });
 
 export const newLevel = (name: string, elev: number, content: Model = emptyModel()): Level => ({ ...content, name, elev });
 
@@ -249,6 +268,7 @@ export function normalizeModel(raw: unknown): Model {
   m.texts = m.texts ?? [];
   m.fixtures = m.fixtures ?? [];
   m.runs = m.runs ?? [];
+  m.underlays = m.underlays ?? [];
   return m;
 }
 

@@ -1,7 +1,7 @@
 import type { Pt } from "./geometry";
 import { nextId, type Model } from "./model";
 
-export type ElementType = "wall" | "opening" | "line" | "dim" | "room" | "slab" | "roof" | "stair" | "furniture" | "section" | "text" | "fixture" | "run";
+export type ElementType = "wall" | "opening" | "line" | "dim" | "room" | "slab" | "roof" | "stair" | "furniture" | "section" | "text" | "fixture" | "run" | "underlay";
 export interface ElementRef { type: ElementType; id: number }
 
 type Seg = { x1: number; y1: number; x2: number; y2: number };
@@ -10,6 +10,9 @@ type Seg = { x1: number; y1: number; x2: number; y2: number };
 export interface Xform { map: (p: Pt) => Pt; reflects: boolean }
 
 export const translation = (dx: number, dy: number): Xform => ({ map: (p) => ({ x: p.x + dx, y: p.y + dy }), reflects: false });
+
+/** Escala uniforme con centro c. */
+export const scaling = (c: Pt, k: number): Xform => ({ map: (p) => ({ x: c.x + (p.x - c.x) * k, y: c.y + (p.y - c.y) * k }), reflects: false });
 
 /** Simetría respecto a la recta que pasa por a y b. */
 export function reflection(a: Pt, b: Pt): Xform {
@@ -29,7 +32,7 @@ function applySeg(s: Seg, t: Xform) {
 }
 
 const listOf = (m: Model, type: ElementType) =>
-  ({ wall: m.walls, opening: m.openings, line: m.lines, dim: m.dims, room: m.rooms, slab: m.slabs, roof: m.roofs, stair: m.stairs, furniture: m.furniture, section: m.sections, text: m.texts, fixture: m.fixtures, run: m.runs })[type] as { id: number }[];
+  ({ wall: m.walls, opening: m.openings, line: m.lines, dim: m.dims, room: m.rooms, slab: m.slabs, roof: m.roofs, stair: m.stairs, furniture: m.furniture, section: m.sections, text: m.texts, fixture: m.fixtures, run: m.runs, underlay: m.underlays })[type] as { id: number }[];
 
 export function findElement(m: Model, r: ElementRef) {
   return listOf(m, r.type).find((o) => o.id === r.id) ?? null;
@@ -52,6 +55,8 @@ export function transformElements(m: Model, refs: ElementRef[], t: Xform, copy: 
     // el texto solo cambia de sitio: reflejado seguiría teniendo que leerse
     else if (r.type === "text") { const p = t.map(el); el.x = p.x; el.y = p.y; }
     else if (r.type === "run") el.pts = el.pts.map(t.map);
+    // el calco no gira ni se refleja: se lleva su centro
+    else if (r.type === "underlay") { const c = t.map({ x: el.x + el.w / 2, y: el.y + el.h / 2 }); el.x = c.x - el.w / 2; el.y = c.y - el.h / 2; }
     else if (r.type === "furniture" || r.type === "fixture") {
       // el giro sale de transformar el frente de la pieza (+y local); las piezas son simétricas de izquierda a derecha
       const a = (el.rot * Math.PI) / 180, c = t.map(el), u = t.map({ x: el.x - Math.sin(a), y: el.y + Math.cos(a) });
@@ -104,4 +109,6 @@ export function deleteElements(m: Model, refs: ElementRef[]) {
   const fx = ids("fixture"), runs = ids("run");
   m.fixtures = m.fixtures.filter((r) => !fx.has(r.id));
   m.runs = m.runs.filter((r) => !runs.has(r.id));
+  const und = ids("underlay");
+  m.underlays = m.underlays.filter((r) => !und.has(r.id));
 }

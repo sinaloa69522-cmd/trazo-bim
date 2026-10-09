@@ -1,21 +1,11 @@
+import { arcPoints, finishSegments, type CadImportResult, type ImportedSegment } from "./cadImport";
 import type { Pt } from "./geometry";
 
-export interface ImportedSegment { a: Pt; b: Pt; layer: string }
-
-export interface DxfImportResult {
-  segments: ImportedSegment[];
-  /** Factor aplicado para pasar a metros */
-  scale: number;
-  unitsLabel: string;
-  /** Entidades que no se importaron, por tipo */
-  skipped: Record<string, number>;
-}
-
-// Códigos $INSUNITS: 1 pulgadas, 2 pies, 4 mm, 5 cm, 6 m
-const UNITS: Record<number, [number, string]> = { 1: [0.0254, "pulgadas"], 2: [0.3048, "pies"], 4: [0.001, "mm"], 5: [0.01, "cm"], 6: [1, "m"] };
+export type { ImportedSegment };
+export type DxfImportResult = CadImportResult;
 
 /**
- * Lee un DXF ASCII y devuelve sus segmentos rectos (LINE, LWPOLYLINE y POLYLINE),
+ * Lee un DXF ASCII y devuelve sus segmentos (LINE, LWPOLYLINE, POLYLINE, ARC y CIRCLE),
  * en metros y con el eje Y hacia abajo como la planta.
  * Si el archivo no declara unidades y el dibujo mide más de 1000, se asume que está en mm.
  */
@@ -70,18 +60,12 @@ export function parseDxf(text: string): DxfImportResult {
       while (entities[k + 1]?.type === "VERTEX") { k++; pts.push({ x: num(entities[k].data, 10), y: num(entities[k].data, 20) }); }
       for (let i = 0; i + 1 < pts.length; i++) add(pts[i], pts[i + 1], lay);
       if (closed && pts.length > 2) add(pts[pts.length - 1], pts[0], lay);
+    } else if (type === "ARC" || type === "CIRCLE") {
+      const c = { x: num(data, 10), y: num(data, 20) }, r = num(data, 40);
+      const pts = type === "CIRCLE" ? arcPoints(c, r, 0, Math.PI * 2) : arcPoints(c, r, (num(data, 50) * Math.PI) / 180, (num(data, 51) * Math.PI) / 180);
+      if (r > 0) for (let i = 0; i + 1 < pts.length; i++) add(pts[i], pts[i + 1], layer(data));
     } else if (type !== "SEQEND") skipped[type] = (skipped[type] ?? 0) + 1;
   }
 
-  let [scale, unitsLabel] = UNITS[insunits] ?? [1, "m"];
-  if (!UNITS[insunits] && segs.length) {
-    let ext = 0;
-    for (const s of segs) ext = Math.max(ext, Math.abs(s.a.x), Math.abs(s.a.y), Math.abs(s.b.x), Math.abs(s.b.y));
-    if (ext > 1000) [scale, unitsLabel] = [0.001, "mm (supuesto)"];
-  }
-  for (const s of segs) {
-    s.a = { x: s.a.x * scale, y: -s.a.y * scale };
-    s.b = { x: s.b.x * scale, y: -s.b.y * scale };
-  }
-  return { segments: segs, scale, unitsLabel, skipped };
+  return finishSegments(segs, insunits, skipped);
 }

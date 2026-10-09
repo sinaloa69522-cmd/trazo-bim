@@ -231,3 +231,14 @@ dialog .acts span{margin-right:auto;color:var(--muted);font-size:12px}
 .cat.sym-cat span{display:flex;flex-direction:column}
 .sym{flex:none;vertical-align:middle}
 .btn.wide{display:block;width:100%;margin:6px 0}
+/* importar PDF */
+dialog.impdlg .pages{display:flex;gap:8px;overflow-x:auto;padding:4px 0 8px}
+dialog.impdlg .pg{flex:none;border:2px solid var(--line);border-radius:6px;background:var(--plan-bg);padding:4px;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:2px;font-family:var(--f-mono);font-size:11px;color:var(--muted)}
+dialog.impdlg .pg[aria-selected="true"]{border-color:var(--accent);color:var(--accent)}
+dialog.impdlg .pg img{display:block;max-width:120px;max-height:120px;background:#fff}
+dialog.impdlg .opts{display:flex;gap:16px;flex-wrap:wrap;align-items:flex-start;margin:6px 0}
+dialog.impdlg .opts>label{display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--muted)}
+dialog.impdlg fieldset{border:0;padding:0;margin:0;display:flex;flex-direction:column;gap:6px;flex:1;min-width:240px}
+dialog.impdlg fieldset label{font-size:13px}
+dialog.impdlg fieldset small{display:block;color:var(--muted);margin-left:22px}
+dialog .err{color:var(--danger);font-size:13px}
