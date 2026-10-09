@@ -55,7 +55,10 @@ export function transformElements(m: Model, refs: ElementRef[], t: Xform, copy: 
       const deg = (Math.atan2(-(u.x - c.x), u.y - c.y) * 180) / Math.PI;
       el.x = c.x; el.y = c.y; el.rot = (Math.round(deg * 1000) / 1000 + 360) % 360;
     }
-    else if (r.type === "slab") { el.pts = el.pts.map(t.map); if (t.reflects) el.pts.reverse(); }
+    else if (r.type === "slab") {
+      el.pts = el.pts.map(t.map); el.holes = el.holes.map((h: Pt[]) => h.map(t.map));
+      if (t.reflects) { el.pts.reverse(); for (const h of el.holes) h.reverse(); }
+    }
     else {
       applySeg(el, t);
       // una sección reflejada mira al lado reflejado

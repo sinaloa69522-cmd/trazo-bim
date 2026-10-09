@@ -38,7 +38,7 @@ export function toDxf(m: Model, rooms: RoomGrid | null): string {
       line("A-VENTANAS", loc(w, a, h / 3), loc(w, b, h / 3));
     }
   }
-  for (const sl of m.slabs ?? []) sl.pts.forEach((p, i) => line("A-LOSAS", p, sl.pts[(i + 1) % sl.pts.length]));
+  for (const sl of m.slabs ?? []) for (const ring of [sl.pts, ...(sl.holes ?? [])]) ring.forEach((p, i) => line("A-LOSAS", p, ring[(i + 1) % ring.length]));
   for (const r of m.roofs ?? []) {
     const g = roofGeom(r);
     rect("A-CUBIERTAS", g.outline);

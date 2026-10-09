@@ -79,12 +79,22 @@ export function drawPlan(ctx: CanvasRenderingContext2D, ed: Editor, C: PlanColor
   // losas: contorno discontinuo y trama suave
   if (ed.vis.losas) for (const sl of m.slabs) {
     const hl = isSel("slab", sl.id) || (hover?.type === "slab" && hover.id === sl.id);
-    ctx.globalAlpha = hl ? 0.14 : 0.05;
-    poly(sl.pts, hl ? C.accent : C.muted);
-    ctx.globalAlpha = 1;
+    const col = hl ? C.accent : C.muted;
+    // la trama no cubre los huecos (relleno par-impar)
+    ctx.beginPath();
+    for (const ring of [sl.pts, ...sl.holes]) {
+      ring.forEach((p, i) => { const s = toS(p.x, p.y); if (i) ctx.lineTo(s.x, s.y); else ctx.moveTo(s.x, s.y); });
+      ctx.closePath();
+    }
+    ctx.globalAlpha = hl ? 0.14 : 0.05; ctx.fillStyle = col; ctx.fill("evenodd"); ctx.globalAlpha = 1;
     ctx.setLineDash([8, 3, 2, 3]);
-    poly(sl.pts, null, hl ? C.accent : C.muted, hl ? 2 : 1);
+    poly(sl.pts, null, col, hl ? 2 : 1);
     ctx.setLineDash([]);
+    // hueco: contorno continuo y aspa, como en los planos
+    for (const h of sl.holes) {
+      poly(h, null, col, hl ? 1.6 : 1);
+      if (h.length === 4) { seg(h[0], h[2], col, 0.8); seg(h[1], h[3], col, 0.8); }
+    }
   }
 
   // habitaciones (relleno)
@@ -192,7 +202,7 @@ export function drawPlan(ctx: CanvasRenderingContext2D, ed: Editor, C: PlanColor
       if (r.type === "opening") continue;
       if (r.type === "slab") {
         const sl = ed.model.slabs.find((x) => x.id === r.id);
-        if (sl) poly(sl.pts.map(xf.map), null, C.accent, 1.5);
+        if (sl) for (const ring of [sl.pts, ...sl.holes]) poly(ring.map(xf.map), null, C.accent, 1.5);
         continue;
       }
       if (r.type === "furniture") {
@@ -238,6 +248,9 @@ export function drawPlan(ctx: CanvasRenderingContext2D, ed: Editor, C: PlanColor
     } else if (ed.tool === "stair") {
       drawStair(ctx, ed, { id: 0, x1: last.x, y1: last.y, x2: p.x, y2: p.y, width: ed.defaults.stairW, height: ed.floorToFloor() }, C.accent, 1.5);
       lengthTag(ctx, ed, C, last, p);
+    } else if (ed.tool === "hole") {
+      const r = [last, { x: p.x, y: last.y }, p, { x: last.x, y: p.y }];
+      poly(r, null, C.accent, 1.5); seg(r[0], r[2], C.accent, 1); seg(r[1], r[3], C.accent, 1);
     } else if (ed.tool === "section") {
       drawSection(ctx, ed, { id: 0, x1: last.x, y1: last.y, x2: p.x, y2: p.y, name: "?" }, C.accent, 1.5);
       lengthTag(ctx, ed, C, last, p);

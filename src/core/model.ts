@@ -51,6 +51,8 @@ export interface Slab {
   pts: { x: number; y: number }[];
   /** Espesor; la losa va por debajo de la cota del nivel */
   thick: number;
+  /** Huecos (patinillos, escaleras) dentro del contorno */
+  holes: { x: number; y: number }[][];
 }
 
 export type RoofKind = "flat" | "gable" | "hip";
@@ -185,7 +187,7 @@ export function cloneModel(m: Model): Model {
 export function normalizeModel(raw: unknown): Model {
   const m = { ...emptyModel(), ...(raw as Partial<Model>) };
   m.rooms = m.rooms ?? [];
-  m.slabs = m.slabs ?? [];
+  m.slabs = (m.slabs ?? []).map((s) => ({ ...s, holes: s.holes ?? [] }));
   m.roofs = m.roofs ?? [];
   m.stairs = m.stairs ?? [];
   m.furniture = m.furniture ?? [];
@@ -205,7 +207,7 @@ export function normalizeProject(raw: unknown): Project {
 /** Vivienda de ejemplo: planta baja de 10 x 7 m con su losa y cubierta a dos aguas. */
 export function sampleProject(): Project {
   const m = sampleModel();
-  m.slabs.push({ id: nextId(m), pts: [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 7 }, { x: 0, y: 7 }], thick: 0.2 });
+  m.slabs.push({ id: nextId(m), pts: [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 7 }, { x: 0, y: 7 }], thick: 0.2, holes: [] });
   m.furniture.push(
     { id: nextId(m), kind: "bed2", x: 3, y: 1.13, rot: 0 },
     { id: nextId(m), kind: "wardrobe", x: 5.0, y: 3.57, rot: 180 },

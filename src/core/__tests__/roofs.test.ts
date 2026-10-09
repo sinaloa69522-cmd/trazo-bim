@@ -45,11 +45,12 @@ describe("cubiertas", () => {
     expect(toDxf(ed.model, null)).toContain("A-CUBIERTAS");
   });
 
-  it("al duplicar un nivel no se copia la cubierta", () => {
+  it("al duplicar un nivel la cubierta no se copia: pasa a la planta nueva", () => {
     const ed = new Editor();
     expect(ed.model.roofs).toHaveLength(1);
     ed.addLevel(true);
-    expect(ed.model.roofs).toHaveLength(0);
+    expect(ed.project.levels.flatMap((l) => l.roofs)).toHaveLength(1);
+    expect(ed.project.levels[0].roofs).toHaveLength(0);
     expect(ed.model.walls.length).toBeGreaterThan(0);
   });
 });
