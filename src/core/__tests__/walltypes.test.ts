@@ -31,7 +31,7 @@ describe("tipos de muro", () => {
     const ed = new Editor();
     ed.defaults.wallType = "tabique-yeso"; ed.defaults.thick = 0.1;
     ed.setTool("wall"); ed.commitPoint({ x: 20, y: 0 }); ed.commitPoint({ x: 23, y: 0 });
-    expect(ed.model.walls.at(-1)!.type).toBe("tabique-yeso");
+    expect(ed.model.walls[ed.model.walls.length - 1].type).toBe("tabique-yeso");
     expect(typeForThick(0.25)).toBe("fachada-ladrillo");
     const p = normalizeProject({ levels: [{ name: "PB", elev: 0, walls: [{ id: 1, x1: 0, y1: 0, x2: 1, y2: 0, thick: 0.17, height: 2.5 }] }] });
     expect(p.levels[0].walls[0].type).toBe(GENERIC);
