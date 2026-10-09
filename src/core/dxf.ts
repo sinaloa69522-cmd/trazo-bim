@@ -54,6 +54,15 @@ export function toDxf(m: Model, rooms: RoomGrid | null): string {
     const n = k.closed ? k.pts.length : k.pts.length - 1;
     for (let i = 0; i < n; i++) line("A-MOBILIARIO", k.pts[i], k.pts[(i + 1) % k.pts.length]);
   }
+  for (const se of m.sections ?? []) {
+    const a = { x: se.x1, y: se.y1 }, b = { x: se.x2, y: se.y2 }, L = Math.hypot(b.x - a.x, b.y - a.y) || 1;
+    const ux = (b.x - a.x) / L, uy = (b.y - a.y) / L, v = { x: uy, y: -ux };
+    line("A-SECCIONES", a, b);
+    for (const [p, sg, label] of [[a, 1, se.name], [b, -1, `${se.name}'`]] as const) {
+      line("A-SECCIONES", p, { x: p.x + v.x * 0.5, y: p.y + v.y * 0.5 });
+      text("A-SECCIONES", { x: p.x - ux * sg * 0.35 + v.x * 0.3, y: p.y - uy * sg * 0.35 + v.y * 0.3 }, 0.3, label);
+    }
+  }
   for (const l of m.lines) line("A-ANOTACION", { x: l.x1, y: l.y1 }, { x: l.x2, y: l.y2 });
   for (const d of m.dims) {
     const g = dimGeom(d), sg = Math.sign(d.off || 1);

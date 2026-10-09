@@ -1,6 +1,6 @@
 import { dimGeom, dimOffset, dir, loc, pieces, roofGeom, stairSteps, type Pt } from "../core/geometry";
 import { furnitureStrokes, type Stroke } from "../core/furniture";
-import type { Dim, Model, Roof, Stair, Wall } from "../core/model";
+import type { Dim, Model, Roof, Section, Stair, Wall } from "../core/model";
 import { RC } from "../core/rooms";
 import type { Editor, SelType } from "./Editor";
 
@@ -145,6 +145,10 @@ export function drawPlan(ctx: CanvasRenderingContext2D, ed: Editor, C: PlanColor
     const hl = isSel("roof", r.id) || (hover?.type === "roof" && hover.id === r.id);
     drawRoof(ctx, ed, r, hl ? C.accent : C.door, hl ? 2 : 1);
   }
+  if (ed.vis.secciones) for (const se of m.sections) {
+    const hl = isSel("section", se.id) || (hover?.type === "section" && hover.id === se.id);
+    drawSection(ctx, ed, se, hl ? C.accent : C.fg, hl ? 2 : 1);
+  }
   if (ed.vis.cotas) for (const d of m.dims) drawDim(ctx, ed, d, isSel("dim", d.id) ? C.accent : C.dim);
 
   // rótulos de habitación
@@ -196,7 +200,7 @@ export function drawPlan(ctx: CanvasRenderingContext2D, ed: Editor, C: PlanColor
         if (f) strokes(furnitureStrokes(f).map((k) => ({ ...k, pts: k.pts.map(xf.map) })), C.accent, 1.2);
         continue;
       }
-      const list: { id: number }[] = ed.model[({ wall: "walls", line: "lines", dim: "dims", room: "rooms", roof: "roofs", stair: "stairs" } as const)[r.type]];
+      const list: { id: number }[] = ed.model[({ wall: "walls", line: "lines", dim: "dims", room: "rooms", roof: "roofs", stair: "stairs", section: "sections" } as const)[r.type]];
       const o = list.find((x) => x.id === r.id) as Wall | Model["lines"][number] | Model["rooms"][number] | undefined;
       if (!o) continue;
       if ("x1" in o) {
@@ -233,6 +237,9 @@ export function drawPlan(ctx: CanvasRenderingContext2D, ed: Editor, C: PlanColor
       poly([last, { x: p.x, y: last.y }, p, { x: last.x, y: p.y }], null, C.accent, 1);
     } else if (ed.tool === "stair") {
       drawStair(ctx, ed, { id: 0, x1: last.x, y1: last.y, x2: p.x, y2: p.y, width: ed.defaults.stairW, height: ed.floorToFloor() }, C.accent, 1.5);
+      lengthTag(ctx, ed, C, last, p);
+    } else if (ed.tool === "section") {
+      drawSection(ctx, ed, { id: 0, x1: last.x, y1: last.y, x2: p.x, y2: p.y, name: "?" }, C.accent, 1.5);
       lengthTag(ctx, ed, C, last, p);
     } else if (ed.tool === "line") {
       seg(last, p, C.accent, 1.2, [5, 4]); lengthTag(ctx, ed, C, last, p);
@@ -361,4 +368,28 @@ function drawStair(ctx: CanvasRenderingContext2D, ed: Editor, st: Stair, col: st
     ctx.font = MONO; ctx.textAlign = "center"; ctx.fillText(`SUBE ${k.n}`, 0, -6);
     ctx.restore();
   }
+}
+
+/** Línea de corte: trazo y punto fino, extremos gruesos, flechas hacia el lado que se ve y la letra. */
+function drawSection(ctx: CanvasRenderingContext2D, ed: Editor, se: Section, col: string, lw: number) {
+  const a = ed.toS(se.x1, se.y1), b = ed.toS(se.x2, se.y2), L = Math.hypot(b.x - a.x, b.y - a.y);
+  if (L < 1) return;
+  // en pantalla el eje y va hacia abajo igual que en planta, así que la normal es la misma
+  const ux = (b.x - a.x) / L, uy = (b.y - a.y) / L, vx = uy, vy = -ux, k = Math.min(16, L / 3);
+  ctx.save();
+  ctx.strokeStyle = col; ctx.fillStyle = col;
+  ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y);
+  ctx.setLineDash([12, 3, 2, 3]); ctx.lineWidth = lw * 0.7; ctx.stroke(); ctx.setLineDash([]);
+  ctx.lineWidth = lw * 2.4; ctx.lineCap = "butt";
+  ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(a.x + ux * k, a.y + uy * k);
+  ctx.moveTo(b.x, b.y); ctx.lineTo(b.x - ux * k, b.y - uy * k); ctx.stroke();
+  ctx.font = "600 12px 'IBM Plex Sans', system-ui, sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+  for (const [p, sg, label] of [[a, 1, se.name], [b, -1, `${se.name}'`]] as const) {
+    // flecha perpendicular desde el extremo, hacia donde se mira
+    const q = { x: p.x + ux * sg * 4, y: p.y + uy * sg * 4 }, t = { x: q.x + vx * 14, y: q.y + vy * 14 };
+    ctx.lineWidth = lw; ctx.beginPath(); ctx.moveTo(q.x, q.y); ctx.lineTo(t.x, t.y); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(t.x + vx * 6, t.y + vy * 6); ctx.lineTo(t.x + ux * 4, t.y + uy * 4); ctx.lineTo(t.x - ux * 4, t.y - uy * 4); ctx.closePath(); ctx.fill();
+    ctx.fillText(label, p.x - ux * sg * 10 + vx * 8, p.y - uy * sg * 10 + vy * 8);
+  }
+  ctx.restore();
 }
