@@ -34,6 +34,15 @@ const TOOLS: { tool: Tool; label: string; key: string; icon: JSX.Element; disc?:
   { tool: "offset", label: "Desfase", key: "DE", icon: <path d="M2 5h12M2 11h12" /> },
 ];
 
+/** Descarga un texto como archivo. */
+function download(name: string, text: string, type = "application/json") {
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([text], { type }));
+  a.download = name;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+}
+
 function storage(): Storage | null {
   try { return window.localStorage; } catch { return null; }
 }
@@ -51,6 +60,15 @@ export function App() {
   const [exporting, setExporting] = useState<ExportFormat | null>(null);
   const cmdRef = useRef<HTMLInputElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  const openRef = useRef<HTMLInputElement>(null);
+  const [dragging, setDragging] = useState(false);
+  const save = () => { const f = ed.saveFile(); download(f.name, f.text); };
+  /** Abre un .trazo o importa un .dxf, según la extensión. */
+  const openAny = async (f: File) => {
+    const text = await f.text();
+    if (/\.dxf$/i.test(f.name)) ed.importDxf(text, f.name); else ed.openFile(text, f.name);
+    view3d.current?.fit();
+  };
   const view3d = useRef<View3DHandle>(null);
   const spaceDown = useRef(false);
 
@@ -59,6 +77,8 @@ export function App() {
   useEffect(() => {
     const down = (e: KeyboardEvent) => {
       const t = e.target as HTMLElement, inField = ["INPUT", "TEXTAREA", "SELECT"].includes(t.tagName);
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") { e.preventDefault(); save(); return; }
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "o") { e.preventDefault(); openRef.current?.click(); return; }
       if (e.key === "F8") { e.preventDefault(); ed.toggleOrtho(); }
       else if (e.key === "F3") { e.preventDefault(); ed.toggleOsnap(); }
       else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "z" && !inField) { e.preventDefault(); ed.undo(); }
@@ -76,7 +96,10 @@ export function App() {
   }, [ed]);
 
   return (
-    <div className="app">
+    <div className="app" data-dragging={dragging || undefined}
+      onDragOver={(e) => { if (e.dataTransfer.types.includes("Files")) { e.preventDefault(); setDragging(true); } }}
+      onDragLeave={(e) => { if (e.currentTarget === e.target) setDragging(false); }}
+      onDrop={(e) => { e.preventDefault(); setDragging(false); const f = e.dataTransfer.files[0]; if (f) void openAny(f); }}>
       <header className="top">
         <div className="brand">Trazo BIM <small>v0.2</small></div>
         <div className="group" role="toolbar" aria-label="Herramientas" id="tools">
@@ -97,6 +120,15 @@ export function App() {
         <button className="btn" onClick={() => ed.undo()} title="Deshacer (Ctrl+Z)">Deshacer</button>
         <button className="btn" onClick={() => { ed.loadSample(); ed.fitRequest?.(); view3d.current?.fit(); }}>Ejemplo</button>
         <button className="btn" onClick={() => ed.clear()}>Nuevo</button>
+        <button className="btn" onClick={() => openRef.current?.click()} title="Abrir un proyecto .trazo (Ctrl+O). También puedes arrastrarlo a la ventana.">Abrir</button>
+        <button className="btn" onClick={save} title={`Guardar el proyecto en un archivo .trazo (Ctrl+S)${ed.dirty ? ": hay cambios sin guardar en archivo" : ""}`}>
+          Guardar{ed.dirty && <span className="dot" aria-label="cambios sin guardar" />}
+        </button>
+        <input ref={openRef} type="file" accept=".trazo,.json,.dxf" hidden onChange={(e) => {
+          const f = e.target.files?.[0];
+          e.target.value = "";
+          if (f) void openAny(f);
+        }} />
         <button className="btn" onClick={() => fileRef.current?.click()}>Importar DXF</button>
         <input ref={fileRef} type="file" accept=".dxf" hidden onChange={async (e) => {
           const f = e.target.files?.[0];
@@ -128,6 +160,7 @@ export function App() {
       </div>
 
       <CommandLine ed={ed} inputRef={cmdRef} onExport={setExporting} />
+      {dragging && <div className="dropzone">Suelta un proyecto .trazo para abrirlo, o un .dxf para importarlo</div>}
       {exporting && <ExportDialog ed={ed} format={exporting} onClose={() => setExporting(null)} />}
     </div>
   );
