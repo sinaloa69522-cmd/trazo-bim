@@ -1,7 +1,7 @@
 import type { RefObject } from "react";
 import type { Editor } from "../editor/Editor";
 
-export function CommandLine({ ed, inputRef, onExport }: { ed: Editor; inputRef: RefObject<HTMLInputElement>; onExport: () => void }) {
+export function CommandLine({ ed, inputRef, onExport }: { ed: Editor; inputRef: RefObject<HTMLInputElement>; onExport: (f: "dxf" | "ifc") => void }) {
   const p = ed.snap ?? ed.mouse;
   return (
     <footer className="cmd">
@@ -15,7 +15,8 @@ export function CommandLine({ ed, inputRef, onExport }: { ed: Editor; inputRef: 
               e.preventDefault();
               const v = el.value;
               el.value = "";
-              if (v.trim().toUpperCase() === "DXF") onExport(); else ed.runCommand(v);
+              const c = v.trim().toUpperCase();
+              if (c === "DXF" || c === "IFC") onExport(c === "DXF" ? "dxf" : "ifc"); else ed.runCommand(v);
             } else if (e.key === "Escape") { el.value = ""; ed.escape(); }
             else if ((e.key === "Delete" || e.key === "Backspace") && !el.value && ed.sels.length) { e.preventDefault(); ed.deleteSel(); }
           }} />

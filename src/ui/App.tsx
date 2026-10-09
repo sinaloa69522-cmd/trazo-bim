@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { Editor, type Tool } from "../editor/Editor";
 import { CommandLine } from "./CommandLine";
-import { DxfDialog } from "./DxfDialog";
+import { ExportDialog, type ExportFormat } from "./ExportDialog";
 import { PlanView } from "./PlanView";
 import { SheetView } from "./SheetView";
 import { Sidebar } from "./Sidebar";
@@ -39,7 +39,7 @@ export function App() {
   const [view, setView] = useState<ViewMode>(() => {
     try { return (localStorage.getItem("trazo-view") as ViewMode) || (innerWidth < 760 ? "plan" : "split"); } catch { return "split"; }
   });
-  const [dxfOpen, setDxfOpen] = useState(false);
+  const [exporting, setExporting] = useState<ExportFormat | null>(null);
   const cmdRef = useRef<HTMLInputElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const view3d = useRef<View3DHandle>(null);
@@ -93,7 +93,11 @@ export function App() {
           e.target.value = "";
           if (f) { ed.importDxf(await f.text(), f.name); view3d.current?.fit(); }
         }} />
-        <button className="btn primary" onClick={() => setDxfOpen(true)}>Exportar DXF</button>
+        <div className="group exp" role="group" aria-label="Exportar">
+          <span className="glbl">Exportar</span>
+          <button className="tb" onClick={() => setExporting("dxf")} title="Planta del nivel activo para AutoCAD">DXF</button>
+          <button className="tb" onClick={() => setExporting("ifc")} title="Modelo BIM completo para Revit, ArchiCAD y visores IFC">IFC</button>
+        </div>
       </header>
 
       <div className="main">
@@ -112,8 +116,8 @@ export function App() {
         </section>
       </div>
 
-      <CommandLine ed={ed} inputRef={cmdRef} onExport={() => setDxfOpen(true)} />
-      {dxfOpen && <DxfDialog ed={ed} onClose={() => setDxfOpen(false)} />}
+      <CommandLine ed={ed} inputRef={cmdRef} onExport={setExporting} />
+      {exporting && <ExportDialog ed={ed} format={exporting} onClose={() => setExporting(null)} />}
     </div>
   );
 }
