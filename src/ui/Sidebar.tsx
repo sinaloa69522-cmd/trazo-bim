@@ -40,12 +40,18 @@ function Properties({ ed, onFocusCommand }: { ed: Editor; onFocusCommand: () => 
   const TYPE_LABEL = { wall: "Muros", opening: "Puertas y ventanas", line: "Líneas", dim: "Cotas", room: "Habitaciones", slab: "Losas", roof: "Cubiertas", stair: "Escaleras", furniture: "Mobiliario", section: "Secciones" } as const;
 
   if (sel && o && sel.type === "wall") {
-    const w = o as Model["walls"][number];
+    const w = o as Model["walls"][number], up = ed.levelAbove();
     title = "Muro básico";
     ro.push(["Longitud", `${num(dir(w).L)} m`], ["Área de muro", `${num(dir(w).L * w.height)} m²`]);
     body = <>
       <NumberField id={`${key}-t`} label="Espesor (m)" value={w.thick} onCommit={(v) => ed.edit(() => { w.thick = v; })} />
-      <NumberField id={`${key}-h`} label="Altura (m)" value={w.height} onCommit={(v) => ed.edit(() => { w.height = v; })} />
+      {w.attach && up
+        ? <><label>Altura (m)</label><span className="ro" title={`Llega a la losa de ${up.name}`}>{num(w.height)}</span></>
+        : <NumberField id={`${key}-h`} label="Altura (m)" value={w.height} onCommit={(v) => ed.edit(() => { w.height = v; })} />}
+      <label className="check full">
+        <input type="checkbox" checked={w.attach} onChange={(e) => ed.edit(() => { w.attach = e.target.checked; })} />
+        Hasta la losa del nivel de arriba
+      </label>
     </>;
   } else if (sel && o && sel.type === "opening") {
     const op = o as Model["openings"][number], w = ed.wallById(op.wallId)!;

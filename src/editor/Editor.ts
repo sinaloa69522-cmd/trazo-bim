@@ -1,6 +1,6 @@
 import { bounds, dimOffset, dir, distSeg, dimGeom, fits, loc, onSlab, pointInPolygon, polygonArea, roofGeom, stairSteps, type Pt } from "../core/geometry";
 import {
-  cloneModel, emptyProject, newLevel, nextId, nextSectionName, normalizeProject, sampleProject, type Level, type Project, type ProjectInfo,
+  attachWalls, cloneModel, emptyProject, newLevel, nextId, nextSectionName, normalizeProject, sampleProject, type Level, type Project, type ProjectInfo,
   type LayerId, type Model, type RoofKind, type Wall,
 } from "../core/model";
 import { parseDxf } from "../core/dxfImport";
@@ -103,6 +103,7 @@ export class Editor {
   getVersion = () => this.version;
   emit() { this.version++; this.listeners.forEach((f) => f()); }
   private changed() {
+    attachWalls(this.project);
     this.rooms = computeRooms(this.model);
     this.save();
     this.modelListeners.forEach((f) => f());
@@ -425,7 +426,7 @@ export class Editor {
       if (Math.hypot(p.x - last.x, p.y - last.y) < 0.05) return;
       this.snapshot();
       if (this.tool === "wall") {
-        const w: Wall = { id: nextId(m), x1: last.x, y1: last.y, x2: p.x, y2: p.y, thick: this.defaults.thick, height: this.defaults.height };
+        const w: Wall = { id: nextId(m), x1: last.x, y1: last.y, x2: p.x, y2: p.y, thick: this.defaults.thick, height: this.defaults.height, attach: true };
         m.walls.push(w);
         this.message = `Muro de ${dir(w).L.toFixed(2)} m creado.`;
       } else {
@@ -550,7 +551,7 @@ export class Editor {
     this.snapshot();
     const m = this.model, ids = new Set(lines.map((s) => s.id)), made: Selection[] = [];
     for (const l of m.lines.filter((l) => ids.has(l.id))) {
-      const w: Wall = { id: nextId(m), x1: l.x1, y1: l.y1, x2: l.x2, y2: l.y2, thick: this.defaults.thick, height: this.defaults.height };
+      const w: Wall = { id: nextId(m), x1: l.x1, y1: l.y1, x2: l.x2, y2: l.y2, thick: this.defaults.thick, height: this.defaults.height, attach: true };
       m.walls.push(w);
       made.push({ type: "wall", id: w.id });
     }
