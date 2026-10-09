@@ -1,7 +1,11 @@
 // Modelo del proyecto. Coordenadas en metros; el eje Y crece hacia abajo en planta.
 
+import { typeForThick } from "./wallTypes";
+
 export interface Wall {
   id: number;
+  /** Tipo del catálogo (wallTypes.ts) */
+  type: string;
   x1: number;
   y1: number;
   x2: number;
@@ -188,7 +192,7 @@ export function cloneModel(m: Model): Model {
 /** Acepta modelos guardados por versiones anteriores. */
 export function normalizeModel(raw: unknown): Model {
   const m = { ...emptyModel(), ...(raw as Partial<Model>) };
-  m.walls = (m.walls ?? []).map((w) => ({ ...w, attach: w.attach ?? true }));
+  m.walls = (m.walls ?? []).map((w) => ({ ...w, attach: w.attach ?? true, type: w.type ?? typeForThick(w.thick) }));
   m.rooms = m.rooms ?? [];
   m.slabs = (m.slabs ?? []).map((s) => ({ ...s, holes: s.holes ?? [] }));
   m.roofs = m.roofs ?? [];
@@ -231,7 +235,7 @@ export function sampleProject(): Project {
 export function sampleModel(): Model {
   const m = emptyModel();
   const W = (x1: number, y1: number, x2: number, y2: number, thick = 0.25) => {
-    const w: Wall = { id: nextId(m), x1, y1, x2, y2, thick, height: 2.7, attach: true };
+    const w: Wall = { id: nextId(m), type: typeForThick(thick), x1, y1, x2, y2, thick, height: 2.7, attach: true };
     m.walls.push(w);
     return w;
   };

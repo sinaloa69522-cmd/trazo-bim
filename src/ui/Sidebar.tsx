@@ -1,6 +1,7 @@
 import { Fragment, useState } from "react";
 import { dimGeom, dir, fits, polygonArea, roofGeom, slabArea, stairSteps } from "../core/geometry";
 import { FURNITURE, furnitureDef } from "../core/furniture";
+import { GENERIC, WALL_TYPES, wallType, wallTypeLabel } from "../core/wallTypes";
 import { LAYERS, type Model, type RoofKind } from "../core/model";
 import { ROOF_LABEL, type Editor } from "../editor/Editor";
 
@@ -16,6 +17,18 @@ function NumberField({ id, label, value, onCommit, min = 0.01, step = 0.01, digi
         onChange={(e) => setDraft(e.target.value)}
         onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
         onBlur={(e) => { const v = parseFloat(e.target.value); setDraft(null); if (v >= min && v !== value) onCommit(v); }} />
+    </>
+  );
+}
+
+function WallTypeField({ id, value, label = "Tipo de muro", onChange }: { id: string; value: string; label?: string; onChange: (t: string) => void }) {
+  return (
+    <>
+      <label htmlFor={id} className="full">{label}</label>
+      <select id={id} className="full" value={value} onChange={(e) => e.target.value && onChange(e.target.value)}>
+        {!value && <option value="">Elige un tipo…</option>}
+        {WALL_TYPES.map((t) => <option key={t.id} value={t.id}>{t.id === GENERIC ? t.name : `${t.name} (${t.thick.toFixed(2)} m)`}</option>)}
+      </select>
     </>
   );
 }
@@ -41,10 +54,13 @@ function Properties({ ed, onFocusCommand }: { ed: Editor; onFocusCommand: () => 
 
   if (sel && o && sel.type === "wall") {
     const w = o as Model["walls"][number], up = ed.levelAbove();
-    title = "Muro básico";
-    ro.push(["Longitud", `${num(dir(w).L)} m`], ["Área de muro", `${num(dir(w).L * w.height)} m²`]);
+    title = wallTypeLabel(w);
+    ro.push(["Longitud", `${num(dir(w).L)} m`], ["Área de muro", `${num(dir(w).L * w.height)} m²`], ["Material", wallType(w.type).material]);
     body = <>
-      <NumberField id={`${key}-t`} label="Espesor (m)" value={w.thick} onCommit={(v) => ed.edit(() => { w.thick = v; })} />
+      <WallTypeField id={`${key}-ty`} value={w.type} onChange={(t) => ed.setWallType([w.id], t)} />
+      {w.type === GENERIC
+        ? <NumberField id={`${key}-t`} label="Espesor (m)" value={w.thick} onCommit={(v) => ed.edit(() => { w.thick = v; })} />
+        : <><label>Espesor (m)</label><span className="ro" title="Lo fija el tipo; elige Muro genérico para cambiarlo">{num(w.thick)}</span></>}
       {w.attach && up
         ? <><label>Altura (m)</label><span className="ro" title={`Llega a la losa de ${up.name}`}>{num(w.height)}</span></>
         : <NumberField id={`${key}-h`} label="Altura (m)" value={w.height} onCommit={(v) => ed.edit(() => { w.height = v; })} />}
@@ -147,9 +163,13 @@ function Properties({ ed, onFocusCommand }: { ed: Editor; onFocusCommand: () => 
       const c = ed.sels.filter((x) => x.type === t).length;
       if (c) ro.push([label, String(c)]);
     }
+    const walls = ed.sels.filter((x) => x.type === "wall").map((x) => x.id);
+    if (walls.length) body = <WallTypeField id="multi-ty" label={`Tipo de los ${walls.length} muros`} value=""
+      onChange={(t) => ed.setWallType(walls, t)} />;
   } else {
     body = <>
-      <NumberField id="def-t" label="Espesor muro" value={d.thick} onCommit={(v) => { d.thick = v; ed.emit(); }} />
+      <WallTypeField id="def-ty" value={d.wallType} onChange={(t) => { d.wallType = t; if (t !== GENERIC) d.thick = wallType(t).thick; ed.emit(); }} />
+      {d.wallType === GENERIC && <NumberField id="def-t" label="Espesor muro" value={d.thick} onCommit={(v) => { d.thick = v; ed.emit(); }} />}
       <NumberField id="def-h" label="Altura muro" value={d.height} onCommit={(v) => { d.height = v; ed.emit(); }} />
       <NumberField id="def-dw" label="Ancho puerta" value={d.doorW} onCommit={(v) => { d.doorW = v; ed.emit(); }} />
       <NumberField id="def-ww" label="Ancho ventana" value={d.winW} onCommit={(v) => { d.winW = v; ed.emit(); }} />

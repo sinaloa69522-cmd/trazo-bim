@@ -3,6 +3,7 @@ import { dir, endExt, roofGeom, stairSteps, type P3 } from "./geometry";
 import type { Project } from "./model";
 import { computeRooms } from "./rooms";
 import { levelMarks } from "./schedules";
+import { wallType, wallTypeLabel } from "./wallTypes";
 
 /**
  * Exporta el proyecto a IFC4 (texto STEP), para abrirlo en Revit, ArchiCAD, BIMcollab, etc.
@@ -70,6 +71,8 @@ export function toIfc(p: Project, opts: { now?: Date; random?: () => number } = 
   add(`IFCRELAGGREGATES('${id()}',$,$,$,${site},(${building}))`);
 
   const storeys: string[] = [];
+  /** Muros por material, para asociarles su IfcMaterial al final */
+  const byMaterial = new Map<string, string[]>();
   p.levels.forEach((lv, li) => {
     const stPl = place(bldPl, 0, 0, lv.elev);
     const storey = add(`IFCBUILDINGSTOREY('${id()}',$,${str(lv.name)},$,$,${stPl},$,$,.ELEMENT.,${f(lv.elev)})`);
@@ -82,8 +85,10 @@ export function toIfc(p: Project, opts: { now?: Date; random?: () => number } = 
       const { ux, uy, L } = dir(w), e0 = endExt(lv, w, 0), e1 = endExt(lv, w, 1);
       const wPl = place(stPl, w.x1, -w.y1, 0, ux, -uy);
       const solid = box((L + e1 - e0) / 2, 0, L + e0 + e1, w.thick, 0, w.height);
-      const wall = add(`IFCWALL('${id()}',$,${str(`Muro básico ${Math.round(w.thick * 100)} cm`)},$,$,${wPl},${shape("SweptSolid", [solid])},$,.STANDARD.)`);
+      const wall = add(`IFCWALL('${id()}',$,${str(wallTypeLabel(w))},$,$,${wPl},${shape("SweptSolid", [solid])},$,.STANDARD.)`);
       contained.push(wall);
+      const mat = wallType(w.type).material;
+      byMaterial.set(mat, [...(byMaterial.get(mat) ?? []), wall]);
       for (const o of lv.openings.filter((x) => x.wallId === w.id)) {
         const s = o.t * L, top = Math.min(o.height, w.height - o.sill);
         const oPl = place(wPl, s, 0, o.sill);
@@ -147,6 +152,8 @@ export function toIfc(p: Project, opts: { now?: Date; random?: () => number } = 
     if (spaces.length) add(`IFCRELAGGREGATES('${id()}',$,$,$,${storey},${list(spaces)})`);
   });
   if (storeys.length) add(`IFCRELAGGREGATES('${id()}',$,$,$,${building},${list(storeys)})`);
+  for (const [name, walls] of byMaterial)
+    add(`IFCRELASSOCIATESMATERIAL('${id()}',$,$,$,${list(walls)},${add(`IFCMATERIAL(${str(name)},$,$)`)})`);
 
   const stamp = now.toISOString().slice(0, 19);
   return [
