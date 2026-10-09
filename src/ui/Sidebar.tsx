@@ -50,7 +50,7 @@ function Properties({ ed, onFocusCommand }: { ed: Editor; onFocusCommand: () => 
   let title = "Valores por defecto", body: JSX.Element | null = null;
   const n = ed.sels.length;
   const key = sel ? `${sel.type}-${sel.id}` : n > 1 ? "multi" : "def";
-  const TYPE_LABEL = { wall: "Muros", opening: "Puertas y ventanas", line: "Líneas", dim: "Cotas", room: "Habitaciones", slab: "Losas", roof: "Cubiertas", stair: "Escaleras", furniture: "Mobiliario", section: "Secciones" } as const;
+  const TYPE_LABEL = { wall: "Muros", opening: "Puertas y ventanas", line: "Líneas", dim: "Cotas", room: "Habitaciones", slab: "Losas", roof: "Cubiertas", stair: "Escaleras", furniture: "Mobiliario", section: "Secciones", text: "Textos" } as const;
 
   if (sel && o && sel.type === "wall") {
     const w = o as Model["walls"][number], up = ed.levelAbove();
@@ -150,6 +150,17 @@ function Properties({ ed, onFocusCommand }: { ed: Editor; onFocusCommand: () => 
       <button className="btn full" onClick={() => ed.flipSection(se.id)}>Invertir sentido de la vista</button>
       <p className="hint">La sección se ve en Lámina › Contenido › Secciones.</p>
     </>;
+  } else if (sel && o && sel.type === "text") {
+    const t = o as Model["texts"][number];
+    title = "Texto";
+    body = <>
+      <label htmlFor={`${key}-x`} className="full">Contenido</label>
+      <input id={`${key}-x`} className="full" type="text" defaultValue={t.text}
+        onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
+        onBlur={(e) => { const v = e.target.value.trim(); if (v && v !== t.text) ed.edit(() => { t.text = v; }); }} />
+      <NumberField id={`${key}-s`} label="Altura letra (m)" value={t.size} min={0.02} onCommit={(v) => ed.edit(() => { t.size = v; })} />
+      <NumberField id={`${key}-r`} label="Giro (°)" value={t.rot} min={-360} step={15} digits={0} onCommit={(v) => ed.edit(() => { t.rot = v % 360; })} />
+    </>;
   } else if (sel && o && sel.type === "line") {
     const l = o as Model["lines"][number];
     title = "Línea";
@@ -177,6 +188,7 @@ function Properties({ ed, onFocusCommand }: { ed: Editor; onFocusCommand: () => 
       <NumberField id="def-sl" label="Espesor losa" value={d.slabThick} onCommit={(v) => { d.slabThick = v; ed.emit(); }} />
       <RoofKindField id="def-rk" value={d.roofKind} onChange={(k) => { d.roofKind = k; ed.emit(); }} />
       <NumberField id="def-rp" label="Pendiente (°)" value={d.pitch} min={1} step={1} digits={0} onCommit={(v) => { d.pitch = Math.min(75, v); ed.emit(); }} />
+      <NumberField id="def-tx" label="Altura texto" value={d.textSize} min={0.02} onCommit={(v) => { d.textSize = v; ed.emit(); }} />
       <NumberField id="def-sw" label="Ancho escalera" value={d.stairW} onCommit={(v) => { d.stairW = v; ed.emit(); }} />
     </>;
   }

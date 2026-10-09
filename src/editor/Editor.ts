@@ -1,4 +1,4 @@
-import { bounds, dimOffset, dir, distSeg, dimGeom, fits, loc, onSlab, pointInPolygon, polygonArea, roofGeom, stairSteps, type Pt } from "../core/geometry";
+import { bounds, dimOffset, dir, distSeg, dimGeom, fits, loc, onSlab, pointInPolygon, polygonArea, roofGeom, stairSteps, textBox, type Pt } from "../core/geometry";
 import {
   attachWalls, cloneModel, emptyProject, newLevel, nextId, nextSectionName, normalizeProject, sampleProject, type Level, type Project, type ProjectInfo,
   type LayerId, type Model, type RoofKind, type Wall,
@@ -10,12 +10,12 @@ import { GENERIC, wallType } from "../core/wallTypes";
 import { computeRooms, roomAt, type RoomGrid } from "../core/rooms";
 import { deleteElements, reflection, transformElements, translation, type Xform } from "../core/transform";
 
-export type Tool = "select" | "wall" | "door" | "window" | "line" | "dim" | "room" | "move" | "copy" | "mirror" | "trim" | "extend" | "offset" | "slab" | "roof" | "stair" | "furniture" | "section" | "hole";
+export type Tool = "select" | "wall" | "door" | "window" | "line" | "dim" | "room" | "move" | "copy" | "mirror" | "trim" | "extend" | "offset" | "slab" | "roof" | "stair" | "furniture" | "section" | "hole" | "text";
 /** Herramientas que actúan pulsando directamente sobre un muro o una línea. */
 const PICK_TOOLS: Tool[] = ["trim", "extend", "offset"];
 /** Herramientas que actúan sobre la selección actual. */
 const MODIFY_TOOLS: Tool[] = ["move", "copy", "mirror"];
-export type SelType = "wall" | "opening" | "line" | "dim" | "room" | "slab" | "roof" | "stair" | "furniture" | "section";
+export type SelType = "wall" | "opening" | "line" | "dim" | "room" | "slab" | "roof" | "stair" | "furniture" | "section" | "text";
 export interface Selection { type: SelType; id: number }
 export interface SnapPt extends Pt { kind: "end" | "mid" | null }
 export interface OpeningCandidate { w: Wall; t: number; ok: boolean }
@@ -45,7 +45,7 @@ const COMMANDS: Record<string, Tool> = {
   MO: "move", MOVER: "move", CO: "copy", COPIA: "copy", SI: "mirror", SIMETRIA: "mirror", "SIMETRÍA": "mirror",
   LO: "slab", LOSA: "slab", TR: "trim", RECORTAR: "trim", AL: "extend", ALARGAR: "extend", DE: "offset", DESFASE: "offset", EQ: "offset", EQUIDISTANCIA: "offset",
   CU: "roof", CUBIERTA: "roof", TEJADO: "roof", ES: "stair", ESCALERA: "stair", MB: "furniture", MOBILIARIO: "furniture", MUEBLE: "furniture",
-  HL: "hole", HUECO: "hole", SE: "section", SECCION: "section", "SECCIÓN": "section", CORTE: "section",
+  HL: "hole", HUECO: "hole", TX: "text", TEXTO: "text", SE: "section", SECCION: "section", "SECCIÓN": "section", CORTE: "section",
 };
 
 /**
@@ -61,7 +61,7 @@ export class Editor {
   set model(m: Model) { this.project.levels[this.active] = { ...this.model, ...m }; }
   rooms: RoomGrid | null = null;
   vis: Record<LayerId, boolean> = { muros: true, puertas: true, ventanas: true, cotas: true, anot: true, hab: true, losas: true, cubiertas: true, escaleras: true, mobiliario: true, secciones: true };
-  defaults = { wallType: GENERIC, thick: 0.15, height: 2.7, doorW: 0.9, doorH: 2.1, winW: 1.2, winH: 1.2, sill: 0.9, slabThick: 0.2, roofKind: "gable" as RoofKind, pitch: 30, overhang: 0.5, stairW: 1, furnKind: "bed2", furnRot: 0 };
+  defaults = { wallType: GENERIC, thick: 0.15, height: 2.7, doorW: 0.9, doorH: 2.1, winW: 1.2, winH: 1.2, sill: 0.9, slabThick: 0.2, roofKind: "gable" as RoofKind, pitch: 30, overhang: 0.5, stairW: 1, furnKind: "bed2", furnRot: 0, textSize: 0.25 };
   tool: Tool = "select";
   /** Elementos seleccionados. */
   sels: Selection[] = [];
@@ -82,6 +82,8 @@ export class Editor {
   hover: Selection | null = null;
   openCand: OpeningCandidate | null = null;
   grip: GripDrag | null = null;
+  /** Punto donde se insertará el texto que se está escribiendo en la línea de comandos */
+  textAt: Pt | null = null;
   message = "Bienvenido. Se ha cargado una vivienda de ejemplo.";
 
   private history: string[] = [];
@@ -200,10 +202,10 @@ export class Editor {
   // ---------- consultas ----------
   wallById(id: number) { return this.model.walls.find((w) => w.id === id); }
   isSelected(type: SelType, id: number) { return this.sels.some((s) => s.type === type && s.id === id); }
-  selObj(): (Seg & { id: number }) | Model["openings"][number] | Model["rooms"][number] | Model["slabs"][number] | Model["roofs"][number] | Model["stairs"][number] | Model["furniture"][number] | Model["sections"][number] | null {
+  selObj(): (Seg & { id: number }) | Model["openings"][number] | Model["rooms"][number] | Model["slabs"][number] | Model["roofs"][number] | Model["stairs"][number] | Model["furniture"][number] | Model["sections"][number] | Model["texts"][number] | null {
     if (!this.sel) return null;
     const m = this.model;
-    const list = { wall: m.walls, line: m.lines, dim: m.dims, opening: m.openings, room: m.rooms, slab: m.slabs, roof: m.roofs, stair: m.stairs, furniture: m.furniture, section: m.sections }[this.sel.type] as { id: number }[];
+    const list = { wall: m.walls, line: m.lines, dim: m.dims, opening: m.openings, room: m.rooms, slab: m.slabs, roof: m.roofs, stair: m.stairs, furniture: m.furniture, section: m.sections, text: m.texts }[this.sel.type] as { id: number }[];
     return (list.find((o) => o.id === this.sel!.id) as never) ?? null;
   }
   grips(): { k: 0 | 1 | "mid"; x: number; y: number }[] {
@@ -230,6 +232,7 @@ export class Editor {
       case "slab": return n < 3 ? `LOSA  Precisa ${n ? "siguiente" : "primer"} vértice del contorno:` : "LOSA  Siguiente vértice [Enter o clic en el primero cierra]:";
       case "roof": return n ? "CUBIERTA  Esquina opuesta del perímetro:" : `CUBIERTA  Primera esquina del perímetro (${ROOF_LABEL[d.roofKind].toLowerCase()}, ${d.pitch}°):`;
       case "stair": return n ? "ESCALERA  Punto de llegada (o longitud):" : `ESCALERA  Punto de arranque (ancho ${d.stairW.toFixed(2)} m):`;
+      case "text": return this.textAt ? "TEXTO  Escribe el texto y pulsa Intro [Esc cancela]:" : `TEXTO  Punto de inserción (altura ${d.textSize.toFixed(2)} m):`;
       case "hole": return n ? "HUECO  Esquina opuesta del hueco:" : "HUECO EN LOSA  Primera esquina del hueco (dentro de una losa):";
       case "section": return n ? "SECCIÓN  Punto final de la línea de corte (se mira a su izquierda):" : "SECCIÓN  Primer punto de la línea de corte:";
       case "furniture": return `MOBILIARIO  Haz clic para colocar ${furnitureDef(d.furnKind).label.toLowerCase()} [R gira 90°, Esc termina]:`;
@@ -256,7 +259,7 @@ export class Editor {
     return {
       muros: m.walls.length, puertas: m.openings.filter((o) => o.kind === "door").length,
       ventanas: m.openings.filter((o) => o.kind === "window").length,
-      cotas: m.dims.length, anot: m.lines.length, hab: m.rooms.length, losas: m.slabs.length,
+      cotas: m.dims.length, anot: m.lines.length + m.texts.length, hab: m.rooms.length, losas: m.slabs.length,
       cubiertas: m.roofs.length, escaleras: m.stairs.length, mobiliario: m.furniture.length, secciones: m.sections.length,
     };
   }
@@ -288,7 +291,7 @@ export class Editor {
     if (MODIFY_TOOLS.includes(t) && this.sels.every((s) => s.type === "opening")) {
       this.message = "Las puertas y ventanas se mueven con su muro. Selecciona el muro."; t = "select";
     }
-    this.tool = t; this.draft = null; this.openCand = null; this.box = null; this.offsetTarget = null;
+    this.tool = t; this.draft = null; this.openCand = null; this.box = null; this.offsetTarget = null; this.textAt = null;
     if (t !== "select" && !MODIFY_TOOLS.includes(t)) this.sels = [];
     this.refresh3d();
   }
@@ -329,6 +332,10 @@ export class Editor {
       if (inside(c.x, c.y) && !found.some((f) => f.type === "wall" && f.id === w.id)) found.push({ type: "opening", id: o.id });
     }
     if (this.vis.anot) for (const l of m.lines) if (segHit(l)) found.push({ type: "line", id: l.id });
+    if (this.vis.anot) for (const t of m.texts) {
+      const bx = textBox(t);
+      if (crossing ? bx.some((p) => inside(p.x, p.y)) : bx.every((p) => inside(p.x, p.y))) found.push({ type: "text", id: t.id });
+    }
     if (this.vis.cotas) for (const d of m.dims) if (segHit(d)) found.push({ type: "dim", id: d.id });
     if (this.vis.hab) for (const r of m.rooms) {
       const c = this.rooms?.rooms.get(r.id), p = c?.ok ? { x: c.cx, y: c.cy } : r;
@@ -395,6 +402,7 @@ export class Editor {
       if (r.d < w.thick / 2 + tol) take(r.d - 0.05, { type: "opening", id: op.id });
     }
     if (this.vis.muros) for (const w of m.walls) { const r = distSeg(wx, wy, w.x1, w.y1, w.x2, w.y2); if (r.d < w.thick / 2 + tol) take(r.d, { type: "wall", id: w.id }); }
+    if (this.vis.anot) for (const t of m.texts) if (pointInPolygon({ x: wx, y: wy }, textBox(t))) take(0.02, { type: "text", id: t.id });
     if (this.vis.anot) for (const l of m.lines) { const r = distSeg(wx, wy, l.x1, l.y1, l.x2, l.y2); if (r.d < tol) take(r.d, { type: "line", id: l.id }); }
     if (this.vis.cotas) for (const d of m.dims) { const g = dimGeom(d), r = distSeg(wx, wy, g.a.x, g.a.y, g.b.x, g.b.y); if (r.d < tol * 2) take(r.d, { type: "dim", id: d.id }); }
     if (this.vis.secciones) for (const se of m.sections) { const r = distSeg(wx, wy, se.x1, se.y1, se.x2, se.y2); if (r.d < tol) take(r.d, { type: "section", id: se.id }); }
@@ -473,6 +481,7 @@ export class Editor {
       this.changed();
       return;
     }
+    if (this.tool === "text") { this.textAt = p; this.message = "Escribe el texto en la línea de comandos y pulsa Intro."; this.emit(); return; }
     if (this.tool === "hole") {
       if (!this.draft) { this.draft = { pts: [p] }; this.emit(); return; }
       const a = this.draft.pts[0];
@@ -690,6 +699,7 @@ export class Editor {
   edit(fn: () => void) { this.snapshot(); fn(); this.changed(); }
 
   escape() {
+    if (this.textAt) { this.textAt = null; this.log("Texto cancelado."); return; }
     if (MODIFY_TOOLS.includes(this.tool)) { this.setTool("select"); return; }
     if (this.tool === "offset" && this.offsetTarget) { this.offsetTarget = null; this.emit(); return; }
     if (this.draft) this.finishDraft();
@@ -699,6 +709,17 @@ export class Editor {
 
   // ---------- línea de comandos ----------
   runCommand(raw: string) {
+    if (this.tool === "text" && this.textAt) {
+      const txt = raw.trim();
+      if (!txt) { this.textAt = null; this.log("Texto cancelado."); return; }
+      const m = this.model, t = { id: nextId(m), x: this.textAt.x, y: this.textAt.y, text: txt, size: this.defaults.textSize, rot: 0 };
+      this.snapshot();
+      m.texts.push(t);
+      this.textAt = null;
+      this.message = "Texto añadido. Haz clic para otro o Esc para terminar.";
+      this.changed();
+      return;
+    }
     const s = raw.trim().toUpperCase().replace(/\s+/g, "");
     if (!s) {
       if (this.draft && this.tool === "slab") { this.closeSlab(); return; }

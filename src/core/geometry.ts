@@ -97,8 +97,17 @@ export function bounds(m: Model): Bounds {
   for (const s of [...m.walls, ...m.lines, ...m.dims, ...(m.roofs ?? []), ...(m.stairs ?? [])]) { add(s.x1, s.y1); add(s.x2, s.y2); }
   for (const sl of m.slabs ?? []) for (const p of sl.pts) add(p.x, p.y);
   for (const f of m.furniture ?? []) add(f.x, f.y);
+  for (const t of m.texts ?? []) for (const p of textBox(t)) add(p.x, p.y);
   if (!isFinite(x0)) return { x0: -5, y0: -4, x1: 5, y1: 4 };
   return { x0: x0 - 1.5, y0: y0 - 1.5, x1: x1 + 1.5, y1: y1 + 1.5 };
+}
+
+/** Rectángulo aproximado que ocupa un texto (ancho medio de letra 0.6 de la altura), girado. */
+export function textBox(t: { x: number; y: number; text: string; size: number; rot: number }): Pt[] {
+  const w = Math.max(1, t.text.length) * t.size * 0.6, h = t.size, a = (t.rot * Math.PI) / 180, c = Math.cos(a), s = Math.sin(a);
+  // el eje y de la planta va hacia abajo: un giro antihorario en pantalla es (c, -s)
+  const P = (u: number, v: number) => ({ x: t.x + u * c + v * s, y: t.y - u * s + v * c });
+  return [P(0, 0.25 * h), P(w, 0.25 * h), P(w, -h), P(0, -h)];
 }
 
 /** ¿Está el punto dentro del polígono? (regla par-impar) */

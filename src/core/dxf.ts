@@ -63,6 +63,9 @@ export function toDxf(m: Model, rooms: RoomGrid | null): string {
       text("A-SECCIONES", { x: p.x - ux * sg * 0.35 + v.x * 0.3, y: p.y - uy * sg * 0.35 + v.y * 0.3 }, 0.3, label);
     }
   }
+  // textos alineados a la izquierda por su punto de inserción
+  for (const t of m.texts ?? [])
+    out.push("0", "TEXT", "8", "A-ANOTACION", "10", X(t.x), "20", Y(t.y), "30", "0", "40", String(t.size), "1", t.text, "50", t.rot.toFixed(2));
   for (const l of m.lines) line("A-ANOTACION", { x: l.x1, y: l.y1 }, { x: l.x2, y: l.y2 });
   for (const d of m.dims) {
     const g = dimGeom(d), sg = Math.sign(d.off || 1);

@@ -116,6 +116,18 @@ export interface Section {
   name: string;
 }
 
+/** Texto de anotación: (x, y) es el inicio de la línea base. */
+export interface Text {
+  id: number;
+  x: number;
+  y: number;
+  text: string;
+  /** Altura de letra en metros de modelo (0.25 m se lee bien a 1:100) */
+  size: number;
+  /** Giro en grados, en sentido antihorario */
+  rot: number;
+}
+
 /** Contenido de un nivel (una planta). Los identificadores son únicos dentro del nivel. */
 export interface Model {
   walls: Wall[];
@@ -128,6 +140,7 @@ export interface Model {
   stairs: Stair[];
   furniture: Furniture[];
   sections: Section[];
+  texts: Text[];
   nid: number;
 }
 
@@ -177,7 +190,7 @@ export const LAYERS: Layer[] = [
   { id: "secciones", name: "A-SECCIONES", label: "Secciones", tok: "--fg" },
 ];
 
-export const emptyModel = (): Model => ({ walls: [], openings: [], lines: [], dims: [], rooms: [], slabs: [], roofs: [], stairs: [], furniture: [], sections: [], nid: 1 });
+export const emptyModel = (): Model => ({ walls: [], openings: [], lines: [], dims: [], rooms: [], slabs: [], roofs: [], stairs: [], furniture: [], sections: [], texts: [], nid: 1 });
 
 export const newLevel = (name: string, elev: number, content: Model = emptyModel()): Level => ({ ...content, name, elev });
 
@@ -199,6 +212,7 @@ export function normalizeModel(raw: unknown): Model {
   m.stairs = m.stairs ?? [];
   m.furniture = m.furniture ?? [];
   m.sections = m.sections ?? [];
+  m.texts = m.texts ?? [];
   return m;
 }
 
