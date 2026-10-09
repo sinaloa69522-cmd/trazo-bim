@@ -1,21 +1,22 @@
 import { bounds, dimOffset, dir, distSeg, dimGeom, fits, loc, onSlab, pointInPolygon, polygonArea, roofGeom, stairSteps, textBox, type Pt } from "../core/geometry";
 import {
   attachWalls, cloneModel, emptyProject, newLevel, nextId, nextSectionName, normalizeProject, sampleProject, type Level, type Project, type ProjectInfo,
-  type LayerId, type Model, type RoofKind, type Wall,
+  type LayerId, type Model, type RoofKind, type RunSystem, type Wall,
 } from "../core/model";
 import { parseDxf } from "../core/dxfImport";
 import { FURNITURE, furnitureDef, furnitureOutline } from "../core/furniture";
+import { autoRoute, discOfSystem, isElectric, MEP, mepDef, mepOf, runLength, sanitaryPoints, systemDef, type Discipline } from "../core/mep";
 import { extend, offset, trim, type Linear } from "../core/modify";
 import { GENERIC, wallType } from "../core/wallTypes";
 import { computeRooms, roomAt, type RoomGrid } from "../core/rooms";
 import { deleteElements, reflection, transformElements, translation, type Xform } from "../core/transform";
 
-export type Tool = "select" | "wall" | "door" | "window" | "line" | "dim" | "room" | "move" | "copy" | "mirror" | "trim" | "extend" | "offset" | "slab" | "roof" | "stair" | "furniture" | "section" | "hole" | "text";
+export type Tool = "select" | "wall" | "door" | "window" | "line" | "dim" | "room" | "move" | "copy" | "mirror" | "trim" | "extend" | "offset" | "slab" | "roof" | "stair" | "furniture" | "section" | "hole" | "text" | "fixture" | "run";
 /** Herramientas que actúan pulsando directamente sobre un muro o una línea. */
 const PICK_TOOLS: Tool[] = ["trim", "extend", "offset"];
 /** Herramientas que actúan sobre la selección actual. */
 const MODIFY_TOOLS: Tool[] = ["move", "copy", "mirror"];
-export type SelType = "wall" | "opening" | "line" | "dim" | "room" | "slab" | "roof" | "stair" | "furniture" | "section" | "text";
+export type SelType = "wall" | "opening" | "line" | "dim" | "room" | "slab" | "roof" | "stair" | "furniture" | "section" | "text" | "fixture" | "run";
 export interface Selection { type: SelType; id: number }
 export interface SnapPt extends Pt { kind: "end" | "mid" | null }
 export interface OpeningCandidate { w: Wall; t: number; ok: boolean }
@@ -46,7 +47,14 @@ const COMMANDS: Record<string, Tool> = {
   LO: "slab", LOSA: "slab", TR: "trim", RECORTAR: "trim", AL: "extend", ALARGAR: "extend", DE: "offset", DESFASE: "offset", EQ: "offset", EQUIDISTANCIA: "offset",
   CU: "roof", CUBIERTA: "roof", TEJADO: "roof", ES: "stair", ESCALERA: "stair", MB: "furniture", MOBILIARIO: "furniture", MUEBLE: "furniture",
   HL: "hole", HUECO: "hole", TX: "text", TEXTO: "text", SE: "section", SECCION: "section", "SECCIÓN": "section", CORTE: "section",
+  TU: "run", TUBERIA: "run", "TUBERÍA": "run", CANALIZACION: "run", "CANALIZACIÓN": "run",
 };
+/** Comandos que abren la biblioteca de instalaciones de una disciplina. */
+const DISC_COMMANDS: Record<string, Discipline> = {
+  EL: "elec", ELECTRICIDAD: "elec", PL: "plum", PLOMERIA: "plum", "PLOMERÍA": "plum", FO: "plum", FONTANERIA: "plum", "FONTANERÍA": "plum",
+};
+/** Capa en la que va cada disciplina. */
+export const DISC_LAYER: Record<Discipline, LayerId> = { elec: "electricidad", plum: "plomeria" };
 
 /**
  * Estado del editor y toda la lógica de interacción, sin DOM.
@@ -60,8 +68,8 @@ export class Editor {
   get model(): Level { return this.project.levels[this.active]; }
   set model(m: Model) { this.project.levels[this.active] = { ...this.model, ...m }; }
   rooms: RoomGrid | null = null;
-  vis: Record<LayerId, boolean> = { muros: true, puertas: true, ventanas: true, cotas: true, anot: true, hab: true, losas: true, cubiertas: true, escaleras: true, mobiliario: true, secciones: true };
-  defaults = { wallType: GENERIC, thick: 0.15, height: 2.7, doorW: 0.9, doorH: 2.1, winW: 1.2, winH: 1.2, sill: 0.9, slabThick: 0.2, roofKind: "gable" as RoofKind, pitch: 30, overhang: 0.5, stairW: 1, furnKind: "bed2", furnRot: 0, textSize: 0.25 };
+  vis: Record<LayerId, boolean> = { muros: true, puertas: true, ventanas: true, cotas: true, anot: true, hab: true, losas: true, cubiertas: true, escaleras: true, mobiliario: true, secciones: true, electricidad: true, plomeria: true };
+  defaults = { wallType: GENERIC, thick: 0.15, height: 2.7, doorW: 0.9, doorH: 2.1, winW: 1.2, winH: 1.2, sill: 0.9, slabThick: 0.2, roofKind: "gable" as RoofKind, pitch: 30, overhang: 0.5, stairW: 1, furnKind: "bed2", furnRot: 0, textSize: 0.25, mepKind: "enchufe", mepRot: 0, runSys: "af" as RunSystem };
   tool: Tool = "select";
   /** Elementos seleccionados. */
   sels: Selection[] = [];
@@ -202,10 +210,10 @@ export class Editor {
   // ---------- consultas ----------
   wallById(id: number) { return this.model.walls.find((w) => w.id === id); }
   isSelected(type: SelType, id: number) { return this.sels.some((s) => s.type === type && s.id === id); }
-  selObj(): (Seg & { id: number }) | Model["openings"][number] | Model["rooms"][number] | Model["slabs"][number] | Model["roofs"][number] | Model["stairs"][number] | Model["furniture"][number] | Model["sections"][number] | Model["texts"][number] | null {
+  selObj(): (Seg & { id: number }) | Model["openings"][number] | Model["rooms"][number] | Model["slabs"][number] | Model["roofs"][number] | Model["stairs"][number] | Model["furniture"][number] | Model["sections"][number] | Model["texts"][number] | Model["fixtures"][number] | Model["runs"][number] | null {
     if (!this.sel) return null;
     const m = this.model;
-    const list = { wall: m.walls, line: m.lines, dim: m.dims, opening: m.openings, room: m.rooms, slab: m.slabs, roof: m.roofs, stair: m.stairs, furniture: m.furniture, section: m.sections, text: m.texts }[this.sel.type] as { id: number }[];
+    const list = { wall: m.walls, line: m.lines, dim: m.dims, opening: m.openings, room: m.rooms, slab: m.slabs, roof: m.roofs, stair: m.stairs, furniture: m.furniture, section: m.sections, text: m.texts, fixture: m.fixtures, run: m.runs }[this.sel.type] as { id: number }[];
     return (list.find((o) => o.id === this.sel!.id) as never) ?? null;
   }
   grips(): { k: 0 | 1 | "mid"; x: number; y: number }[] {
@@ -235,6 +243,8 @@ export class Editor {
       case "text": return this.textAt ? "TEXTO  Escribe el texto y pulsa Intro [Esc cancela]:" : `TEXTO  Punto de inserción (altura ${d.textSize.toFixed(2)} m):`;
       case "hole": return n ? "HUECO  Esquina opuesta del hueco:" : "HUECO EN LOSA  Primera esquina del hueco (dentro de una losa):";
       case "section": return n ? "SECCIÓN  Punto final de la línea de corte (se mira a su izquierda):" : "SECCIÓN  Primer punto de la línea de corte:";
+      case "fixture": return `${mepDef(d.mepKind).disc === "elec" ? "ELECTRICIDAD" : "PLOMERÍA"}  Haz clic para colocar ${mepDef(d.mepKind).label.toLowerCase()}${mepDef(d.mepKind).wall ? " (se pega al muro más cercano)" : ""} [R gira, Esc termina]:`;
+      case "run": return n < 2 ? `TUBERÍA  ${n ? "Siguiente" : "Primer"} punto (${systemDef(d.runSys).label.toLowerCase()}):` : "TUBERÍA  Siguiente punto [Enter termina]:";
       case "furniture": return `MOBILIARIO  Haz clic para colocar ${furnitureDef(d.furnKind).label.toLowerCase()} [R gira 90°, Esc termina]:`;
       case "trim": return "RECORTAR  Haz clic en el tramo de muro o línea que quieres quitar:";
       case "extend": return "ALARGAR  Haz clic cerca del extremo que quieres alargar:";
@@ -261,6 +271,8 @@ export class Editor {
       ventanas: m.openings.filter((o) => o.kind === "window").length,
       cotas: m.dims.length, anot: m.lines.length + m.texts.length, hab: m.rooms.length, losas: m.slabs.length,
       cubiertas: m.roofs.length, escaleras: m.stairs.length, mobiliario: m.furniture.length, secciones: m.sections.length,
+      electricidad: m.fixtures.filter((f) => mepDef(f.kind).disc === "elec").length + m.runs.filter((r) => r.system === "elec").length,
+      plomeria: m.fixtures.filter((f) => mepDef(f.kind).disc === "plum").length + m.runs.filter((r) => r.system !== "elec").length,
     };
   }
 
@@ -356,6 +368,12 @@ export class Editor {
     }
     if (this.vis.escaleras) for (const st of m.stairs) if (segHit(st)) found.push({ type: "stair", id: st.id });
     if (this.vis.secciones) for (const se of m.sections) if (segHit(se)) found.push({ type: "section", id: se.id });
+    for (const f of m.fixtures) if (this.fixtureVisible(f) && inside(f.x, f.y)) found.push({ type: "fixture", id: f.id });
+    for (const r of m.runs) {
+      if (!this.vis[DISC_LAYER[discOfSystem(r.system)]]) continue;
+      const segs = r.pts.slice(1).map((q, i) => ({ x1: r.pts[i].x, y1: r.pts[i].y, x2: q.x, y2: q.y }));
+      if (crossing ? segs.some(segHit) : r.pts.every((q) => inside(q.x, q.y))) found.push({ type: "run", id: r.id });
+    }
     const merged = additive ? [...this.sels] : [];
     for (const f of found) if (!merged.some((x) => x.type === f.type && x.id === f.id)) merged.push(f);
     this.sels = merged;
@@ -378,6 +396,11 @@ export class Editor {
         test(s.x1, s.y1, "end"); test(s.x2, s.y2, "end"); test((s.x1 + s.x2) / 2, (s.y1 + s.y2) / 2, "mid");
       }
       if (this.draft && !MODIFY_TOOLS.includes(this.tool)) for (const q of this.draft.pts) test(q.x, q.y, "end");
+      // las tuberías se enganchan a los puntos de las instalaciones y a los vértices de otros recorridos
+      if (this.tool === "run") {
+        for (const f of this.model.fixtures) test(f.x, f.y, "end");
+        for (const r of this.model.runs) for (const q of r.pts) test(q.x, q.y, "end");
+      }
       if (r) return r;
     }
     let x = wx, y = wy;
@@ -407,6 +430,11 @@ export class Editor {
     if (this.vis.cotas) for (const d of m.dims) { const g = dimGeom(d), r = distSeg(wx, wy, g.a.x, g.a.y, g.b.x, g.b.y); if (r.d < tol * 2) take(r.d, { type: "dim", id: d.id }); }
     if (this.vis.secciones) for (const se of m.sections) { const r = distSeg(wx, wy, se.x1, se.y1, se.x2, se.y2); if (r.d < tol) take(r.d, { type: "section", id: se.id }); }
     if (this.vis.escaleras) for (const st of m.stairs) { const r = distSeg(wx, wy, st.x1, st.y1, st.x2, st.y2); if (r.d < st.width / 2) take(r.d + 0.2, { type: "stair", id: st.id }); }
+    for (const f of m.fixtures) if (this.fixtureVisible(f)) { const d = Math.hypot(wx - f.x, wy - f.y); if (d < 0.2 + tol) take(d * 0.5, { type: "fixture", id: f.id }); }
+    for (const r of m.runs) if (this.vis[DISC_LAYER[discOfSystem(r.system)]]) for (let i = 1; i < r.pts.length; i++) {
+      const a = r.pts[i - 1], b = r.pts[i], q = distSeg(wx, wy, a.x, a.y, b.x, b.y);
+      if (q.d < tol) take(q.d + 0.25, { type: "run", id: r.id });
+    }
     if (this.vis.mobiliario) for (const f of m.furniture)
       if (pointInPolygon({ x: wx, y: wy }, furnitureOutline(f))) take(0.15 + Math.hypot(wx - f.x, wy - f.y) * 0.01, { type: "furniture", id: f.id });
     if (!best && this.vis.hab) { const r = roomAt(m, this.rooms, wx, wy); if (r) best = { type: "room", id: r.id }; }
@@ -503,6 +531,25 @@ export class Editor {
       this.draft = null;
       this.message = `Sección ${se.name}-${se.name}' creada. Mírala en Lámina › Secciones; Invertir en Propiedades cambia el lado que se ve.`;
       this.changed();
+      return;
+    }
+    if (this.tool === "fixture") {
+      const c = this.fixtureCandidate(p), d = mepDef(this.defaults.mepKind);
+      this.snapshot();
+      let circuit = d.circuit;
+      // las tomas de baños y cocinas van en su propio circuito
+      if (d.kind === "enchufe" && /baño|bano|aseo|cocina/i.test(roomAt(m, this.rooms, c.x, c.y)?.name ?? "")) circuit = "C5";
+      m.fixtures.push({ id: nextId(m), kind: d.kind, x: c.x, y: c.y, rot: c.rot, h: d.h, circuit });
+      this.message = `${d.label} colocado${circuit ? ` (circuito ${circuit})` : ""}. Haz clic para otro o Esc para terminar.`;
+      this.changed();
+      return;
+    }
+    if (this.tool === "run") {
+      if (!this.draft) { this.draft = { pts: [p] }; this.emit(); return; }
+      const last = this.draft.pts[this.draft.pts.length - 1];
+      // clic otra vez en el último punto: termina
+      if (Math.hypot(p.x - last.x, p.y - last.y) < 0.05) { this.finishRun(); return; }
+      this.draft.pts.push(p); this.emit();
       return;
     }
     if (this.tool === "furniture") {
@@ -629,6 +676,100 @@ export class Editor {
   /** Lista de piezas de la biblioteca. */
   get furnitureCatalog() { return FURNITURE; }
 
+  // ---------- instalaciones ----------
+  /** Lista de mecanismos y puntos de la biblioteca de instalaciones. */
+  get mepCatalog() { return MEP; }
+  /** ¿Se ve la capa de la disciplina de ese tipo de punto? */
+  fixtureVisible(f: Pick<Model["fixtures"][number], "kind" | "circuit">) { return this.vis[DISC_LAYER[mepDef(f.kind).disc]] || (this.vis.electricidad && isElectric(f)); }
+  /** Elige el mecanismo o punto que se colocará y activa la herramienta. */
+  pickFixture(kind: string) {
+    this.defaults.mepKind = kind;
+    this.vis[DISC_LAYER[mepDef(kind).disc]] = true;
+    if (this.tool !== "fixture") this.setTool("fixture"); else this.emit();
+  }
+  /** Abre la biblioteca de una disciplina, conservando el último tipo elegido si es de ella. */
+  pickDiscipline(disc: Discipline) {
+    this.pickFixture(mepDef(this.defaults.mepKind).disc === disc ? this.defaults.mepKind : mepOf(disc)[disc === "elec" ? 4 : 0].kind);
+  }
+  /** Elige la red de la tubería que se va a dibujar. */
+  pickSystem(sys: RunSystem) {
+    this.defaults.runSys = sys;
+    this.vis[DISC_LAYER[discOfSystem(sys)]] = true;
+    if (this.tool !== "run") this.setTool("run"); else this.emit();
+  }
+  /**
+   * Dónde quedaría el punto bajo el cursor: los mecanismos de pared se pegan a la cara del muro
+   * más cercano (a menos de 0,5 m) y se giran mirando a la habitación.
+   */
+  fixtureCandidate(p: Pt): { x: number; y: number; rot: number } {
+    const d = mepDef(this.defaults.mepKind), free = { x: p.x, y: p.y, rot: this.defaults.mepRot };
+    if (!d.wall) return free;
+    let best: { w: Wall; t: number; d: number } | null = null;
+    for (const w of this.model.walls) { const r = distSeg(p.x, p.y, w.x1, w.y1, w.x2, w.y2); if (r.d < 0.5 + w.thick / 2 && (!best || r.d < best.d)) best = { w, t: r.t, d: r.d }; }
+    if (!best) return free;
+    const { w, t } = best, { L, ux, uy } = dir(w), nx = -uy, ny = ux;
+    const sd = (p.x - w.x1) * nx + (p.y - w.y1) * ny >= 0 ? 1 : -1;
+    const s = Math.max(0.15, Math.min(L - 0.15, Math.round(t * L * 20) / 20));
+    const q = loc(w, s, sd * (w.thick / 2 + 0.07));
+    // el +y local del símbolo, (-sen a, cos a), debe apuntar hacia fuera del muro
+    const rot = (Math.round((Math.atan2(-nx * sd, ny * sd) * 180) / Math.PI) + 360) % 360;
+    return { x: Math.round(q.x * 1000) / 1000, y: Math.round(q.y * 1000) / 1000, rot };
+  }
+  /** Gira 90° el punto que se va a colocar (solo los que no van pegados a un muro). */
+  rotateFixturePreview() { this.defaults.mepRot = (this.defaults.mepRot + 90) % 360; this.log(`Giro ${this.defaults.mepRot}°.`); }
+  /** Termina la tubería en curso; con un solo punto no crea nada. */
+  finishRun() {
+    const pts = this.draft?.pts ?? [];
+    this.draft = null;
+    if (pts.length < 2) { this.log("Comando terminado."); return; }
+    this.snapshot();
+    const r = { id: nextId(this.model), system: this.defaults.runSys, pts: pts.map((q) => ({ x: q.x, y: q.y })) };
+    this.model.runs.push(r);
+    this.message = `${systemDef(r.system).label}: ${runLength(r).toFixed(2)} m. Haz clic para empezar otra o Esc para terminar.`;
+    this.changed();
+  }
+  /** Coloca las tomas de agua y los desagües que les falten a los aparatos sanitarios del nivel. */
+  placeSanitaryPoints() {
+    const m = this.model, todo = m.furniture.flatMap(sanitaryPoints)
+      .filter((q) => !m.fixtures.some((f) => f.kind === q.kind && Math.hypot(f.x - q.x, f.y - q.y) < 0.05));
+    if (!todo.length) { this.log(m.furniture.some((f) => sanitaryPoints(f).length) ? "Todos los aparatos ya tienen sus tomas." : "No hay aparatos sanitarios en este nivel. Colócalos desde Mobiliario."); return; }
+    this.snapshot();
+    for (const q of todo) m.fixtures.push({ id: nextId(m), kind: q.kind, x: q.x, y: q.y, rot: 0, h: mepDef(q.kind).h, circuit: "" });
+    this.vis.plomeria = true;
+    this.message = `${todo.length} tomas y desagües colocados en los aparatos sanitarios.`;
+    this.changed();
+  }
+  /** Pone un punto de luz en el centro de cada habitación cerrada que no tenga ninguno. */
+  placeRoomLights() {
+    const m = this.model, rg = this.rooms, made: { x: number; y: number }[] = [];
+    for (const r of m.rooms) {
+      const c = rg?.rooms.get(r.id);
+      if (!c?.ok || m.fixtures.some((f) => f.kind === "luz" && roomAt(m, rg, f.x, f.y)?.id === r.id)) continue;
+      made.push({ x: Math.round(c.cx * 100) / 100, y: Math.round(c.cy * 100) / 100 });
+    }
+    if (!made.length) { this.log(m.rooms.length ? "Todas las habitaciones tienen ya punto de luz." : "Define antes las habitaciones con la herramienta Habitación."); return; }
+    this.snapshot();
+    for (const q of made) m.fixtures.push({ id: nextId(m), kind: "luz", ...q, rot: 0, h: mepDef("luz").h, circuit: "C1" });
+    this.vis.electricidad = true;
+    this.message = `${made.length} puntos de luz colocados en el centro de las habitaciones.`;
+    this.changed();
+  }
+  /** Sustituye los recorridos de la disciplina por un trazado automático esquemático. */
+  routeDiscipline(disc: Discipline) {
+    const m = this.model, runs = autoRoute(m.fixtures, disc);
+    if (!runs.length) {
+      this.log(disc === "elec" ? "Coloca un cuadro general y algún mecanismo para trazar los circuitos." : "Hace falta una llave de paso (o contador), un termo o una bajante, y tomas o desagües que unir.");
+      return;
+    }
+    this.snapshot();
+    m.runs = m.runs.filter((r) => discOfSystem(r.system) !== disc);
+    for (const r of runs) m.runs.push({ id: nextId(m), ...r });
+    this.vis[DISC_LAYER[disc]] = true;
+    const L = runs.reduce((s, r) => s + runLength(r), 0);
+    this.message = disc === "elec" ? `${runs.length} circuitos trazados desde el cuadro (${L.toFixed(1)} m de canalización).` : `${runs.length} recorridos de agua y saneamiento trazados (${L.toFixed(1)} m).`;
+    this.changed();
+  }
+
   /** Cierra el contorno de la losa en curso y la crea. */
   closeSlab() {
     const pts = this.draft?.pts ?? [];
@@ -642,7 +783,10 @@ export class Editor {
     this.changed();
   }
 
-  finishDraft() { if (this.draft) { this.draft = null; this.log("Comando terminado."); } }
+  finishDraft() {
+    if (this.draft && this.tool === "run") { this.finishRun(); return; }
+    if (this.draft) { this.draft = null; this.log("Comando terminado."); }
+  }
 
   /** Muro o línea bajo el cursor. */
   pickLinear(wx: number, wy: number): Linear | null {
@@ -727,11 +871,13 @@ export class Editor {
       if (this.lastCmd) this.runCommand(this.lastCmd);
       return;
     }
+    if (DISC_COMMANDS[s]) { this.lastCmd = s; this.pickDiscipline(DISC_COMMANDS[s]); return; }
     if (COMMANDS[s]) { this.lastCmd = s; this.setTool(COMMANDS[s]); if (this.tool === COMMANDS[s]) this.log(`Comando: ${s}`); return; }
     if (s === "B" || s === "BORRAR") return this.deleteSel();
     if (s === "U" || s === "DESHACER") return this.undo();
     if (s === "Z" || s === "ZOOM" || s === "ENCUADRAR") { this.fitRequest?.(); return; }
     if (this.tool === "furniture" && (s === "R" || s === "GIRAR")) { this.rotateFurniturePreview(); return; }
+    if (this.tool === "fixture" && (s === "R" || s === "GIRAR")) { this.rotateFixturePreview(); return; }
     const num = s.replace(",", ".");
     if (this.tool === "offset" && /^\d*\.?\d+$/.test(num)) {
       const v = parseFloat(num);
@@ -739,7 +885,7 @@ export class Editor {
       return;
     }
     const lengthOk = this.draft?.pts.length &&
-      (["wall", "line", "move", "copy", "mirror", "slab", "stair"].includes(this.tool) || (this.tool === "dim" && this.draft.pts.length === 1));
+      (["wall", "line", "move", "copy", "mirror", "slab", "stair", "run"].includes(this.tool) || (this.tool === "dim" && this.draft.pts.length === 1));
     if (/^-?\d*\.?\d+$/.test(num) && lengthOk) {
       const L = parseFloat(num), from = this.draft!.pts[this.draft!.pts.length - 1], p = this.snap ?? this.mouse;
       let dx = p.x - from.x, dy = p.y - from.y;

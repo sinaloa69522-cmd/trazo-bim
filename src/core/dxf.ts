@@ -1,4 +1,5 @@
 import { furnitureStrokes } from "./furniture";
+import { fixtureStrokes, fixtureTextAt, mepDef } from "./mep";
 import { dimGeom, dir, loc, pieces, roofGeom, stairSteps, type Pt } from "./geometry";
 import type { Model } from "./model";
 import type { RoomGrid } from "./rooms";
@@ -62,6 +63,18 @@ export function toDxf(m: Model, rooms: RoomGrid | null): string {
       line("A-SECCIONES", p, { x: p.x + v.x * 0.5, y: p.y + v.y * 0.5 });
       text("A-SECCIONES", { x: p.x - ux * sg * 0.35 + v.x * 0.3, y: p.y - uy * sg * 0.35 + v.y * 0.3 }, 0.3, label);
     }
+  }
+  // instalaciones: cada red en su capa
+  const RUN_LAYER = { elec: "E-ELECTRICIDAD", af: "P-AGUA-FRIA", ac: "P-AGUA-CALIENTE", san: "P-SANEAMIENTO" } as const;
+  for (const r of m.runs ?? []) for (let i = 1; i < r.pts.length; i++) line(RUN_LAYER[r.system], r.pts[i - 1], r.pts[i]);
+  for (const fx of m.fixtures ?? []) {
+    const d = mepDef(fx.kind), lay = d.disc === "elec" ? "E-ELECTRICIDAD" : "P-FONTANERIA";
+    for (const k of fixtureStrokes(fx)) {
+      const n = k.closed ? k.pts.length : k.pts.length - 1;
+      for (let i = 0; i < n; i++) line(lay, k.pts[i], k.pts[(i + 1) % k.pts.length]);
+    }
+    if (d.text) text(lay, fixtureTextAt(fx), 0.08, d.text);
+    if (fx.circuit && d.disc === "elec") text(lay, { x: fx.x + 0.18, y: fx.y - 0.12 }, 0.08, fx.circuit);
   }
   // textos alineados a la izquierda por su punto de inserción
   for (const t of m.texts ?? [])
