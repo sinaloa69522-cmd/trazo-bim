@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { DECK_TYPES, deckBoxes, deckFraming, deckGeom, deckTakeoff } from "../decks";
+import { DECK_TYPES, deckBoxes, deckFraming, deckGeom, deckTakeoff, fitDecks, STEP_DOWN } from "../decks";
+import { gradeLevel } from "../foundation";
 import { normalizeProject, sampleProject, type Deck } from "../model";
 import { budget } from "../budget";
 import { IN } from "../units";
@@ -66,5 +67,23 @@ describe("decks y porches", () => {
     delete old.levels[0].decks;
     expect(normalizeProject(old).levels[0].decks).toEqual([]);
     expect(budget(p).chapters.flatMap((c) => c.items).some((i) => i.desc === "Deck de madera tratada")).toBe(true);
+  });
+
+  it("pegado a la casa, su piso queda 1\" bajo el de la casa y apoya en el terreno", () => {
+    for (const f of ["slab", "crawl"] as const) {
+      const p = { ...sampleProject(), foundation: f }, d = make(), free = make({ id: 2, y1: 30, y2: 33 });
+      p.levels[0].decks = [d, free];
+      fitDecks(p);
+      const gr = gradeLevel(p);
+      expect(gr + d.height).toBeCloseTo(p.levels[0].elev - STEP_DOWN, 6);
+      expect(free.height).toBeCloseTo(30 * IN, 6);
+      const bs = deckBoxes(d, p.levels[0].walls, gr);
+      expect(Math.max(...bs.map((b) => Math.max(b.a.z, b.b.z) + b.h / 2))).toBeGreaterThan(p.levels[0].elev);
+      expect(Math.min(...bs.map((b) => Math.min(b.a.z, b.b.z)))).toBeLessThan(gr + 0.03);
+    }
+    const p = sampleProject(), d = make({ matchFloor: false, height: 1 });
+    p.levels[0].decks = [d];
+    fitDecks(p);
+    expect(d.height).toBe(1);
   });
 });

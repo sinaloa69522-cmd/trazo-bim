@@ -1,5 +1,5 @@
 import type { MemberKind } from "../core/framing";
-import { deckGeom, deckType } from "../core/decks";
+import { deckGeom, deckType, fitDecks } from "../core/decks";
 import { bounds, dimOffset, dir, distSeg, dimGeom, fits, loc, onSlab, pointInPolygon, polygonArea, roofGeom, stairSteps, textBox, type Pt } from "../core/geometry";
 import {
   attachWalls, liftBuriedRoofs, cloneModel, emptyProject, newLevel, nextId, nextSectionName, normalizeProject, sampleProject, type Level, type Project, type ProjectInfo,
@@ -130,6 +130,7 @@ export class Editor {
   constructor(private storage: Storage | null = null) {
     const saved = this.load();
     this.project = saved ?? sampleProject();
+    fitDecks(this.project);
     if (this.project.units === "imperial") Object.assign(this.defaults, US_DEFAULTS);
     this.loadImages();
     this.rooms = computeRooms(this.model);
@@ -149,6 +150,7 @@ export class Editor {
     attachWalls(this.project);
     // una cubierta que ha quedado dentro de la planta de arriba sube a coronarla
     if (liftBuriedRoofs(this.project)) this.message += " La cubierta ha subido a la planta de arriba.";
+    fitDecks(this.project);
     this.rooms = computeRooms(this.model);
     this.save();
     this.modelListeners.forEach((f) => f());

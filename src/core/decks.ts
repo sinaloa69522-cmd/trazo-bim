@@ -3,7 +3,8 @@
 // que toca la casa lleva ledger y no lleva barandal.
 import { distSeg, type P3, type Pt } from "./geometry";
 import type { Member } from "./framing";
-import type { Deck, DeckKind, RailKind, Wall } from "./model";
+import { gradeLevel } from "./foundation";
+import type { Deck, DeckKind, Project, RailKind, Wall } from "./model";
 import { FT, IN } from "./units";
 
 export interface DeckType {
@@ -318,4 +319,22 @@ export function deckTakeoff(d: Deck, walls: Wall[]) {
     handrail: g.handrails.reduce((t, [a, b]) => t + Math.hypot(b.x - a.x, b.y - a.y), 0),
     risers: g.steps?.n ?? 0,
   };
+}
+
+/** Escalón entre el piso de la casa y el del deck pegado a ella (step-down de 1", para que no entre el agua). */
+export const STEP_DOWN = 1 * IN;
+
+/**
+ * Los decks pegados a la casa toman la altura de su piso: 1" por debajo del piso terminado del nivel, medida
+ * desde el terreno. Los exentos y los de altura fijada a mano no cambian. Devuelve si alguno cambió.
+ */
+export function fitDecks(p: Project): boolean {
+  const gr = gradeLevel(p);
+  let changed = false;
+  for (const lv of p.levels) for (const d of lv.decks ?? []) {
+    if (d.matchFloor === false || deckGeom(d, lv.walls).house === null) continue;
+    const h = Math.max(0.05, lv.elev - gr - STEP_DOWN);
+    if (Math.abs(d.height - h) > 1e-6) { d.height = h; changed = true; }
+  }
+  return changed;
 }

@@ -3,7 +3,7 @@
 import { dir, loc, roofGeom, type P3 } from "./geometry";
 import type { Project, Roof, Wall } from "./model";
 import { deckFraming } from "./decks";
-import { foundation, foundationType } from "./foundation";
+import { foundation, foundationType, gradeLevel } from "./foundation";
 import { ceilingSystem, depthOf, floorJoistDepth, floorSystem, SUBFLOOR } from "./joists";
 import { floorJoist, headerSize, isExterior, rafterSize } from "./permit";
 import { IN } from "./units";
@@ -50,7 +50,7 @@ export function framing(p: Project): Member[] {
     // en los hastiales, los montantes arrancan sobre el rim joist del techo
     const rimH = Math.max(0, ...ceil.filter((m) => m.kind === "rim").map((m) => m.h));
     for (const r of lv.roofs) out.push(...roofFrame(r, e, lv.walls, rimH));
-    for (const dk of lv.decks ?? []) out.push(...deckFraming(dk, lv.walls, e));
+    for (const dk of lv.decks ?? []) out.push(...deckFraming(dk, lv.walls, gradeLevel(p)));
   });
   return out;
 }
