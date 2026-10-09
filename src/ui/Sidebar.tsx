@@ -221,6 +221,7 @@ function Properties({ ed, onFocusCommand }: { ed: Editor; onFocusCommand: () => 
       <NumberField id={`${key}-b`} label="Arranque (m)" value={r.base} min={0} onCommit={(v) => ed.edit(() => { r.base = v; })} />
       <FinishPicker label="Material de cubierta" list={ROOFINGS} value={r.finish} none={r.kind === "flat" ? "Sin definir" : "Teja cerámica (por defecto)"}
         onChange={(f) => ed.setFinish([r.id], f, "roof")} />
+      {ed.levelAbove() && <button className="btn full" onClick={() => ed.moveRoofUp(r.id)} title="La cubierta pasa a coronar el nivel de encima">Subir al nivel de arriba</button>}
     </>;
   } else if (sel && o && sel.type === "stair") {
     const st = o as Model["stairs"][number], k = stairSteps(st);

@@ -69,10 +69,29 @@ describe("duplicar la planta de arriba", () => {
     ed.addLevel(true);
     expect(ed.project.levels[0].roofs).toHaveLength(0);
     expect(ed.project.levels[1].roofs).toHaveLength(1);
-    // duplicar una planta intermedia no toca la cubierta
+    // la copia de una planta intermedia también va arriba del todo, y la cubierta sube con ella
     ed.setActiveLevel(0);
     ed.addLevel(true);
+    expect(ed.project.levels[1].roofs).toHaveLength(0);
+    expect(ed.project.levels[2].roofs).toHaveLength(1);
+  });
+
+  it("un nivel nuevo vacío también se lleva la cubierta", () => {
+    const ed = new Editor();
+    ed.addLevel(false);
+    expect(ed.project.levels[0].roofs).toHaveLength(0);
     expect(ed.project.levels[1].roofs).toHaveLength(1);
-    expect(ed.project.levels[2].roofs).toHaveLength(0);
+  });
+
+  it("una cubierta que quedó abajo se puede subir al nivel de arriba", () => {
+    const ed = new Editor();
+    ed.addLevel(true);
+    const up = ed.project.levels[1], r = up.roofs.pop()!;
+    ed.project.levels[0].roofs.push(r);
+    ed.setActiveLevel(0);
+    ed.moveRoofUp(r.id);
+    expect(ed.project.levels[0].roofs).toHaveLength(0);
+    expect(up.roofs).toHaveLength(1);
+    expect(up.roofs[0].base).toBeCloseTo(Math.max(...up.walls.map((w) => w.height)));
   });
 });
