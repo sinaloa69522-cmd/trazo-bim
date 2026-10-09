@@ -163,6 +163,8 @@ export function drawPlan(ctx: CanvasRenderingContext2D, ed: Editor, C: PlanColor
     const hl = isSel("roof", r.id) || (hover?.type === "roof" && hover.id === r.id);
     drawRoof(ctx, ed, r, hl ? C.accent : C.door, hl ? 2 : 1);
   }
+  // las secciones cortan todo el edificio: las de otros niveles también se marcan, sin poder seleccionarlas
+  if (ed.vis.secciones) for (const lv of ed.project.levels) if (lv !== m) for (const se of lv.sections) drawSection(ctx, ed, se, C.fg, 1);
   if (ed.vis.secciones) for (const se of m.sections) {
     const hl = isSel("section", se.id) || (hover?.type === "section" && hover.id === se.id);
     drawSection(ctx, ed, se, hl ? C.accent : C.fg, hl ? 2 : 1);
