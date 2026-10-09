@@ -37,6 +37,16 @@ function Dots({ children, fill = "#e3e3e3", r = 0.18, gap = 1 }: { children: (ur
   );
 }
 
+/** Rayado cruzado del bloque de concreto. */
+function CrossHatch() {
+  const id = `x${useId().replace(/:/g, "")}`;
+  return (
+    <Sym defs={<pattern id={id} width={0.9} height={0.9} patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width={0.9} height={0.9} fill="#fff" stroke="none" /><path d="M0 0V.9M0 0H.9" stroke={INK} strokeWidth={0.1} /></pattern>}>
+      <rect x={1} y={0.8} width={12} height={3.4} fill={`url(#${id})`} strokeWidth={0.15} /><path d="M7 .8v3.4" strokeWidth={0.15} />
+    </Sym>
+  );
+}
+
 const T = ({ x = 7, y = 3.2, s = 1.6, children, w = 600 }: { x?: number; y?: number; s?: number; children: ReactNode; w?: number }) => (
   <text x={x} y={y} fontSize={s} fontWeight={w} textAnchor="middle" fill={INK} stroke="none" fontFamily="'IBM Plex Sans Condensed','Arial Narrow',sans-serif">{children}</text>
 );
@@ -111,6 +121,7 @@ const S = {
   earth: () => <Hatch gap={0.6}>{(u) => <rect x={1} y={0.8} width={12} height={3.4} fill={u} stroke="none" />}</Hatch>,
   batt: () => <Sym><rect x={1} y={0.8} width={12} height={3.4} strokeWidth={0.12} /><path d="M1 4.2L2 .8 3 4.2 4 .8 5 4.2 6 .8 7 4.2 8 .8 9 4.2 10 .8 11 4.2 12 .8 13 4.2" strokeWidth={0.12} /></Sym>,
   lumber: () => <Sym><rect x={1} y={1} width={12} height={3} strokeWidth={0.15} /><path d="M1 1l12 3M1 4l12-3" strokeWidth={0.12} /></Sym>,
+  cmu: () => <CrossHatch />,
   sheathing: () => <Sym><rect x={1} y={2} width={12} height={1} fill="#c9b48a" strokeWidth={0.12} /></Sym>,
 };
 
@@ -222,13 +233,16 @@ const ROWS: Record<string, Row[]> = {
   ],
 };
 ROWS.elev = ROWS.fach;
+ROWS.details2 = [ROWS.details[0], [S.cmu, "Bloque de concreto (CMU)", "CONCRETE MASONRY UNIT (CMU)"], ...ROWS.details.slice(1)];
+ROWS.details3 = [...ROWS.details];
+ROWS.notes = [...ROWS.notes.slice(0, 1), [S.cmu, "Bloque de concreto (CMU)", "CONCRETE MASONRY UNIT (CMU)"], ...ROWS.notes.slice(1)];
 
 /** Bloque «Leyenda y símbolos» de una lámina; nada si la lámina no tiene símbolos propios. */
 export function SheetLegend({ content }: { content: string }) {
   const rows = ROWS[content];
   if (!rows) return null;
   return <>
-    <h4>{content === "notes" || content === "details" ? L("Materiales", "Material legend") : L("Leyenda y símbolos", "Legend & symbols")}</h4>
+    <h4>{content === "notes" || content.startsWith("details") ? L("Materiales", "Material legend") : L("Leyenda y símbolos", "Legend & symbols")}</h4>
     <table className="legend symleg"><tbody>
       {rows.map(([draw, es, en], i) => <tr key={i}><td>{draw()}</td><td>{L(es, en)}</td></tr>)}
     </tbody></table>

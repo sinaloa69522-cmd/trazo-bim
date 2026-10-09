@@ -7,10 +7,12 @@ import { ABBREVIATIONS, CODES, DEFERRED, DESIGN_CRITERIA, GENERAL_NOTES, SCOPE, 
 import type { Editor } from "../editor/Editor";
 import { SheetLegend } from "./SheetLegend";
 
-export type PermitKind = "cover" | "notes" | "site" | "found" | "floorfr" | "wallfr" | "rooffr" | "details" | "hvac";
-export const PERMIT_KINDS: PermitKind[] = ["cover", "notes", "site", "found", "floorfr", "wallfr", "rooffr", "details", "hvac"];
+export type PermitKind = "cover" | "notes" | "site" | "found" | "floorfr" | "wallfr" | "rooffr" | "details" | "details2" | "details3" | "hvac";
+export const PERMIT_KINDS: PermitKind[] = ["cover", "notes", "site", "found", "floorfr", "wallfr", "rooffr", "details", "details2", "details3", "hvac"];
 /** Láminas sin dibujo de planta: se maquetan en HTML/SVG. */
-export const TEXT_SHEETS = ["cover", "notes", "details"];
+export const TEXT_SHEETS = ["cover", "notes", "details", "details2", "details3"];
+/** Láminas de detalles constructivos (A-501, A-502, A-503). */
+export const isDetails = (c: string) => c.startsWith("details");
 
 /** Título de cada lámina en inglés (y en qué menú sale en español). */
 export const SHEET_TITLES: Record<string, { en: string; es: string }> = {
@@ -26,6 +28,8 @@ export const SHEET_TITLES: Record<string, { en: string; es: string }> = {
   elev: { en: "Exterior Elevations", es: "Alzados" },
   sec: { en: "Building Sections", es: "Secciones" },
   details: { en: "Typical Details", es: "Detalles típicos" },
+  details2: { en: "Foundation Details", es: "Detalles de cimentación" },
+  details3: { en: "Stair, Window & Deck Details", es: "Detalles de escalera, ventana y deck" },
   elec: { en: "Electrical Plan", es: "Electricidad" },
   plum: { en: "Plumbing Plan", es: "Plomería" },
   hvac: { en: "Mechanical (HVAC) Plan", es: "HVAC (aire acondicionado)" },
@@ -126,7 +130,7 @@ export function PermitSide({ ed, content, level, set = [] }: { ed: Editor; conte
     <div className="tables">
       {tables}
       <SheetLegend content={content} />
-      {notes && <><h4>{content === "details" ? "Notes" : `${SHEET_TITLES[content]?.en ?? ""} notes`}</h4><NotesList notes={notes} /></>}
+      {notes && <><h4>{isDetails(content) ? "Notes" : `${SHEET_TITLES[content]?.en ?? ""} notes`}</h4><NotesList notes={notes} /></>}
     </div>
   );
 }
@@ -183,26 +187,26 @@ export function NotesBody({ box }: { box: { x: number; y: number; w: number; h: 
 
 // ---------- detalles típicos (SVG en mm, medidas en pulgadas) ----------
 
-type XY = [number, number];
-interface Frame { ox: number; oy: number; k: number }
-const map = (f: Frame, [x, y]: XY): XY => [f.ox + x * f.k, f.oy - y * f.k];
+export type XY = [number, number];
+export interface Frame { ox: number; oy: number; k: number }
+export const map = (f: Frame, [x, y]: XY): XY => [f.ox + x * f.k, f.oy - y * f.k];
 const pts = (f: Frame, ps: XY[]) => ps.map((p) => map(f, p).map((v) => v.toFixed(2)).join(",")).join(" ");
 
-function Shape({ f, p, fill = "none", w = 0.3, dash }: { f: Frame; p: XY[]; fill?: string; w?: number; dash?: string }) {
+export function Shape({ f, p, fill = "none", w = 0.3, dash }: { f: Frame; p: XY[]; fill?: string; w?: number; dash?: string }) {
   return <polygon points={pts(f, p)} fill={fill} stroke="#111" strokeWidth={w} strokeDasharray={dash} />;
 }
-function Ln({ f, p, w = 0.25, dash }: { f: Frame; p: XY[]; w?: number; dash?: string }) {
+export function Ln({ f, p, w = 0.25, dash }: { f: Frame; p: XY[]; w?: number; dash?: string }) {
   return <polyline points={pts(f, p)} fill="none" stroke="#111" strokeWidth={w} strokeDasharray={dash} />;
 }
-const box = (x0: number, y0: number, x1: number, y1: number): XY[] => [[x0, y0], [x1, y0], [x1, y1], [x0, y1]];
+export const box = (x0: number, y0: number, x1: number, y1: number): XY[] => [[x0, y0], [x1, y0], [x1, y1], [x0, y1]];
 /** Aislamiento en zigzag dentro de un hueco vertical. */
-function Batt({ f, x0, x1, y0, y1 }: { f: Frame; x0: number; x1: number; y0: number; y1: number }) {
+export function Batt({ f, x0, x1, y0, y1 }: { f: Frame; x0: number; x1: number; y0: number; y1: number }) {
   const step = (x1 - x0) * 0.6, p: XY[] = [];
   for (let y = y0, i = 0; y <= y1; y += step / 2, i++) p.push([i % 2 ? x1 - 0.3 : x0 + 0.3, y]);
   return <Ln f={f} p={p} w={0.15} />;
 }
 /** Nota con línea de llamada: del punto del dibujo al texto en la columna de notas. */
-function Note({ f, at, y, x, text }: { f: Frame; at: XY; y: number; x: number; text: string }) {
+export function Note({ f, at, y, x, text }: { f: Frame; at: XY; y: number; x: number; text: string }) {
   const [ax, ay] = map(f, at), lines = wrap(text, 34);
   return (
     <g>
@@ -221,13 +225,13 @@ function wrap(s: string, n: number) {
   if (cur) out.push(cur);
   return out;
 }
-function DetailTitle({ x, y, n, title, scale }: { x: number; y: number; n: number; title: string; scale: string }) {
+export function DetailTitle({ x, y, n, title, scale, sheet = "A-501" }: { x: number; y: number; n: number; title: string; scale: string; sheet?: string }) {
   return (
     <g fontFamily="'IBM Plex Sans Condensed', 'Arial Narrow', sans-serif">
       <circle cx={x + 4} cy={y} r={3.6} fill="none" stroke="#111" strokeWidth={0.3} />
       <line x1={x + 0.4} y1={y} x2={x + 7.6} y2={y} stroke="#111" strokeWidth={0.2} />
       <text x={x + 4} y={y - 0.6} fontSize={2.4} textAnchor="middle" fontWeight={600}>{n}</text>
-      <text x={x + 4} y={y + 2.6} fontSize={1.8} textAnchor="middle">A-501</text>
+      <text x={x + 4} y={y + 2.6} fontSize={1.8} textAnchor="middle">{sheet}</text>
       <text x={x + 10} y={y - 0.3} fontSize={3.2} fontWeight={600}>{title.toUpperCase()}</text>
       <line x1={x + 10} y1={y + 0.6} x2={x + 10 + title.length * 2.2} y2={y + 0.6} stroke="#111" strokeWidth={0.3} />
       <text x={x + 10} y={y + 3.4} fontSize={2}>SCALE: {scale}</text>

@@ -12,7 +12,8 @@ import { drawPlan, type PlanColors } from "../editor/planRenderer";
 import { areaNum, areaUnit, fmtDim, fmtElev, FT, imperial, lenUnit, scaleLabel, scalesFor } from "../core/units";
 import { drawPermitOverlay, type PermitPlan } from "../editor/permitRenderer";
 import { site } from "../core/permit";
-import { CoverBody, DetailsBody, NotesBody, PERMIT_KINDS, PermitSide, SheetNotes, SHEET_TITLES, TEXT_SHEETS, type PermitKind } from "./PermitSheets";
+import { FoundationDetails, StairDetails } from "./PermitDetails";
+import { CoverBody, DetailsBody, isDetails, NotesBody, PERMIT_KINDS, PermitSide, SheetNotes, SHEET_TITLES, TEXT_SHEETS, type PermitKind } from "./PermitSheets";
 import { SymbolIcon, SystemIcon } from "./MepIcons";
 import { mepEn, NorthArrow, SheetLegend } from "./SheetLegend";
 
@@ -221,6 +222,8 @@ function Sheet({ ed, content, level, scale, zoom = 1, set }: { ed: Editor; conte
       {content === "cover" && <CoverBody ed={ed} box={planBox()} />}
       {content === "notes" && <NotesBody box={planBox()} />}
       {content === "details" && <DetailsBody box={planBox()} />}
+      {content === "details2" && <FoundationDetails box={planBox()} />}
+      {content === "details3" && <StairDetails box={planBox()} />}
       <div className="viewtitle" style={{ left: `${planBox().x + 6}mm`, top: `${planBox().y + planBox().h + 1}mm` }}>
         <span className="vt-n">{isText(content) ? planName.toUpperCase() : content === "elev" ? t("ALZADOS", "EXTERIOR ELEVATIONS") : content === "fach" ? views.map((v) => v.label).join(t(" y ", " & ")).toUpperCase() : content === "sec" ? t("SECCIONES", "BUILDING SECTIONS") : content === "site" ? planName.toUpperCase() : planName ? `${lv.name} · ${planName}`.toUpperCase() : lv.name.toUpperCase()}</span>
         {!isText(content) && <>
@@ -269,7 +272,7 @@ function Sheet({ ed, content, level, scale, zoom = 1, set }: { ed: Editor; conte
             <div><small>{t("Cliente", "Owner")}</small>{info.client || "—"}</div>
           </div>
           <div className="c-row">
-            <div><small>{t("Escala", "Scale")}</small>{isText(content) ? t("Indicada", content === "details" ? "As noted" : "N.T.S.") : scaleLabel(scale)}</div>
+            <div><small>{t("Escala", "Scale")}</small>{isText(content) ? t("Indicada", isDetails(content) ? "As noted" : "N.T.S.") : scaleLabel(scale)}</div>
             <div><small>{t("Fecha", "Date")}</small>{info.date}</div>
             <div className="c-no"><small>{t("Lámina", "Sheet")}</small>{sheetNo}</div>
           </div>
@@ -306,7 +309,7 @@ export function permitSet(ed: Editor): PermitEntry[] {
   const fs = autoScaleOf(ed, "fach", 0);
   add("fach", 0, "A", 201, fs); add("fach", 1, "A", 201, fs);
   if (allSections(ed.project).length) add("sec", 0, "A", 301, autoScaleOf(ed, "sec", 0));
-  add("details", 0, "A", 501);
+  add("details", 0, "A", 501); add("details2", 0, "A", 501); add("details3", 0, "A", 501);
   lvs.forEach((_, i) => add("elec", i, "E", 101, planScale, lvTitle("elec", i)));
   lvs.forEach((_, i) => add("plum", i, "P", 101, planScale, lvTitle("plum", i)));
   lvs.forEach((_, i) => add("hvac", i, "M", 101, planScale, lvTitle("hvac", i)));

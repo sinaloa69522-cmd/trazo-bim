@@ -84,6 +84,8 @@ describe("juego de permiso para EE.UU.", () => {
     expect(new Set(nos).size).toBe(nos.length);
     expect(set.map((s) => s.content)).toEqual(expect.arrayContaining(["found", "floorfr", "wallfr", "rooffr", "plan", "fach", "details", "elec", "plum", "hvac"]));
     expect(set.find((s) => s.content === "details")!.no).toBe("A-501");
+    expect(set.find((s) => s.content === "details2")!.no).toBe("A-502");
+    expect(set.find((s) => s.content === "details3")!.no).toBe("A-503");
     expect(set.find((s) => s.content === "hvac")!.no).toBe("M-101");
   });
 });
