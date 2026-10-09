@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { usedFinishes } from "../core/finishes";
 import { allSections, elevation, FACADES, section, type Elevation, type Facade } from "../core/elevation";
 import { bounds } from "../core/geometry";
 import { mepDef, type Discipline } from "../core/mep";
@@ -15,7 +16,7 @@ import { site } from "../core/permit";
 import { FoundationDetails, StairDetails } from "./PermitDetails";
 import { CoverBody, DetailsBody, isDetails, NotesBody, PERMIT_KINDS, PermitSide, SheetNotes, SHEET_TITLES, TEXT_SHEETS, type PermitKind } from "./PermitSheets";
 import { SymbolIcon, SystemIcon } from "./MepIcons";
-import { mepEn, NorthArrow, SheetLegend } from "./SheetLegend";
+import { FinishSym, mepEn, NorthArrow, SheetLegend } from "./SheetLegend";
 
 /** Lámina apaisada, en milímetros: A3, o en EE.UU. Tabloid (ANSI B, 11" × 17"). */
 const sheetSize = () => (imperial() ? { w: 431.8, h: 279.4 } : { w: 420, h: 297 });
@@ -164,7 +165,7 @@ function Sheet({ ed, content, level, scale, zoom = 1, set }: { ed: Editor; conte
   const sheetNo = sheetNumber(p.levels.length, content, level, set);
   const en = imperial(), permit = (PERMIT_KINDS as string[]).includes(content);
   const planName = en || permit ? (SHEET_TITLES[content]?.en ?? "") : content === "elec" ? "Instalación eléctrica" : content === "plum" ? "Fontanería y saneamiento" : "";
-  const finishes = content === "fach" ? [...new Set(views.flatMap((v) => v.el.faces.filter((f) => f.mat && !f.cut).map((f) => f.mat!.name)))] : [];
+  const finishes = content === "fach" ? [...new Map(views.flatMap((v) => v.el.faces.filter((f) => f.mat && !f.cut).map((f) => [f.mat!.name, f.mat!.finish] as const))).entries()] : [];
 
   // dibujo a escala; la planta usa la vista del editor cambiada solo mientras se dibuja
   useEffect(() => {
@@ -236,7 +237,7 @@ function Sheet({ ed, content, level, scale, zoom = 1, set }: { ed: Editor; conte
         {permit ? <PermitSide ed={ed} content={content} level={level} set={set} /> : content === "elec" || content === "plum" ? <MepTables p={p} disc={content} level={level} notes={en} /> : <div className="tables">
           {content === "fach" && <>
             <h4>{t("Acabados de fachada", "Exterior finishes")}</h4>
-            {finishes.length ? <table><tbody>{finishes.map((f) => <tr key={f}><td>{f}</td></tr>)}</tbody></table> : <p className="empty">{t("Muros sin tipo asignado.", "No wall types assigned.")}</p>}
+            {finishes.length ? <table><tbody>{finishes.map(([name, f]) => <tr key={name}>{f ? <><td className="sw"><FinishSym f={f} /></td><td>{name}</td></> : <td colSpan={2}>{name}</td>}</tr>)}</tbody></table> : <p className="empty">{t("Muros sin tipo asignado.", "No wall types assigned.")}</p>}
           </>}
           <h4>{t("Puertas", "Door schedule")}</h4>
           <ScheduleTable rows={doors} kind="door" />
@@ -259,8 +260,8 @@ function Sheet({ ed, content, level, scale, zoom = 1, set }: { ed: Editor; conte
               </tbody>
             </table>
           ) : <p className="empty">{t("Sin habitaciones definidas.", "No rooms defined.")}</p>}
-          <SheetLegend content={content} />
-          {en && <SheetNotes content={content} />}
+          <SheetLegend content={content} finishes={content === "fach" ? [] : usedFinishes(p.levels)} />
+          {en && <SheetNotes content={content} levels={p.levels} />}
         </div>}
         <div className="cajetin">
           <div className="c-proj"><small>{t("Proyecto", "Project")}</small>{info.name || "—"}</div>

@@ -18,6 +18,8 @@ export interface Wall {
   height: number;
   /** Si hay un nivel encima, la altura se ajusta para llegar a la cara inferior de su losa */
   attach: boolean;
+  /** Revestimiento exterior (finishes.ts); sin él, la fachada muestra el material del tipo */
+  finish?: string;
 }
 
 export type OpeningKind = "door" | "window";
@@ -84,6 +86,8 @@ export interface Roof {
   /** Altura de arranque sobre la cota del nivel */
   base: number;
   thick: number;
+  /** Material de cubierta (finishes.ts); sin él, teja cerámica en las inclinadas */
+  finish?: string;
 }
 
 /** Escalera recta: (x1,y1) arranque y (x2,y2) llegada, sobre el eje del tramo. */

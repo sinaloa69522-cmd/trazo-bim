@@ -1,6 +1,7 @@
 import { furnitureSolids, furnitureToPlan } from "./furniture";
-import { dir, distSeg, endExt, loc, roofGeom, stairSteps, type Pt } from "./geometry";
+import { dir, endExt, loc, roofGeom, stairSteps, type Pt } from "./geometry";
 import { wallType, type Hatch } from "./wallTypes";
+import { finishName, gableWall, outward, roofFinish, finish as finishById, type Finish } from "./finishes";
 import type { Project, Section } from "./model";
 
 /** Fachada vista desde ese punto cardinal (la planta tiene el norte arriba). */
@@ -18,7 +19,7 @@ export type FaceKind = "wall" | "glass" | "door" | "roof" | "slab" | "stair" | "
 export interface EFace {
   pts: { u: number; z: number }[]; depth: number; kind: FaceKind; cut?: boolean;
   /** Acabado de la cara vista (muros y faldones), para la trama y la etiqueta de material de las fachadas */
-  mat?: { hatch: Hatch | "tile"; name: string };
+  mat?: { hatch: Hatch | "tile"; name: string; finish?: Finish };
 }
 
 export interface Elevation {
@@ -115,13 +116,15 @@ function project(p: Project, fr: Frame): Elevation {
       // el muro entero, sin trocear por los huecos, para que no aparezcan juntas falsas en la fachada
       const h = w.thick / 2, H = w.height, { L, ux, uy } = dir(w), e0 = endExt(lv, w, 0), e1 = endExt(lv, w, 1), a = -e0, b = L + e1;
       const wt = wallType(w.type), mat = { hatch: wt.hatch, name: wt.material };
+      // el revestimiento va por la cara exterior; la interior, sin trama (es el acabado de dentro)
+      const fin = finishById(w.finish), out = fin ? outward(lv.walls, w) : 0, ext = fin && { hatch: "solid" as const, name: finishName(fin), finish: fin };
       const side = (n: number, kind: FaceKind, s0: number, s1: number, z0: number, z1: number, nudge = 0) => {
         const p0 = loc(w, s0, n), p1 = loc(w, s1, n);
-        face([{ ...p0, z: z0 }, { ...p1, z: z0 }, { ...p1, z: z1 }, { ...p0, z: z1 }], kind, nudge, kind === "wall" ? mat : undefined);
+        face([{ ...p0, z: z0 }, { ...p1, z: z0 }, { ...p1, z: z1 }, { ...p0, z: z1 }], kind, nudge, kind === "wall" ? (ext ? (Math.sign(n) === out ? ext : undefined) : mat) : undefined);
       };
       side(-h, "wall", a, b, e, e + H); side(h, "wall", a, b, e, e + H);
       // los testeros solo se ven si el extremo está libre; si acomete a otro muro quedan dentro de él
-      const end = (s: number) => { const p0 = loc(w, s, -h), p1 = loc(w, s, h); face([{ ...p0, z: e }, { ...p1, z: e }, { ...p1, z: e + H }, { ...p0, z: e + H }], "wall", 0, mat); };
+      const end = (s: number) => { const p0 = loc(w, s, -h), p1 = loc(w, s, h); face([{ ...p0, z: e }, { ...p1, z: e }, { ...p1, z: e + H }, { ...p0, z: e + H }], "wall", 0, ext || mat); };
       if (!e0) end(0);
       if (!e1) end(L);
       const ops = lv.openings.filter((x) => x.wallId === w.id);
@@ -145,17 +148,12 @@ function project(p: Project, fr: Frame): Elevation {
     }
     for (const r of lv.roofs) {
       const g = roofGeom(r);
-      const tile = { hatch: r.kind === "flat" ? "solid" as const : "tile" as const, name: r.kind === "flat" ? "Cubierta plana" : "Teja cerámica" };
-      for (const f of g.faces) face(f.map((q) => ({ ...q, z: e + q.z })), "roof", 0, r.kind === "flat" ? undefined : tile);
+      const rf = roofFinish(r), tile = rf && { hatch: "tile" as const, name: finishName(rf), finish: rf };
+      for (const f of g.faces) face(f.map((q) => ({ ...q, z: e + q.z })), "roof", 0, tile);
       for (const f of g.gables) {
         // el hastial lleva el acabado del muro sobre el que se levanta
-        const lo = Math.min(...f.map((q) => q.z)), base = f.filter((q) => q.z < lo + 1e-6);
-        const c = { x: base.reduce((t, q) => t + q.x, 0) / base.length, y: base.reduce((t, q) => t + q.y, 0) / base.length };
-        const w = lv.walls.reduce<{ w: (typeof lv.walls)[number]; d: number } | null>((m, x) => {
-          const d = distSeg(c.x, c.y, x.x1, x.y1, x.x2, x.y2).d;
-          return !m || d < m.d ? { w: x, d } : m;
-        }, null)?.w;
-        face(f.map((q) => ({ ...q, z: e + q.z })), "wall", 0, w ? { hatch: wallType(w.type).hatch, name: wallType(w.type).material } : undefined);
+        const w = gableWall(lv.walls, f), fin = finishById(w?.finish);
+        face(f.map((q) => ({ ...q, z: e + q.z })), "wall", 0, fin ? { hatch: "solid", name: finishName(fin), finish: fin } : w ? { hatch: wallType(w.type).hatch, name: wallType(w.type).material } : undefined);
       }
       // canto del alero
       const zt = e + g.faces[0][0].z;

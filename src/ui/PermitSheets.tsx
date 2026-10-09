@@ -1,6 +1,8 @@
 // Láminas de texto y detalles del juego de permiso de EE.UU.: portada, notas generales y detalles típicos,
 // más la columna lateral (tablas y notas) de las láminas generadas desde el modelo.
 import type { ReactNode } from "react";
+import { ROOFINGS, SIDINGS, usedFinishes } from "../core/finishes";
+import type { Project } from "../core/model";
 import { feetInches, fmtArea } from "../core/units";
 import { FOOTING_TYPES, headers, hvac, joistBays, projectAreas, roofFraming, site } from "../core/permit";
 import { ABBREVIATIONS, CODES, DEFERRED, DESIGN_CRITERIA, GENERAL_NOTES, SCOPE, SHEET_NOTES } from "../core/permitNotes";
@@ -41,9 +43,20 @@ const NotesList = ({ notes, start = 1 }: { notes: string[]; start?: number }) =>
   <ol className="pnotes" start={start}>{notes.map((n, i) => <li key={i}>{n}</li>)}</ol>
 );
 
+/** Notas de una lámina; en los alzados, la de cubierta y la de revestimiento dicen los materiales elegidos en el modelo. */
+function notesFor(content: string, levels: Project["levels"]) {
+  let notes = SHEET_NOTES[content === "fach" ? "elev" : content];
+  if (notes && (content === "fach" || content === "elev")) {
+    const fins = usedFinishes(levels), roof = fins.filter((f) => ROOFINGS.includes(f)), wall = fins.filter((f) => SIDINGS.includes(f));
+    if (roof.length) notes = notes.map((n) => n.replace("ASPHALT SHINGLES CLASS A", roof.map((f) => f.en.toUpperCase()).join(" / ") + ", INSTALLED PER MANUFACTURER"));
+    if (wall.length) notes = [...notes, `EXTERIOR WALL FINISH: ${wall.map((f) => f.en.toUpperCase()).join(" / ")} OVER WEATHER-RESISTIVE BARRIER, INSTALLED PER MANUFACTURER AND IRC R703.`];
+  }
+  return notes;
+}
+
 /** Notas propias de una lámina de arquitectura o instalaciones del juego de EE.UU. */
-export function SheetNotes({ content }: { content: string }) {
-  const notes = SHEET_NOTES[content === "fach" ? "elev" : content];
+export function SheetNotes({ content, levels = [] }: { content: string; levels?: Project["levels"] }) {
+  const notes = notesFor(content, levels);
   return notes ? <><h4>{SHEET_TITLES[content]?.en ?? ""} notes</h4><NotesList notes={notes} /></> : null;
 }
 
@@ -125,11 +138,11 @@ export function PermitSide({ ed, content, level, set = [] }: { ed: Editor; conte
       <table><tbody>{ABBREVIATIONS.map(([k, v]) => <tr key={k}><td><b>{k}</b></td><td>{v}</td></tr>)}</tbody></table>
     </>;
   }
-  const notes = SHEET_NOTES[content === "fach" ? "elev" : content];
+  const notes = notesFor(content, ed.project.levels);
   return (
     <div className="tables">
       {tables}
-      <SheetLegend content={content} />
+      <SheetLegend content={content} finishes={usedFinishes(ed.project.levels)} />
       {notes && <><h4>{isDetails(content) ? "Notes" : `${SHEET_TITLES[content]?.en ?? ""} notes`}</h4><NotesList notes={notes} /></>}
     </div>
   );

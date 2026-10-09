@@ -4,6 +4,8 @@ import { furnitureSolids, furnitureToPlan } from "../core/furniture";
 import { discOfSystem, mepDef, systemDef } from "../core/mep";
 import { bounds, dir, loc, pieces, roofGeom, stairSteps, type P3 } from "../core/geometry";
 import type { Wall } from "../core/model";
+import { finish, gableWall, outward, roofFinish, type Finish } from "../core/finishes";
+import { finishTile } from "./finishTextures";
 import type { Editor } from "./Editor";
 
 /** Modelo 3D generado a partir de la planta. Se reconstruye en cada cambio. */
@@ -40,6 +42,23 @@ export class Viewer3D {
     const k = `${line ? "l" : "m"}${color}`;
     let m = this.mepMats.get(k);
     if (!m) { m = line ? new THREE.LineBasicMaterial({ color }) : new THREE.MeshStandardMaterial({ color, roughness: 0.6 }); this.mepMats.set(k, m); }
+    return m;
+  }
+
+  private finMats = new Map<string, THREE.Material>();
+  /** Material con la textura del acabado; las UV de las caras van en metros. */
+  private finishMat(f: Finish) {
+    let m = this.finMats.get(f.id);
+    if (!m) {
+      const t = finishTile(f), tex = new THREE.CanvasTexture(t.canvas);
+      tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+      tex.repeat.set(1 / t.tw, 1 / t.th);
+      tex.colorSpace = THREE.SRGBColorSpace;
+      tex.anisotropy = 4;
+      const metal = f.style === "seam" || f.style === "corr" || f.style === "panel";
+      m = new THREE.MeshStandardMaterial({ map: tex, roughness: metal ? 0.45 : 0.9, metalness: metal ? 0.35 : 0, side: THREE.DoubleSide });
+      this.finMats.set(f.id, m);
+    }
     return m;
   }
 
@@ -101,9 +120,16 @@ export class Viewer3D {
       (c as THREE.Mesh).geometry?.dispose();
     }
     let base = 0; // cota del nivel que se está construyendo
-    const box = (w: Wall, sa: number, sb: number, z0: number, z1: number, th: number, mat: THREE.Material, edges = true) => {
+    /** ext: revestimiento en la cara exterior (+1 la de la normal izquierda, −1 la otra). */
+    const box = (w: Wall, sa: number, sb: number, z0: number, z1: number, th: number, mat: THREE.Material, edges = true, ext?: { mat: THREE.Material; side: 1 | -1 }) => {
       if (sb - sa < 1e-3 || z1 - z0 < 1e-3) return;
-      const { ux, uy } = dir(w), g = new THREE.BoxGeometry(sb - sa, z1 - z0, th), mesh = new THREE.Mesh(g, mat), c = loc(w, (sa + sb) / 2, 0);
+      const { ux, uy } = dir(w), g = new THREE.BoxGeometry(sb - sa, z1 - z0, th), c = loc(w, (sa + sb) / 2, 0);
+      if (ext) {
+        // UV en metros desde el arranque del muro y la cota 0, para que las hiladas casen entre piezas
+        const uv = g.attributes.uv as THREE.BufferAttribute, i0 = ext.side > 0 ? 16 : 20;
+        for (let i = i0; i < i0 + 4; i++) uv.setXY(i, ext.side > 0 ? sa + uv.getX(i) * (sb - sa) : uv.getX(i) * (sb - sa) - sb, base + z0 + uv.getY(i) * (z1 - z0));
+      }
+      const mesh = new THREE.Mesh(g, ext ? [mat, mat, mat, mat, ext.side > 0 ? ext.mat : mat, ext.side > 0 ? mat : ext.mat] : mat);
       mesh.position.set(c.x, base + (z0 + z1) / 2, c.y);
       mesh.rotation.y = -Math.atan2(uy, ux);
       mesh.castShadow = mesh.receiveShadow = true;
@@ -122,6 +148,18 @@ export class Viewer3D {
       if (!v.length) return;
       const g = new THREE.BufferGeometry();
       g.setAttribute("position", new THREE.Float32BufferAttribute(v, 3));
+      // UV en metros sobre el plano de cada cara: u a lo largo del alero (horizontal), v según la pendiente
+      const uv: number[] = [];
+      for (const f of ps) {
+        if (f.length < 3) continue;
+        const A = new THREE.Vector3(f[0].x, f[0].z, f[0].y), B = new THREE.Vector3(f[1].x, f[1].z, f[1].y), C = new THREE.Vector3(f[2].x, f[2].z, f[2].y);
+        const n = B.clone().sub(A).cross(C.clone().sub(A)).normalize();
+        const e1 = Math.abs(n.y) > 0.999 ? new THREE.Vector3(1, 0, 0) : new THREE.Vector3(0, 1, 0).cross(n).normalize(), e2 = n.clone().cross(e1);
+        if (e2.y < 0) e2.negate();
+        const at = (q: P3) => { const p = new THREE.Vector3(q.x, base + q.z, q.y); uv.push(p.dot(e1), p.dot(e2)); };
+        for (let i = 1; i + 1 < f.length; i++) for (const q of [f[0], f[i], f[i + 1]]) at(q);
+      }
+      g.setAttribute("uv", new THREE.Float32BufferAttribute(uv, 2));
       g.computeVertexNormals();
       const mesh = new THREE.Mesh(g, mat);
       mesh.castShadow = mesh.receiveShadow = true;
@@ -155,8 +193,10 @@ export class Viewer3D {
       }
       if (vis.cubiertas) for (const r of m.roofs) {
         const g = roofGeom(r);
-        polys(g.faces, isSel("roof", r.id) ? this.mat.roofSel : this.mat.roof);
-        polys(g.gables, this.mat.gable);
+        const rf = roofFinish(r);
+        polys(g.faces, isSel("roof", r.id) ? this.mat.roofSel : rf ? this.finishMat(rf) : this.mat.roof);
+        // cada hastial con el revestimiento del muro sobre el que se levanta
+        for (const f of g.gables) { const fin = finish(gableWall(m.walls, f)?.finish); polys([f], fin ? this.finishMat(fin) : this.mat.gable); }
       }
       if (vis.escaleras) for (const st of m.stairs) {
         const k = stairSteps(st), mat = isSel("stair", st.id) ? this.mat.sel : this.mat.stair;
@@ -194,12 +234,13 @@ export class Viewer3D {
       }
       if (vis.muros) for (const w of m.walls) {
         const { solids, ops } = pieces(m, w), H = w.height;
-        const mat = isSel("wall", w.id) ? this.mat.sel : this.mat.wall;
-        for (const [a, c] of solids) box(w, a, c, 0, H, w.thick, mat);
+        const mat = isSel("wall", w.id) ? this.mat.sel : this.mat.wall, fin = finish(w.finish);
+        const ext = fin && !isSel("wall", w.id) ? { mat: this.finishMat(fin), side: outward(m.walls, w) } : undefined;
+        for (const [a, c] of solids) box(w, a, c, 0, H, w.thick, mat, true, ext);
         for (const { o, a, b: bb } of ops) {
           const top = Math.min(H, o.sill + o.height), om = isSel("opening", o.id);
-          box(w, a, bb, top, H, w.thick, mat);
-          if (o.sill > 0) box(w, a, bb, 0, o.sill, w.thick, mat);
+          box(w, a, bb, top, H, w.thick, mat, true, ext);
+          if (o.sill > 0) box(w, a, bb, 0, o.sill, w.thick, mat, true, ext);
           if (o.kind === "door" && vis.puertas) box(w, a + 0.02, bb - 0.02, 0, top - 0.02, 0.045, om ? this.mat.sel : this.mat.door);
           if (o.kind === "window" && vis.ventanas) {
             const fm = om ? this.mat.sel : this.mat.frame;
