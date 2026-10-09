@@ -2,7 +2,7 @@ import { furnitureSolids, furnitureToPlan } from "./furniture";
 import { dir, endExt, loc, roofGeom, stairSteps, type Pt } from "./geometry";
 import { wallType, type Hatch } from "./wallTypes";
 import { finishName, gableWall, outward, roofFinish, finish as finishById, type Finish } from "./finishes";
-import type { Project, Section } from "./model";
+import type { OpeningKind, Project, Section } from "./model";
 
 /** Fachada vista desde ese punto cardinal (la planta tiene el norte arriba). */
 export type Facade = "S" | "E" | "N" | "O";
@@ -20,6 +20,8 @@ export interface EFace {
   pts: { u: number; z: number }[]; depth: number; kind: FaceKind; cut?: boolean;
   /** Acabado de la cara vista (muros y faldones), para la trama y la etiqueta de material de las fachadas */
   mat?: { hatch: Hatch | "tile"; name: string; finish?: Finish };
+  /** Puerta o ventana que llena la cara, para dibujar su despiece y cómo abre */
+  op?: { kind: OpeningKind; style?: string };
 }
 
 export interface Elevation {
@@ -44,6 +46,9 @@ const FRAMES: Record<Facade, Frame> = {
   E: { o: { x: 0, y: 0 }, r: { x: 0, y: -1 }, v: { x: -1, y: 0 }, cut: false },
   O: { o: { x: 0, y: 0 }, r: { x: 0, y: 1 }, v: { x: 1, y: 0 }, cut: false },
 };
+
+/** Puertas que se ven de vidrio en los alzados. */
+const GLAZED_DOORS = new Set(["french", "slider"]);
 
 /** Alzado de una fachada por el algoritmo del pintor. */
 export function elevation(p: Project, side: Facade): Elevation {
@@ -72,7 +77,7 @@ function project(p: Project, fr: Frame): Elevation {
   const ahead = (q: Pt) => (q.x - fr.o.x) * fr.v.x + (q.y - fr.o.y) * fr.v.y;
   const faces: EFace[] = [];
   /** nudge acerca la cara al observador para que gane a la que tiene justo detrás. */
-  const face = (ps: P3[], kind: FaceKind, nudge = 0, mat?: EFace["mat"]) => {
+  const face = (ps: P3[], kind: FaceKind, nudge = 0, mat?: EFace["mat"], op?: EFace["op"]) => {
     if (fr.cut) ps = clip(ps, ahead);
     if (ps.length < 3) return;
     const pr = ps.map(view), pts = pr.map((q, i) => ({ u: q.u, z: ps[i].z }));
@@ -80,7 +85,7 @@ function project(p: Project, fr: Frame): Elevation {
     let a = 0;
     for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) a += (pts[j].u + pts[i].u) * (pts[j].z - pts[i].z);
     if (Math.abs(a) < 1e-6) return;
-    faces.push({ pts, depth: pr.reduce((s, q) => s + q.d, 0) / pr.length + nudge, kind, ...(mat ? { mat } : {}) });
+    faces.push({ pts, depth: pr.reduce((s, q) => s + q.d, 0) / pr.length + nudge, kind, ...(mat ? { mat } : {}), ...(op ? { op } : {}) });
   };
   const rect = (ua: number, ub: number, z0: number, z1: number, kind: FaceKind = "cut") => {
     if (ub - ua > 1e-6 && z1 - z0 > 1e-6) faces.push({ pts: [{ u: ua, z: z0 }, { u: ub, z: z0 }, { u: ub, z: z1 }, { u: ua, z: z1 }], depth: 0, kind, cut: true });
@@ -118,9 +123,9 @@ function project(p: Project, fr: Frame): Elevation {
       const wt = wallType(w.type), mat = { hatch: wt.hatch, name: wt.material };
       // el revestimiento va por la cara exterior; la interior, sin trama (es el acabado de dentro)
       const fin = finishById(w.finish), out = fin ? outward(lv.walls, w) : 0, ext = fin && { hatch: "solid" as const, name: finishName(fin), finish: fin };
-      const side = (n: number, kind: FaceKind, s0: number, s1: number, z0: number, z1: number, nudge = 0) => {
+      const side = (n: number, kind: FaceKind, s0: number, s1: number, z0: number, z1: number, nudge = 0, op?: EFace["op"]) => {
         const p0 = loc(w, s0, n), p1 = loc(w, s1, n);
-        face([{ ...p0, z: z0 }, { ...p1, z: z0 }, { ...p1, z: z1 }, { ...p0, z: z1 }], kind, nudge, kind === "wall" ? (ext ? (Math.sign(n) === out ? ext : undefined) : mat) : undefined);
+        face([{ ...p0, z: z0 }, { ...p1, z: z0 }, { ...p1, z: z1 }, { ...p0, z: z1 }], kind, nudge, kind === "wall" ? (ext ? (Math.sign(n) === out ? ext : undefined) : mat) : undefined, op);
       };
       side(-h, "wall", a, b, e, e + H); side(h, "wall", a, b, e, e + H);
       // los testeros solo se ven si el extremo está libre; si acomete a otro muro quedan dentro de él
@@ -131,8 +136,9 @@ function project(p: Project, fr: Frame): Elevation {
       for (const o of ops) {
         const s0 = o.t * L - o.width / 2, s1 = o.t * L + o.width / 2, top = Math.min(H, o.sill + o.height);
         // la carpintería se pinta sobre las dos caras del muro, un poco por delante de cada una
-        side(-h, o.kind === "door" ? "door" : "glass", s0, s1, e + o.sill, e + top, 1e-3);
-        side(h, o.kind === "door" ? "door" : "glass", s0, s1, e + o.sill, e + top, 1e-3);
+        const op = { kind: o.kind, style: o.style }, fk = o.kind === "door" && !GLAZED_DOORS.has(o.style ?? "") ? "door" : "glass";
+        side(-h, fk, s0, s1, e + o.sill, e + top, 1e-3, op);
+        side(h, fk, s0, s1, e + o.sill, e + top, 1e-3, op);
       }
       // sección del muro: si el corte pasa por un hueco, queda el antepecho y el dintel
       for (const [ua, ub] of cutSpans([loc(w, a, -h), loc(w, b, -h), loc(w, b, h), loc(w, a, h)])) {

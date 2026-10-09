@@ -1,3 +1,4 @@
+import { DOOR_STYLES, openingStyle } from "./openingStyles";
 import { furnitureDef } from "./furniture";
 import { dir, polygonArea, roofGeom, slabArea, stairSteps } from "./geometry";
 import { MEP, runLength, SYSTEMS } from "./mep";
@@ -97,7 +98,10 @@ export function budget(p: Project, s: BudgetSettings = defaultBudget()): Budget 
 
   // carpintería: puertas por pieza y ventanas por superficie
   const ops = lv.flatMap((l) => l.openings.filter((o) => l.walls.some((w) => w.id === o.wallId)));
-  add("04.01", "Puerta de madera de una hoja, con marco y herrajes", "pza", ops.filter((o) => o.kind === "door").length, 4500);
+  // las de una hoja conservan su partida; cada otro tipo de puerta va en la suya
+  add("04.01", "Puerta de madera de una hoja, con marco y herrajes", "pza", ops.filter((o) => o.kind === "door" && openingStyle(o).id === "single").length, 4500);
+  DOOR_STYLES.slice(1).forEach((st, i) => add(`04.${String(i + 3).padStart(2, "0")}`, `${st.name}, con marco y herrajes`, "pza",
+    ops.filter((o) => o.kind === "door" && openingStyle(o).id === st.id).length, st.price ?? 4500));
   add("04.02", "Ventana de aluminio con vidrio", "m²", ops.filter((o) => o.kind === "window").reduce((t, o) => t + o.width * o.height, 0), 3200);
 
   // escaleras por metro de tramo

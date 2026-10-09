@@ -5,6 +5,8 @@ import { discOfSystem, fixtureStrokes, fixtureTextAt, mepDef, systemDef, type Sy
 import type { Dim, Fixture, HatchRegion, Model, Roof, Run, Section, Stair, Wall } from "../core/model";
 import { hatchSegments, isSolid, patternLines, patternSpacing, type HatchSegments } from "../core/hatch";
 import { RC } from "../core/rooms";
+import { openingSymbol } from "../core/openingStyles";
+import { outward } from "../core/finishes";
 import { wallType, type Hatch } from "../core/wallTypes";
 import { DISC_LAYER, type Editor, type SelType } from "./Editor";
 
@@ -211,22 +213,16 @@ export function drawPlan(ctx: CanvasRenderingContext2D, ed: Editor, C: PlanColor
   for (const op of m.openings) {
     const w = ed.wallById(op.wallId);
     if (!w) continue;
-    const { L, ux, uy } = dir(w), a = op.t * L - op.width / 2, b = op.t * L + op.width / 2, h = w.thick / 2;
-    if (op.kind === "door" && ed.vis.puertas) {
-      const col = isSel("opening", op.id) ? C.accent : C.door, sd = op.flip ? -1 : 1;
-      seg(loc(w, a, -h), loc(w, a, h), col, 1.2); seg(loc(w, b, -h), loc(w, b, h), col, 1.2);
-      const hinge = loc(w, a, sd * h);
-      seg(hinge, loc(w, a, sd * (h + op.width)), col, 2);
-      const au = Math.atan2(uy, ux), hs = toS(hinge.x, hinge.y);
-      ctx.beginPath(); ctx.setLineDash([4, 3]);
-      if (sd > 0) ctx.arc(hs.x, hs.y, op.width * ed.view.scale, au, au + Math.PI / 2);
-      else ctx.arc(hs.x, hs.y, op.width * ed.view.scale, au - Math.PI / 2, au);
-      ctx.strokeStyle = col; ctx.lineWidth = 1; ctx.stroke(); ctx.setLineDash([]);
-    } else if (op.kind === "window" && ed.vis.ventanas) {
-      const col = isSel("opening", op.id) ? C.accent : C.window;
-      poly(quad(w, a, b, -h, h), null, col, 1.2);
-      seg(loc(w, a, -h / 3), loc(w, b, -h / 3), col); seg(loc(w, a, h / 3), loc(w, b, h / 3), col);
+    const { L } = dir(w);
+    if (op.kind === "door" ? !ed.vis.puertas : !ed.vis.ventanas) continue;
+    const col = isSel("opening", op.id) ? C.accent : op.kind === "door" ? C.door : C.window;
+    for (const k of openingSymbol(w, op, L, op.kind === "window" ? outward(m.walls, w) : 1)) {
+      ctx.beginPath();
+      k.pts.forEach((q, i) => { const s = toS(q.x, q.y); if (i) ctx.lineTo(s.x, s.y); else ctx.moveTo(s.x, s.y); });
+      ctx.setLineDash(k.kind === "swing" ? [4, 3] : []);
+      ctx.strokeStyle = col; ctx.lineWidth = k.kind === "leaf" ? 2 : k.kind === "frame" ? 1.2 : 1; ctx.stroke();
     }
+    ctx.setLineDash([]);
   }
 
   if (ed.vis.anot) for (const l of m.lines) {

@@ -9,6 +9,7 @@ import { ROOF_LABEL, type Editor } from "../editor/Editor";
 import { fmtArea, fmtDim, fmtElev, fmtField, fmtLen, fmtSmall, imperial, lenUnit, parseLen } from "../core/units";
 import { finish, ROOFINGS, SIDINGS, type Finish } from "../core/finishes";
 import { finishSwatch } from "../editor/finishTextures";
+import { DOOR_STYLES, elevationLines, openingStyle, WINDOW_STYLES, type OpeningStyle } from "../core/openingStyles";
 import { HATCH_PATTERNS, hatchArea, hatchPattern, hatchSegments, IMPORTED, patternLines } from "../core/hatch";
 
 
@@ -55,6 +56,36 @@ function FinishPicker({ label, list, value, none, multi, onChange }: { label: st
         {list.map((f) => (
           <button key={f.id} type="button" role="radio" aria-checked={cur?.id === f.id} className={cur?.id === f.id ? "on" : ""} title={f.name} onClick={() => onChange(f.id)}>
             <img src={finishSwatch(f)} alt="" />
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/** Icono de un tipo de puerta o ventana: su alzado con montantes y el triángulo de apertura. */
+function OpeningIcon({ st }: { st: OpeningStyle }) {
+  const k = 30 / Math.max(st.w, st.h + (st.kind === "door" ? 0 : 0.3)), w = st.w * k, h = st.h * k, x = (34 - w) / 2, y = 32 - h - (st.kind === "door" ? 1 : 4);
+  return (
+    <svg viewBox="0 0 34 34" width={34} height={34} aria-hidden="true">
+      <rect x={x} y={y} width={w} height={h} fill={st.kind === "window" || st.id === "french" || st.id === "slider" ? "#cfe3ef" : "#e9dccb"} stroke="currentColor" strokeWidth={1} />
+      {elevationLines({ kind: st.kind, style: st.id }).map((l, i) => <polyline key={i} fill="none" stroke="currentColor" strokeWidth={0.7} strokeDasharray={l.dash ? "2 1.4" : undefined}
+        points={l.pts.map(([u, v]) => `${x + u * w},${y + (1 - v) * h}`).join(" ")} />)}
+      {st.kind === "door" && <path d="M1 33h32" stroke="currentColor" strokeWidth={1} />}
+    </svg>
+  );
+}
+
+/** Muestrario de tipos de puerta o ventana. */
+function OpeningStylePicker({ label, list, value, onChange }: { label: string; list: OpeningStyle[]; value?: string; onChange: (id: string) => void }) {
+  const cur = list.find((x) => x.id === value);
+  return (
+    <div className="full finpick">
+      <label>{label}{cur && <>: <b>{cur.name}</b></>}</label>
+      <div className="fingrid" role="radiogroup" aria-label={label}>
+        {list.map((st) => (
+          <button key={st.id} type="button" role="radio" aria-checked={cur?.id === st.id} className={cur?.id === st.id ? "on" : ""} title={st.name} onClick={() => onChange(st.id)}>
+            <OpeningIcon st={st} />
           </button>
         ))}
       </div>
@@ -127,15 +158,18 @@ function Properties({ ed, onFocusCommand }: { ed: Editor; onFocusCommand: () => 
     </>;
   } else if (sel && o && sel.type === "opening") {
     const op = o as Model["openings"][number], w = ed.wallById(op.wallId)!;
-    title = op.kind === "door" ? "Puerta de una hoja" : "Ventana fija";
+    const st = openingStyle(op);
+    title = st.name;
     body = <>
+      <OpeningStylePicker label={op.kind === "door" ? "Tipo de puerta" : "Tipo de ventana"} list={op.kind === "door" ? DOOR_STYLES : WINDOW_STYLES} value={st.id}
+        onChange={(id) => ed.setOpeningStyle([op.id], id)} />
       <NumberField id={`${key}-w`} label="Ancho (m)" value={op.width} onCommit={(v) => {
         if (fits(ed.model, w, op.t, v, op.id)) ed.edit(() => { op.width = v; }); else ed.log("Ese ancho no cabe en el muro.");
       }} />
       <NumberField id={`${key}-h`} label="Altura (m)" value={op.height} onCommit={(v) => ed.edit(() => { op.height = Math.min(v, w.height - 0.05); })} />
       {op.kind === "window"
         ? <NumberField id={`${key}-s`} label="Antepecho (m)" value={op.sill} onCommit={(v) => ed.edit(() => { op.sill = Math.max(0, Math.min(v, w.height - op.height - 0.05)); })} />
-        : <button className="btn full" onClick={() => ed.edit(() => { op.flip = !op.flip; })}>Invertir apertura</button>}
+        : st.id !== "slider" && st.id !== "pocket" && st.id !== "garage" && <button className="btn full" onClick={() => ed.edit(() => { op.flip = !op.flip; })}>{st.id === "barn" ? "Pasar la hoja a la otra cara" : "Invertir apertura"}</button>}
     </>;
   } else if (sel && o && sel.type === "room") {
     const r = o as Model["rooms"][number], c = ed.rooms?.rooms.get(r.id);
@@ -285,7 +319,11 @@ function Properties({ ed, onFocusCommand }: { ed: Editor; onFocusCommand: () => 
     }
     const walls = ed.sels.filter((x) => x.type === "wall").map((x) => x.id);
     const roofs = ed.sels.filter((x) => x.type === "roof").map((x) => x.id);
-    if (walls.length || roofs.length) body = <>
+    const opsOf = (k: "door" | "window") => ed.sels.filter((x) => x.type === "opening" && ed.model.openings.find((o) => o.id === x.id)?.kind === k).map((x) => x.id);
+    const doors = opsOf("door"), wins = opsOf("window");
+    if (walls.length || roofs.length || doors.length || wins.length) body = <>
+      {doors.length > 0 && <OpeningStylePicker label={`Tipo de ${doors.length > 1 ? `las ${doors.length} puertas` : "la puerta"}`} list={DOOR_STYLES} onChange={(id) => ed.setOpeningStyle(doors, id)} />}
+      {wins.length > 0 && <OpeningStylePicker label={`Tipo de ${wins.length > 1 ? `las ${wins.length} ventanas` : "la ventana"}`} list={WINDOW_STYLES} onChange={(id) => ed.setOpeningStyle(wins, id)} />}
       {walls.length > 0 && <>
         <WallTypeField id="multi-ty" label={`Tipo de los ${walls.length} muros`} value="" onChange={(t) => ed.setWallType(walls, t)} />
         <FinishPicker label={`Revestimiento de ${walls.length > 1 ? `los ${walls.length} muros` : "1 muro"}`} list={SIDINGS} value={undefined} none="—" multi onChange={(f) => ed.setFinish(walls, f)} />
@@ -297,7 +335,9 @@ function Properties({ ed, onFocusCommand }: { ed: Editor; onFocusCommand: () => 
       <WallTypeField id="def-ty" value={d.wallType} onChange={(t) => { d.wallType = t; if (t !== GENERIC) d.thick = wallType(t).thick; ed.emit(); }} />
       {d.wallType === GENERIC && <NumberField id="def-t" label="Espesor muro" len value={d.thick} onCommit={(v) => { d.thick = v; ed.emit(); }} />}
       <NumberField id="def-h" label="Altura muro" len value={d.height} onCommit={(v) => { d.height = v; ed.emit(); }} />
+      {ed.tool !== "window" && <OpeningStylePicker label="Puerta nueva" list={DOOR_STYLES} value={d.doorStyle} onChange={(id) => ed.setDefaultStyle("door", id)} />}
       <NumberField id="def-dw" label="Ancho puerta" len value={d.doorW} onCommit={(v) => { d.doorW = v; ed.emit(); }} />
+      {ed.tool !== "door" && <OpeningStylePicker label="Ventana nueva" list={WINDOW_STYLES} value={d.winStyle} onChange={(id) => ed.setDefaultStyle("window", id)} />}
       <NumberField id="def-ww" label="Ancho ventana" len value={d.winW} onCommit={(v) => { d.winW = v; ed.emit(); }} />
       <NumberField id="def-s" label="Antepecho" len value={d.sill} onCommit={(v) => { d.sill = v; ed.emit(); }} />
       <NumberField id="def-sl" label="Espesor losa" len value={d.slabThick} onCommit={(v) => { d.slabThick = v; ed.emit(); }} />

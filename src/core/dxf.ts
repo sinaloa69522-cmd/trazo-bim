@@ -1,3 +1,5 @@
+import { openingSymbol } from "./openingStyles";
+import { outward } from "./finishes";
 import { fmtArea, fmtDim, IN, unitSystem, type UnitSystem } from "./units";
 import { furnitureStrokes } from "./furniture";
 import { fixtureStrokes, fixtureTextAt, mepDef } from "./mep";
@@ -28,19 +30,10 @@ export function toDxf(m: Model, rooms: RoomGrid | null, u: UnitSystem = unitSyst
   for (const o of m.openings) {
     const w = m.walls.find((x) => x.id === o.wallId);
     if (!w) continue;
-    const { L, ux, uy } = dir(w), a = o.t * L - o.width / 2, b = o.t * L + o.width / 2, h = w.thick / 2;
-    if (o.kind === "door") {
-      const sd = o.flip ? -1 : 1, hg = loc(w, a, sd * h);
-      line("A-PUERTAS", hg, loc(w, a, sd * (h + o.width)));
-      const au = (Math.atan2(-uy, ux) * 180) / Math.PI;
-      const [s, e] = sd > 0 ? [au - 90, au] : [au, au + 90];
-      out.push("0", "ARC", "8", "A-PUERTAS", "10", X(hg.x), "20", Y(hg.y), "30", "0", "40", S(o.width),
-        "50", s.toFixed(3), "51", e.toFixed(3));
-    } else {
-      rect("A-VENTANAS", [loc(w, a, -h), loc(w, b, -h), loc(w, b, h), loc(w, a, h)]);
-      line("A-VENTANAS", loc(w, a, -h / 3), loc(w, b, -h / 3));
-      line("A-VENTANAS", loc(w, a, h / 3), loc(w, b, h / 3));
-    }
+    // el mismo símbolo que en pantalla, explotado en líneas
+    const lay = o.kind === "door" ? "A-PUERTAS" : "A-VENTANAS";
+    for (const k of openingSymbol(w, o, dir(w).L, o.kind === "window" ? outward(m.walls, w) : 1))
+      for (let i = 1; i < k.pts.length; i++) line(lay, k.pts[i - 1], k.pts[i]);
   }
   // sombreados explotados (el R12 no tiene HATCH): la trama en líneas y los sólidos en trapecios SOLID
   for (const h of m.hatches ?? []) {

@@ -4,15 +4,18 @@ import { dir } from "./geometry";
 import { CIRCUITS, MEP, runLength, SYSTEMS, type Discipline } from "./mep";
 import type { OpeningKind, Project } from "./model";
 import { computeRooms } from "./rooms";
+import { openingStyle } from "./openingStyles";
 import { wallType, wallTypeLabel } from "./wallTypes";
 
-/** Un tipo de puerta o ventana: huecos con las mismas medidas comparten marca. */
+/** Un tipo de puerta o ventana: huecos del mismo tipo y medidas comparten marca. */
 export interface OpeningType {
   mark: string;
   kind: OpeningKind;
   width: number;
   height: number;
   sill: number;
+  /** Tipo de apertura (openingStyles.ts) */
+  style: string;
   count: number;
   /** Unidades por nivel, en el orden de los niveles */
   perLevel: { level: string; count: number }[];
@@ -27,12 +30,12 @@ const cm = (v: number) => Math.round(v * 100);
  */
 export function openingSchedule(p: Project, kind: OpeningKind) {
   const types = new Map<string, OpeningType>();
-  const key = (o: { width: number; height: number; sill: number }) => `${cm(o.width)}x${cm(o.height)}x${cm(o.sill)}`;
+  const key = (o: { width: number; height: number; sill: number; kind: OpeningKind; style?: string }) => `${openingStyle(o).id}:${cm(o.width)}x${cm(o.height)}x${cm(o.sill)}`;
   for (const lv of p.levels) for (const o of lv.openings) {
     if (o.kind !== kind || !lv.walls.some((w) => w.id === o.wallId)) continue;
     const k = key(o);
     let t = types.get(k);
-    if (!t) { t = { mark: "", kind, width: o.width, height: o.height, sill: o.sill, count: 0, perLevel: [] }; types.set(k, t); }
+    if (!t) { t = { mark: "", kind, width: o.width, height: o.height, sill: o.sill, style: openingStyle(o).id, count: 0, perLevel: [] }; types.set(k, t); }
     t.count++;
     const pl = t.perLevel.find((x) => x.level === lv.name);
     if (pl) pl.count++; else t.perLevel.push({ level: lv.name, count: 1 });
