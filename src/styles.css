@@ -194,6 +194,9 @@ dialog .acts span{margin-right:auto;color:var(--muted);font-size:12px}
 .sheet{position:absolute;left:0;top:0;width:420mm;height:297mm;transform-origin:0 0;background:#fff;color:#111;box-shadow:0 2px 14px rgba(0,0,0,.18);font-family:var(--f-body);color-scheme:light}
 .sheet .frame{position:absolute;pointer-events:none;left:10mm;top:10mm;right:10mm;bottom:10mm;border:.5mm solid #111}
 .sheet .sheetplan{position:absolute}
+.sheet .sheetnorth{position:absolute;line-height:0;pointer-events:none}
+.sheetside .nsym{display:block;width:14mm;text-align:center}
+.sheetside .nsym svg{display:inline-block}
 .sheet .viewtitle{position:absolute;display:flex;align-items:center;gap:4mm;height:14mm}
 .sheet .vt-n{font-family:var(--f-display);font-weight:600;font-size:13pt;letter-spacing:.04em;border-bottom:.4mm solid #111;padding-bottom:.5mm}
 .sheet .vt-s{font-family:var(--f-mono);font-size:8pt;color:#444}

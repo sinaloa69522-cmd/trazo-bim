@@ -14,7 +14,7 @@ import { drawPermitOverlay, type PermitPlan } from "../editor/permitRenderer";
 import { site } from "../core/permit";
 import { CoverBody, DetailsBody, NotesBody, PERMIT_KINDS, PermitSide, SheetNotes, SHEET_TITLES, TEXT_SHEETS, type PermitKind } from "./PermitSheets";
 import { SymbolIcon, SystemIcon } from "./MepIcons";
-import { mepEn, SheetLegend } from "./SheetLegend";
+import { mepEn, NorthArrow, SheetLegend } from "./SheetLegend";
 
 /** Lámina apaisada, en milímetros: A3, o en EE.UU. Tabloid (ANSI B, 11" × 17"). */
 const sheetSize = () => (imperial() ? { w: 431.8, h: 279.4 } : { w: 420, h: 297 });
@@ -228,6 +228,7 @@ function Sheet({ ed, content, level, scale, zoom = 1, set }: { ed: Editor; conte
           <ScaleBar den={scale} />
         </>}
       </div>
+      <div className="sheetnorth" style={{ left: `${planBox().x + planBox().w - 26}mm`, top: `${planBox().y + planBox().h - 9}mm` }}><NorthArrow /></div>
       <aside className="sheetside" style={{ left: `${sheetSize().w - FRAME - SIDE}mm`, top: `${FRAME}mm`, width: `${SIDE}mm`, height: `${sheetSize().h - 2 * FRAME}mm` }}>
         {permit ? <PermitSide ed={ed} content={content} level={level} set={set} /> : content === "elec" || content === "plum" ? <MepTables p={p} disc={content} level={level} notes={en} /> : <div className="tables">
           {content === "fach" && <>

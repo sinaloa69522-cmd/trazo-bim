@@ -41,6 +41,28 @@ const T = ({ x = 7, y = 3.2, s = 1.6, children, w = 600 }: { x?: number; y?: num
   <text x={x} y={y} fontSize={s} fontWeight={w} textAnchor="middle" fill={INK} stroke="none" fontFamily="'IBM Plex Sans Condensed','Arial Narrow',sans-serif">{children}</text>
 );
 
+/**
+ * Flecha del norte de las láminas: aguja partida (mitad negra, mitad blanca) dentro de un anillo doble,
+ * con marcas en los otros tres puntos cardinales y la N encima. La planta siempre tiene el norte arriba.
+ */
+export function NorthArrow({ size = 20, label = true }: { size?: number; label?: boolean }) {
+  const ticks = [90, 180, 270].map((a) => {
+    const r = (a * Math.PI) / 180, c = Math.sin(r), d = -Math.cos(r);
+    return `M${(c * 30).toFixed(2)} ${(d * 30).toFixed(2)}L${(c * 38).toFixed(2)} ${(d * 38).toFixed(2)}`;
+  }).join("");
+  return (
+    <svg width={`${size}mm`} height={`${size * (label ? 1.18 : 1)}mm`} viewBox={label ? "-50 -68 100 118" : "-50 -50 100 100"} aria-label="North" role="img" className="northarrow">
+      <circle r={38} fill="none" stroke={INK} strokeWidth={1.1} />
+      <circle r={30} fill="none" stroke={INK} strokeWidth={0.5} />
+      <path d={ticks} stroke={INK} strokeWidth={1.4} />
+      <path d="M0 -46L-11 14L0 6Z" fill={INK} />
+      <path d="M0 -46L11 14L0 6Z" fill="#fff" stroke={INK} strokeWidth={1.1} strokeLinejoin="round" />
+      <circle r={3} fill="#fff" stroke={INK} strokeWidth={1.1} />
+      {label && <text y={-52} textAnchor="middle" fontSize={17} fontWeight={700} fill={INK} fontFamily="'IBM Plex Sans Condensed','Arial Narrow',sans-serif" letterSpacing={1}>N</text>}
+    </svg>
+  );
+}
+
 // ---------- símbolos ----------
 
 const S = {
@@ -54,7 +76,7 @@ const S = {
   section: () => <Sym><path d="M3 3.2H13" strokeDasharray="1.6 .4 .3 .4" strokeWidth={0.15} /><path d="M3 4.4V1.6" strokeWidth={0.3} /><path d="M2.4 2.2L3 1 3.6 2.2z" fill={INK} /><T x={1.2} y={3.6} s={1.8}>A</T></Sym>,
   detail: () => <Sym><circle cx={7} cy={2.5} r={2.2} strokeWidth={0.2} /><path d="M4.8 2.5h4.4" strokeWidth={0.15} /><T y={2.1} s={1.4}>1</T><T y={4.1} s={1}>A-501</T></Sym>,
   datum: () => <Sym><path d="M1 3.6h12" strokeWidth={0.15} /><path d="M2 3.6L1.3 2.6h1.4z" fill={INK} /><T x={8} y={2.6} s={1.3} w={400}>{L("+0.00 NIVEL", `+0'-0" F.F.`)}</T></Sym>,
-  north: () => <Sym><circle cx={7} cy={2.6} r={2} strokeWidth={0.18} /><path d="M7 .6L7.9 3.6 7 3 6.1 3.6z" fill={INK} /></Sym>,
+  north: () => <span className="nsym"><NorthArrow size={5} label={false} /></span>,
   roofAbove: () => <Sym><path d="M1 2.5h12" strokeDasharray="1 .6" strokeWidth={0.2} /></Sym>,
   leader: () => <Sym><circle cx={1.5} cy={4} r={0.3} fill={INK} /><path d="M1.5 4L4 1.6h1.2" strokeWidth={0.15} /><T x={9} y={2.1} s={1.2} w={400}>{L("MATERIAL", "MATERIAL")}</T></Sym>,
   grade: () => <Hatch gap={0.6}>{(u) => <><rect x={1} y={3} width={12} height={1.6} fill={u} stroke="none" /><path d="M1 3h12" strokeWidth={0.45} /></>}</Hatch>,
