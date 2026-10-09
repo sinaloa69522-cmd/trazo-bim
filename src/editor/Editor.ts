@@ -11,15 +11,16 @@ import { FURNITURE, furnitureDef, furnitureOutline } from "../core/furniture";
 import { autoRoute, discOfSystem, isElectric, MEP, mepDef, mepOf, runLength, sanitaryPoints, systemDef, type Discipline } from "../core/mep";
 import { extend, offset, trim, type Linear } from "../core/modify";
 import { GENERIC, wallType } from "../core/wallTypes";
-import { computeRooms, roomAt, type RoomGrid } from "../core/rooms";
+import { computeRooms, RC, roomAt, type RoomGrid } from "../core/rooms";
+import { hatchArea, hatchPattern, inHatch, maskLoops, IMPORTED } from "../core/hatch";
 import { deleteElements, reflection, scaling, transformElements, translation, type Xform } from "../core/transform";
 
-export type Tool = "select" | "wall" | "door" | "window" | "line" | "dim" | "room" | "move" | "copy" | "mirror" | "trim" | "extend" | "offset" | "slab" | "roof" | "stair" | "furniture" | "section" | "hole" | "text" | "fixture" | "run" | "calibrate";
+export type Tool = "select" | "wall" | "door" | "window" | "line" | "dim" | "room" | "move" | "copy" | "mirror" | "trim" | "extend" | "offset" | "slab" | "roof" | "stair" | "furniture" | "section" | "hole" | "text" | "fixture" | "run" | "calibrate" | "hatch";
 /** Herramientas que actúan pulsando directamente sobre un muro o una línea. */
 const PICK_TOOLS: Tool[] = ["trim", "extend", "offset"];
 /** Herramientas que actúan sobre la selección actual. */
 const MODIFY_TOOLS: Tool[] = ["move", "copy", "mirror"];
-export type SelType = "wall" | "opening" | "line" | "dim" | "room" | "slab" | "roof" | "stair" | "furniture" | "section" | "text" | "fixture" | "run" | "underlay";
+export type SelType = "wall" | "opening" | "line" | "dim" | "room" | "slab" | "roof" | "stair" | "furniture" | "section" | "text" | "fixture" | "run" | "underlay" | "hatch";
 export interface Selection { type: SelType; id: number }
 export interface SnapPt extends Pt { kind: "end" | "mid" | null }
 export interface OpeningCandidate { w: Wall; t: number; ok: boolean }
@@ -50,6 +51,7 @@ const COMMANDS: Record<string, Tool> = {
   LO: "slab", LOSA: "slab", TR: "trim", RECORTAR: "trim", AL: "extend", ALARGAR: "extend", DE: "offset", DESFASE: "offset", EQ: "offset", EQUIDISTANCIA: "offset",
   CU: "roof", CUBIERTA: "roof", TEJADO: "roof", ES: "stair", ESCALERA: "stair", MB: "furniture", MOBILIARIO: "furniture", MUEBLE: "furniture",
   HL: "hole", HUECO: "hole", TX: "text", TEXTO: "text", SE: "section", SECCION: "section", "SECCIÓN": "section", CORTE: "section",
+  SB: "hatch", SOMBREA: "hatch", SOMBREADO: "hatch", RAYADO: "hatch", TRAMA: "hatch",
   TU: "run", TUBERIA: "run", "TUBERÍA": "run", CANALIZACION: "run", "CANALIZACIÓN": "run",
 };
 /** Comandos que abren la biblioteca de instalaciones de una disciplina. */
@@ -71,8 +73,8 @@ export class Editor {
   get model(): Level { return this.project.levels[this.active]; }
   set model(m: Model) { this.project.levels[this.active] = { ...this.model, ...m }; }
   rooms: RoomGrid | null = null;
-  vis: Record<LayerId, boolean> = { muros: true, puertas: true, ventanas: true, cotas: true, anot: true, hab: true, losas: true, cubiertas: true, escaleras: true, mobiliario: true, secciones: true, electricidad: true, plomeria: true, calcos: true };
-  defaults = { wallType: GENERIC, thick: 0.15, height: 2.7, doorW: 0.9, doorH: 2.1, winW: 1.2, winH: 1.2, sill: 0.9, slabThick: 0.2, roofKind: "gable" as RoofKind, pitch: 30, overhang: 0.5, stairW: 1, furnKind: "bed2", furnRot: 0, textSize: 0.25, mepKind: "enchufe", mepRot: 0, runSys: "af" as RunSystem };
+  vis: Record<LayerId, boolean> = { muros: true, puertas: true, ventanas: true, cotas: true, anot: true, hab: true, losas: true, cubiertas: true, escaleras: true, mobiliario: true, secciones: true, electricidad: true, plomeria: true, calcos: true, sombreados: true };
+  defaults = { wallType: GENERIC, thick: 0.15, height: 2.7, doorW: 0.9, doorH: 2.1, winW: 1.2, winH: 1.2, sill: 0.9, slabThick: 0.2, roofKind: "gable" as RoofKind, pitch: 30, overhang: 0.5, stairW: 1, furnKind: "bed2", furnRot: 0, textSize: 0.25, mepKind: "enchufe", mepRot: 0, runSys: "af" as RunSystem, hatchPattern: "diagonal", hatchScale: 1, hatchAngle: 0, hatchMode: "room" as "room" | "poly" };
   tool: Tool = "select";
   /** Elementos seleccionados. */
   sels: Selection[] = [];
@@ -248,10 +250,10 @@ export class Editor {
   // ---------- consultas ----------
   wallById(id: number) { return this.model.walls.find((w) => w.id === id); }
   isSelected(type: SelType, id: number) { return this.sels.some((s) => s.type === type && s.id === id); }
-  selObj(): (Seg & { id: number }) | Model["openings"][number] | Model["rooms"][number] | Model["slabs"][number] | Model["roofs"][number] | Model["stairs"][number] | Model["furniture"][number] | Model["sections"][number] | Model["texts"][number] | Model["fixtures"][number] | Model["runs"][number] | Model["underlays"][number] | null {
+  selObj(): (Seg & { id: number }) | Model["openings"][number] | Model["rooms"][number] | Model["slabs"][number] | Model["roofs"][number] | Model["stairs"][number] | Model["furniture"][number] | Model["sections"][number] | Model["texts"][number] | Model["fixtures"][number] | Model["runs"][number] | Model["underlays"][number] | Model["hatches"][number] | null {
     if (!this.sel) return null;
     const m = this.model;
-    const list = { wall: m.walls, line: m.lines, dim: m.dims, opening: m.openings, room: m.rooms, slab: m.slabs, roof: m.roofs, stair: m.stairs, furniture: m.furniture, section: m.sections, text: m.texts, fixture: m.fixtures, run: m.runs, underlay: m.underlays }[this.sel.type] as { id: number }[];
+    const list = { wall: m.walls, line: m.lines, dim: m.dims, opening: m.openings, room: m.rooms, slab: m.slabs, roof: m.roofs, stair: m.stairs, furniture: m.furniture, section: m.sections, text: m.texts, fixture: m.fixtures, run: m.runs, underlay: m.underlays, hatch: m.hatches }[this.sel.type] as { id: number }[];
     return (list.find((o) => o.id === this.sel!.id) as never) ?? null;
   }
   grips(): { k: 0 | 1 | "mid"; x: number; y: number }[] {
@@ -282,6 +284,9 @@ export class Editor {
       case "hole": return n ? "HUECO  Esquina opuesta del hueco:" : "HUECO EN LOSA  Primera esquina del hueco (dentro de una losa):";
       case "section": return n ? "SECCIÓN  Punto final de la línea de corte (se mira a su izquierda):" : "SECCIÓN  Primer punto de la línea de corte:";
       case "fixture": return `${mepDef(d.mepKind).disc === "elec" ? "ELECTRICIDAD" : "PLOMERÍA"}  Haz clic para colocar ${mepDef(d.mepKind).label.toLowerCase()}${mepDef(d.mepKind).wall ? " (se pega al muro más cercano)" : ""} [R gira, Esc termina]:`;
+      case "hatch": return n
+        ? n < 3 ? "SOMBREADO  Siguiente vértice del contorno:" : "SOMBREADO  Siguiente vértice [Enter o clic en el primero cierra]:"
+        : d.hatchMode === "room" ? `SOMBREADO  Haz clic dentro de una habitación (${hatchPattern(d.hatchPattern)?.label.toLowerCase()}) o en el primer vértice de un contorno:` : "SOMBREADO  Primer vértice del contorno:";
       case "run": return n < 2 ? `TUBERÍA  ${n ? "Siguiente" : "Primer"} punto (${systemDef(d.runSys).label.toLowerCase()}):` : "TUBERÍA  Siguiente punto [Enter termina]:";
       case "furniture": return `MOBILIARIO  Haz clic para colocar ${furnitureDef(d.furnKind).label.toLowerCase()} [R gira 90°, Esc termina]:`;
       case "trim": return "RECORTAR  Haz clic en el tramo de muro o línea que quieres quitar:";
@@ -312,7 +317,7 @@ export class Editor {
       cubiertas: m.roofs.length, escaleras: m.stairs.length, mobiliario: m.furniture.length, secciones: m.sections.length,
       electricidad: m.fixtures.filter((f) => mepDef(f.kind).disc === "elec").length + m.runs.filter((r) => r.system === "elec").length,
       plomeria: m.fixtures.filter((f) => mepDef(f.kind).disc === "plum").length + m.runs.filter((r) => r.system !== "elec").length,
-      calcos: m.underlays.length,
+      calcos: m.underlays.length, sombreados: m.hatches.length,
     };
   }
 
@@ -404,6 +409,10 @@ export class Editor {
       const edgesOf = sl.pts.map((p, i) => { const q = sl.pts[(i + 1) % sl.pts.length]; return { x1: p.x, y1: p.y, x2: q.x, y2: q.y }; });
       if (crossing ? edgesOf.some(segHit) : sl.pts.every((p) => inside(p.x, p.y))) found.push({ type: "slab", id: sl.id });
     }
+    if (this.vis.sombreados) for (const h of m.hatches) {
+      const edgesOf = h.loops.flatMap((q) => q.map((p, i) => { const r = q[(i + 1) % q.length]; return { x1: p.x, y1: p.y, x2: r.x, y2: r.y }; }));
+      if (crossing ? edgesOf.some(segHit) : h.loops.every((q) => q.every((p) => inside(p.x, p.y)))) found.push({ type: "hatch", id: h.id });
+    }
     if (this.vis.cubiertas) for (const r of m.roofs) {
       const ol = roofGeom(r).outline;
       const edgesOf = ol.map((p, i) => { const q = ol[(i + 1) % 4]; return { x1: p.x, y1: p.y, x2: q.x, y2: q.y }; });
@@ -489,7 +498,13 @@ export class Editor {
       const c = [{ x: u.x, y: u.y }, { x: u.x + u.w, y: u.y }, { x: u.x + u.w, y: u.y + u.h }, { x: u.x, y: u.y + u.h }];
       for (let i = 0; i < 4; i++) { const a = c[i], b = c[(i + 1) % 4], q = distSeg(wx, wy, a.x, a.y, b.x, b.y); if (q.d < tol) take(q.d + 0.3, { type: "underlay", id: u.id }); }
     }
+    // el sombreado se elige por su borde o, si no hay nada más, por dentro
+    if (this.vis.sombreados) for (const h of m.hatches) for (const q of h.loops) for (let i = 0; i < q.length; i++) {
+      const a = q[i], b = q[(i + 1) % q.length], r = distSeg(wx, wy, a.x, a.y, b.x, b.y);
+      if (r.d < tol) take(r.d + 0.1, { type: "hatch", id: h.id });
+    }
     if (!best && this.vis.hab) { const r = roomAt(m, this.rooms, wx, wy); if (r) best = { type: "room", id: r.id }; }
+    if (!best && this.vis.sombreados) for (const h of [...m.hatches].reverse()) if (inHatch({ x: wx, y: wy }, h.loops)) { best = { type: "hatch", id: h.id }; break; }
     if (!best && this.vis.cubiertas) for (const r of m.roofs) if (pointInPolygon({ x: wx, y: wy }, roofGeom(r).outline)) best = { type: "roof", id: r.id };
     if (!best && this.vis.losas) for (const sl of m.slabs) if (onSlab({ x: wx, y: wy }, sl)) best = { type: "slab", id: sl.id };
     return best;
@@ -539,6 +554,17 @@ export class Editor {
       if (!this.draft) { this.draft = { pts: [p] }; this.emit(); return; }
       const first = this.draft.pts[0], last = this.draft.pts[this.draft.pts.length - 1];
       if (this.draft.pts.length >= 3 && Math.hypot(p.x - first.x, p.y - first.y) < 0.01) { this.closeSlab(); return; }
+      if (Math.hypot(p.x - last.x, p.y - last.y) < 0.05) return;
+      this.draft.pts.push(p); this.emit();
+      return;
+    }
+    if (this.tool === "hatch") {
+      if (!this.draft) {
+        if (this.defaults.hatchMode === "room" && this.hatchRoom(p)) return;
+        this.draft = { pts: [p] }; this.emit(); return;
+      }
+      const first = this.draft.pts[0], last = this.draft.pts[this.draft.pts.length - 1];
+      if (this.draft.pts.length >= 3 && Math.hypot(p.x - first.x, p.y - first.y) < 0.01) { this.closeHatch(); return; }
       if (Math.hypot(p.x - last.x, p.y - last.y) < 0.05) return;
       this.draft.pts.push(p); this.emit();
       return;
@@ -682,8 +708,8 @@ export class Editor {
 
   /** Pasa a líneas de anotación los segmentos leídos de un DXF, DWG o PDF y los deja seleccionados. */
   importSegments(r: CadImportResult, fileName: string, note = "") {
-    const texts = r.texts ?? [];
-    if (!r.segments.length && !texts.length) { this.log(`${fileName}: no se encontraron líneas para importar.${note ? ` ${note}` : ""}`); return; }
+    const texts = r.texts ?? [], hatches = r.hatches ?? [];
+    if (!r.segments.length && !texts.length && !hatches.length) { this.log(`${fileName}: no se encontraron líneas para importar.${note ? ` ${note}` : ""}`); return; }
     this.snapshot();
     const m = this.model, made: Selection[] = [];
     for (const s of r.segments) {
@@ -696,12 +722,20 @@ export class Editor {
       m.texts.push({ id, x: t.x, y: t.y, text: t.text, size: t.size, rot: Math.round(t.rot * 1000) / 1000 });
       made.push({ type: "text", id });
     }
+    for (const h of hatches) {
+      const id = nextId(m);
+      m.hatches.push(h.solid
+        ? { id, loops: h.loops, pattern: "solido", scale: 1, angle: 0, name: h.name }
+        : { id, loops: h.loops, pattern: IMPORTED, scale: 1, angle: 0, lines: h.lines, name: h.name });
+      made.push({ type: "hatch", id });
+    }
     this.vis.anot = true;
+    if (hatches.length) this.vis.sombreados = true;
     this.tool = "select"; this.draft = null;
     this.sels = made;
     const skipped = Object.entries(r.skipped).map(([k, v]) => `${v} ${k}`).join(", ");
     const moved = r.moved ? ` Se trajo al origen (estaba a ${Math.round(r.moved.x)}, ${Math.round(r.moved.y)} m).` : "";
-    this.message = `${fileName}: ${r.segments.length} líneas${texts.length ? ` y ${texts.length} texto${texts.length > 1 ? "s" : ""}` : ""} importados (unidades: ${r.unitsLabel})${skipped ? `; sin importar: ${skipped}` : ""}.${moved}${note ? ` ${note}` : ""} Usa "Convertir en muros" para pasarlas a muros.`;
+    this.message = `${fileName}: ${r.segments.length} líneas${texts.length ? `, ${texts.length} texto${texts.length > 1 ? "s" : ""}` : ""}${hatches.length ? `, ${hatches.length} sombreado${hatches.length > 1 ? "s" : ""}` : ""} importados (unidades: ${r.unitsLabel})${skipped ? `; sin importar: ${skipped}` : ""}.${moved}${note ? ` ${note}` : ""} Usa "Convertir en muros" para pasarlas a muros.`;
     this.changed();
     this.fitRequest?.();
   }
@@ -941,6 +975,34 @@ export class Editor {
     this.changed();
   }
 
+  /** Sombreado nuevo con la trama, escala y giro por defecto; lo deja seleccionado. */
+  private addHatch(loops: Pt[][], what: string) {
+    const d = this.defaults, m = this.model;
+    this.snapshot();
+    const h = { id: nextId(m), loops: loops.map((q) => q.map((p) => ({ x: p.x, y: p.y }))), pattern: d.hatchPattern, scale: d.hatchScale, angle: d.hatchAngle };
+    m.hatches.push(h);
+    this.vis.sombreados = true;
+    this.draft = null;
+    this.sels = [{ type: "hatch", id: h.id }];
+    this.message = `Sombreado ${hatchPattern(h.pattern)?.label.toLowerCase() ?? ""} de ${hatchArea(h.loops).toFixed(2)} m² en ${what}. Haz clic en otra zona o Esc para terminar.`;
+    this.changed();
+  }
+  /** Cierra el contorno del sombreado en curso. */
+  closeHatch() {
+    const pts = this.draft?.pts ?? [];
+    if (pts.length < 3) { this.log("El contorno del sombreado necesita al menos 3 vértices."); return; }
+    this.addHatch([pts], "el contorno dibujado");
+  }
+  /** Sombrea la habitación cerrada que hay bajo el punto (con sus islas). false si no hay ninguna. */
+  private hatchRoom(p: Pt): boolean {
+    const g = this.rooms, r = roomAt(this.model, g, p.x, p.y), c = r && g?.rooms.get(r.id);
+    if (!g || !r || !c?.ok || !c.mask) return false;
+    const loops = maskLoops(c.mask, g.nx, g.ny, g.x0, g.y0, RC);
+    if (!loops.length) return false;
+    this.addHatch(loops, r.name);
+    return true;
+  }
+
   finishDraft() {
     if (this.draft && this.tool === "run") { this.finishRun(); return; }
     if (this.draft && this.tool === "calibrate") { this.draft = null; this.setTool("select"); this.log("Calibración cancelada."); return; }
@@ -1029,6 +1091,7 @@ export class Editor {
     const s = raw.trim().toUpperCase().replace(/\s+/g, "");
     if (!s) {
       if (this.draft && this.tool === "slab") { this.closeSlab(); return; }
+      if (this.draft && this.tool === "hatch") { this.closeHatch(); return; }
       if (this.draft && this.tool !== "dim") { this.finishDraft(); return; }
       if (this.lastCmd) this.runCommand(this.lastCmd);
       return;
@@ -1050,7 +1113,7 @@ export class Editor {
       return;
     }
     const lengthOk = this.draft?.pts.length &&
-      (["wall", "line", "move", "copy", "mirror", "slab", "stair", "run"].includes(this.tool) || (this.tool === "dim" && this.draft.pts.length === 1));
+      (["wall", "line", "move", "copy", "mirror", "slab", "stair", "run", "hatch"].includes(this.tool) || (this.tool === "dim" && this.draft.pts.length === 1));
     if (/^-?\d*\.?\d+$/.test(num) && lengthOk) {
       const L = parseFloat(num), from = this.draft!.pts[this.draft!.pts.length - 1], p = this.snap ?? this.mouse;
       let dx = p.x - from.x, dy = p.y - from.y;

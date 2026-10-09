@@ -229,6 +229,7 @@ dialog .acts span{margin-right:auto;color:var(--muted);font-size:12px}
 .cat[aria-checked="true"]{border-color:var(--accent);background:var(--accent-soft)}
 .cat.sym-cat{flex-direction:row;align-items:center;gap:7px}
 .cat.sym-cat span{display:flex;flex-direction:column}
+.swatch{flex:none;color:var(--anno);background:var(--plan-bg, var(--panel));border-radius:2px}
 .sym{flex:none;vertical-align:middle}
 .btn.wide{display:block;width:100%;margin:6px 0}
 /* importar PDF */

@@ -1,12 +1,17 @@
 import type { Pt } from "./geometry";
+import { flipLine, mapLines, type PatLine } from "./hatch";
 
 export interface ImportedSegment { a: Pt; b: Pt; layer: string }
 /** Texto importado: (x, y) es el inicio de la línea base; rot en grados, antihorario. */
 export interface ImportedText { x: number; y: number; text: string; size: number; rot: number; layer: string }
 
+/** Sombreado importado: contornos y líneas de trama ya en el dibujo (sin líneas si es sólido). */
+export interface ImportedHatch { loops: Pt[][]; lines: PatLine[]; solid: boolean; name: string; layer: string }
+
 export interface CadImportResult {
   segments: ImportedSegment[];
   texts?: ImportedText[];
+  hatches?: ImportedHatch[];
   /** Factor aplicado para pasar a metros */
   scale: number;
   unitsLabel: string;
@@ -27,27 +32,34 @@ export const MAX_SEGMENTS = 60000;
  * Sin unidades declaradas, si el dibujo mide más de 1000 se asume que está en mm.
  * Si queda a más de 1 km del origen (coordenadas UTM, por ejemplo) se trae junto al origen.
  */
-export function finishSegments(segs: ImportedSegment[], insunits: number, skipped: Record<string, number>, texts: ImportedText[] = []): CadImportResult {
+export function finishSegments(segs: ImportedSegment[], insunits: number, skipped: Record<string, number>, texts: ImportedText[] = [], hatches: ImportedHatch[] = []): CadImportResult {
   let [scale, unitsLabel] = INSUNITS[insunits] ?? [1, "m"];
-  if (!INSUNITS[insunits] && segs.length) {
+  const hpts = hatches.flatMap((h) => h.loops.flat());
+  if (!INSUNITS[insunits] && (segs.length || hpts.length)) {
     let ext = 0;
     for (const s of segs) ext = Math.max(ext, Math.abs(s.a.x), Math.abs(s.a.y), Math.abs(s.b.x), Math.abs(s.b.y));
+    for (const p of hpts) ext = Math.max(ext, Math.abs(p.x), Math.abs(p.y));
     if (ext > 1000) [scale, unitsLabel] = [0.001, "mm (supuesto)"];
   }
-  for (const s of segs) {
-    s.a = { x: s.a.x * scale, y: -s.a.y * scale };
-    s.b = { x: s.b.x * scale, y: -s.b.y * scale };
-  }
+  const P = (p: Pt) => ({ x: p.x * scale, y: -p.y * scale });
+  for (const s of segs) { s.a = P(s.a); s.b = P(s.b); }
   for (const t of texts) { t.x *= scale; t.y = -t.y * scale; t.size *= scale; }
+  for (const h of hatches) {
+    h.loops = h.loops.map((q) => q.map(P));
+    h.lines = h.lines.map((l) => flipLine({ angle: l.angle, base: { x: l.base.x * scale, y: l.base.y * scale }, offset: { x: l.offset.x * scale, y: l.offset.y * scale }, dashes: l.dashes.map((d) => d * scale) }));
+  }
   const res: CadImportResult = { segments: segs, scale, unitsLabel, skipped };
   if (texts.length) res.texts = texts;
-  if (segs.length) {
+  if (hatches.length) res.hatches = hatches;
+  const all = [...segs.flatMap((s) => [s.a, s.b]), ...hatches.flatMap((h) => h.loops.flat())];
+  if (all.length) {
     let x0 = Infinity, y0 = Infinity;
-    for (const s of segs) { x0 = Math.min(x0, s.a.x, s.b.x); y0 = Math.min(y0, s.a.y, s.b.y); }
+    for (const p of all) { x0 = Math.min(x0, p.x); y0 = Math.min(y0, p.y); }
     if (Math.abs(x0) > 1000 || Math.abs(y0) > 1000) {
-      const dx = Math.round(x0), dy = Math.round(y0);
-      for (const s of segs) { s.a = { x: s.a.x - dx, y: s.a.y - dy }; s.b = { x: s.b.x - dx, y: s.b.y - dy }; }
+      const dx = Math.round(x0), dy = Math.round(y0), mv = (p: Pt) => ({ x: p.x - dx, y: p.y - dy });
+      for (const s of segs) { s.a = mv(s.a); s.b = mv(s.b); }
       for (const t of texts) { t.x -= dx; t.y -= dy; }
+      for (const h of hatches) { h.loops = h.loops.map((q) => q.map(mv)); h.lines = h.lines.map((l) => ({ ...l, base: mv(l.base) })); }
       res.moved = { x: dx, y: dy };
     }
   }
@@ -125,6 +137,24 @@ export interface DwgEntity {
   attachmentPoint?: number; direction?: P3; lineSpacing?: number;
   attribs?: DwgEntity[];
   alignmentPoint?: P3;
+  /** HATCH (ángulos en radianes) */
+  patternName?: string; solidFill?: number;
+  boundaryPaths?: DwgBoundaryPath[];
+  definitionLines?: { angle: number; base: P3; offset: P3; dashLengths?: number[] }[];
+}
+/** Contorno de un sombreado: polilínea (con curvatura) o lista de aristas. */
+export interface DwgBoundaryPath {
+  vertices?: (P3 & { bulge?: number })[];
+  isClosed?: boolean;
+  edges?: DwgBoundaryEdge[];
+}
+/** Arista de contorno: 1 recta, 2 arco, 3 arco de elipse, 4 spline. */
+export interface DwgBoundaryEdge {
+  type: number;
+  start?: P3; end?: P3;
+  center?: P3; radius?: number; startAngle?: number; endAngle?: number; isCCW?: boolean;
+  lengthOfMinorAxis?: number;
+  controlPoints?: P3[]; fitDatum?: P3[];
 }
 interface DwgTextData { text?: string; startPoint?: P3; endPoint?: P3; textHeight?: number; rotation?: number; halign?: number; valign?: number }
 export interface DwgDatabaseLike {
@@ -142,16 +172,77 @@ const mul = (m: M, n: M): M => [
 ];
 const ID: M = [1, 0, 0, 1, 0, 0];
 
+/** Puntos de una elipse (centro, extremo del eje mayor relativo, proporción) entre dos parámetros, en sentido antihorario. */
+function ellipsePoints(c: Pt, mj: Pt, r: number, t0: number, t1: number): Pt[] {
+  while (t1 <= t0) t1 += Math.PI * 2;
+  const n = Math.max(8, Math.ceil((t1 - t0) / (Math.PI / 24)));
+  return Array.from({ length: n + 1 }, (_, i) => {
+    const t = t0 + ((t1 - t0) * i) / n, cs = Math.cos(t), sn = Math.sin(t) * r;
+    return { x: c.x + mj.x * cs - mj.y * sn, y: c.y + mj.y * cs + mj.x * sn };
+  });
+}
+
+/**
+ * Contornos cerrados de un sombreado a partir de sus caminos. Los arcos en sentido horario se guardan
+ * con los ángulos reflejados; como eso varía entre programas, se toma la lectura que enlaza con la arista vecina.
+ */
+export function hatchLoops(paths: DwgBoundaryPath[]): Pt[][] {
+  const loops: Pt[][] = [];
+  const near = (p: Pt, q: Pt) => Math.hypot(p.x - q.x, p.y - q.y);
+  for (const path of paths) {
+    const pts: Pt[] = [];
+    if (path.vertices?.length) {
+      const v = path.vertices;
+      for (let i = 0; i < v.length; i++) {
+        const piece = bulgePoints(v[i], v[(i + 1) % v.length], v[i].bulge ?? 0);
+        pts.push(...piece.slice(0, -1));
+      }
+    } else {
+      const edges = path.edges ?? [];
+      edges.forEach((e, i) => {
+        const nextStart = edges[(i + 1) % edges.length]?.start;
+        let cands: Pt[][] = [];
+        if (e.type === 1 && e.start && e.end) cands = [[e.start, e.end]];
+        else if (e.type === 2 && e.center && e.radius) {
+          const a0 = e.startAngle ?? 0, a1 = e.endAngle ?? Math.PI * 2;
+          cands = [arcPoints(e.center, e.radius, a0, a1), arcPoints(e.center, e.radius, -a1, -a0)];
+          if (e.isCCW === false) cands.reverse();
+        } else if (e.type === 3 && e.center && e.end) {
+          const r = e.lengthOfMinorAxis ?? 1, a0 = e.startAngle ?? 0, a1 = e.endAngle ?? Math.PI * 2;
+          cands = [ellipsePoints(e.center, e.end, r, a0, a1), ellipsePoints(e.center, e.end, r, -a1, -a0)];
+          if (e.isCCW === false) cands.reverse();
+        } else if (e.type === 4) {
+          const c = e.fitDatum?.length ? e.fitDatum : e.controlPoints ?? [];
+          if (c.length > 1) cands = [c];
+        }
+        if (!cands.length) return;
+        // la arista que enlaza con lo anterior (o con la siguiente, si es la primera), del derecho o del revés
+        const ref = pts.length ? pts[pts.length - 1] : null;
+        let best = cands[0], bd = Infinity;
+        for (const c of cands) for (const q of [c, [...c].reverse()]) {
+          const d = ref ? near(ref, q[0]) : nextStart ? near(q[q.length - 1], nextStart) : 0;
+          if (d < bd - 1e-9) { bd = d; best = q; }
+        }
+        pts.push(...(pts.length && near(pts[pts.length - 1], best[0]) < 1e-9 ? best.slice(1) : best));
+      });
+      if (pts.length > 2 && near(pts[0], pts[pts.length - 1]) < 1e-9) pts.pop();
+    }
+    if (pts.length >= 3) loops.push(pts);
+  }
+  return loops;
+}
+
 /**
  * Segmentos y textos del espacio modelo de un DWG: líneas, polilíneas (con sus arcos), arcos, círculos,
  * elipses, splines (por sus puntos), textos y textos de párrafo, bloques insertados (explotados, con sus
- * atributos) y cotas (dibujadas con su bloque). Los sombreados no se importan.
+ * atributos), cotas (dibujadas con su bloque) y sombreados (con su trama, o sólidos).
  */
 export function dwgSegments(db: DwgDatabaseLike): CadImportResult {
-  const segs: ImportedSegment[] = [], texts: ImportedText[] = [], skipped: Record<string, number> = {};
+  const segs: ImportedSegment[] = [], texts: ImportedText[] = [], hatches: ImportedHatch[] = [], skipped: Record<string, number> = {};
   const blocks = new Map((db.tables?.BLOCK_RECORD?.entries ?? []).map((b) => [b.name.toLowerCase(), b]));
   const ms = blocks.get("*model_space");
   const skip = (t: string) => { skipped[t] = (skipped[t] ?? 0) + 1; };
+  const near = (p: Pt, q: Pt) => Math.hypot(p.x - q.x, p.y - q.y);
 
   const emit = (pts: Pt[], m: M, layer: string) => {
     for (let i = 0; i + 1 < pts.length && segs.length < MAX_SEGMENTS; i++) {
@@ -219,29 +310,36 @@ export function dwgSegments(db: DwgDatabaseLike): CadImportResult {
         case "CIRCLE":
           if (e.center && e.radius) emit(arcPoints(e.center, e.radius, 0, Math.PI * 2), m, layer);
           break;
-        case "ELLIPSE": {
-          const c = e.center, mj = e.majorAxisEndPoint;
-          if (!c || !mj) break;
-          const r = e.axisRatio ?? 1, t0 = e.startAngle ?? 0;
-          let t1 = e.endAngle ?? Math.PI * 2;
-          if (t1 <= t0) t1 += Math.PI * 2;
-          const n = Math.max(8, Math.ceil((t1 - t0) / (Math.PI / 24)));
-          const pts = Array.from({ length: n + 1 }, (_, i) => {
-            const t = t0 + ((t1 - t0) * i) / n, cs = Math.cos(t), sn = Math.sin(t) * r;
-            return { x: c.x + mj.x * cs - mj.y * sn, y: c.y + mj.y * cs + mj.x * sn };
-          });
-          emit(pts, m, layer);
+        case "ELLIPSE":
+          if (e.center && e.majorAxisEndPoint) emit(ellipsePoints(e.center, e.majorAxisEndPoint, e.axisRatio ?? 1, e.startAngle ?? 0, e.endAngle ?? Math.PI * 2), m, layer);
           break;
-        }
         case "SPLINE": {
           // aproximación por la poligonal de sus puntos de paso (o de control)
           const pts = e.fitPoints?.length ? e.fitPoints : e.controlPoints ?? [];
           if (pts.length > 1) emit(pts, m, layer); else skip(e.type);
           break;
         }
-        case "SOLID": case "3DFACE": case "TRACE": {
+        case "SOLID": case "TRACE": {
+          // relleno de cuatro esquinas (la 3 y la 4 van cruzadas): pasa a sombreado sólido
           const q = [e.corner1, e.corner2, e.corner4 ?? e.corner3, e.corner3].filter(Boolean) as P3[];
+          const ring = q.filter((p, i) => !i || near(p, q[i - 1]) > 1e-9).map((p) => apply(m, p));
+          if (ring.length > 2) hatches.push({ loops: [ring], lines: [], solid: true, name: "SOLID", layer }); else skip(e.type);
+          break;
+        }
+        case "3DFACE": {
+          const q = [e.corner1, e.corner2, e.corner3, e.corner4].filter(Boolean) as P3[];
           if (q.length > 2) emit([...q, q[0]], m, layer); else skip(e.type);
+          break;
+        }
+        case "HATCH": {
+          const loops = hatchLoops(e.boundaryPaths ?? []).map((q) => q.map((p) => apply(m, p)));
+          if (!loops.length) { skip("HATCH"); break; }
+          const solid = e.solidFill === 1 || /^solid$/i.test(e.patternName ?? "") || !e.definitionLines?.length;
+          const lines = solid ? [] : mapLines(e.definitionLines!.map((d) => ({
+            angle: (d.angle * 180) / Math.PI, base: { x: d.base?.x ?? 0, y: d.base?.y ?? 0 },
+            offset: { x: d.offset?.x ?? 0, y: d.offset?.y ?? 0 }, dashes: d.dashLengths ?? [],
+          })), (p) => apply(m, p));
+          hatches.push({ loops, lines, solid, name: e.patternName ?? "", layer });
           break;
         }
         case "TEXT":
@@ -284,5 +382,5 @@ export function dwgSegments(db: DwgDatabaseLike): CadImportResult {
 
   const top = ms ? db.entities.filter((e) => !e.ownerBlockRecordSoftId || e.ownerBlockRecordSoftId === ms.handle) : db.entities;
   walk(top, ID, 0, "0");
-  return finishSegments(segs, db.header?.INSUNITS ?? 0, skipped, texts);
+  return finishSegments(segs, db.header?.INSUNITS ?? 0, skipped, texts, hatches);
 }

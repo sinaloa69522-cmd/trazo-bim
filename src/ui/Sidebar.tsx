@@ -6,6 +6,7 @@ import { SymbolIcon, SystemIcon } from "./MepIcons";
 import { GENERIC, WALL_TYPES, wallType, wallTypeLabel } from "../core/wallTypes";
 import { LAYERS, type Model, type RoofKind, type RunSystem } from "../core/model";
 import { ROOF_LABEL, type Editor } from "../editor/Editor";
+import { HATCH_PATTERNS, hatchArea, hatchPattern, hatchSegments, IMPORTED, patternLines } from "../core/hatch";
 
 const num = (v: number) => v.toFixed(2);
 
@@ -46,13 +47,39 @@ function RoofKindField({ id, value, onChange }: { id: string; value: RoofKind; o
   );
 }
 
+/** Muestra de una trama: un cuadro de 0,8 m dibujado con sus líneas. */
+function HatchSwatch({ pattern, scale = 1, angle = 0 }: { pattern: string; scale?: number; angle?: number }) {
+  const S = 0.8, sq = [[{ x: 0, y: 0 }, { x: S, y: 0 }, { x: S, y: S }, { x: 0, y: S }]];
+  const solid = hatchPattern(pattern)?.solid, segs = solid ? [] : hatchSegments(sq, patternLines({ pattern, scale, angle })).segs;
+  return (
+    <svg className="swatch" viewBox={`0 0 ${S} ${S}`} width={30} height={30} aria-hidden="true">
+      {solid ? <rect width={S} height={S} fill="currentColor" opacity={0.5} />
+        : <path d={segs.map(([a, b]) => `M${a.x.toFixed(3)} ${a.y.toFixed(3)}L${(b.x + (a.x === b.x && a.y === b.y ? 0.01 : 0)).toFixed(3)} ${b.y.toFixed(3)}`).join("")}
+          stroke="currentColor" strokeWidth={1} vectorEffect="non-scaling-stroke" fill="none" />}
+      <rect width={S} height={S} fill="none" stroke="currentColor" strokeWidth={1} vectorEffect="non-scaling-stroke" opacity={0.4} />
+    </svg>
+  );
+}
+
+function PatternField({ id, value, imported, onChange }: { id: string; value: string; imported?: string; onChange: (p: string) => void }) {
+  return (
+    <>
+      <label htmlFor={id}>Trama</label>
+      <select id={id} value={value} onChange={(e) => onChange(e.target.value)}>
+        {imported !== undefined && <option value={IMPORTED}>Original{imported ? ` (${imported})` : ""}</option>}
+        {HATCH_PATTERNS.map((p) => <option key={p.id} value={p.id}>{p.label}</option>)}
+      </select>
+    </>
+  );
+}
+
 function Properties({ ed, onFocusCommand }: { ed: Editor; onFocusCommand: () => void }) {
   const sel = ed.sel, o = ed.selObj(), d = ed.defaults;
   const ro: [string, string][] = [];
   let title = "Valores por defecto", body: JSX.Element | null = null;
   const n = ed.sels.length;
   const key = sel ? `${sel.type}-${sel.id}` : n > 1 ? "multi" : "def";
-  const TYPE_LABEL = { wall: "Muros", opening: "Puertas y ventanas", line: "Líneas", dim: "Cotas", room: "Habitaciones", slab: "Losas", roof: "Cubiertas", stair: "Escaleras", furniture: "Mobiliario", section: "Secciones", text: "Textos", fixture: "Instalaciones", run: "Tuberías", underlay: "Calcos" } as const;
+  const TYPE_LABEL = { wall: "Muros", opening: "Puertas y ventanas", line: "Líneas", dim: "Cotas", room: "Habitaciones", slab: "Losas", roof: "Cubiertas", stair: "Escaleras", furniture: "Mobiliario", section: "Secciones", text: "Textos", fixture: "Instalaciones", run: "Tuberías", underlay: "Calcos", hatch: "Sombreados" } as const;
 
   if (sel && o && sel.type === "wall") {
     const w = o as Model["walls"][number], up = ed.levelAbove();
@@ -205,6 +232,19 @@ function Properties({ ed, onFocusCommand }: { ed: Editor; onFocusCommand: () => 
         onChange={(e) => { u.opacity = +e.target.value; ed.touch(); }} />
       <NumberField id={`${key}-w`} label="Ancho (m)" value={u.w} onCommit={(v) => ed.edit(() => { u.h *= v / u.w; u.w = v; })} />
     </>;
+  } else if (sel && o && sel.type === "hatch") {
+    const h = o as Model["hatches"][number], lib = hatchPattern(h.pattern);
+    title = "Sombreado";
+    ro.push(["Superficie", `${num(hatchArea(h.loops))} m²`]);
+    if (h.loops.length > 1) ro.push(["Islas", String(h.loops.length - 1)]);
+    if (h.name) ro.push(["Trama de origen", h.name]);
+    body = <>
+      <PatternField id={`${key}-p`} value={h.pattern} imported={h.lines?.length ? h.name ?? "" : undefined} onChange={(v) => ed.edit(() => { h.pattern = v; })} />
+      {lib && !lib.solid && <>
+        <NumberField id={`${key}-s`} label="Escala" value={h.scale} min={0.05} step={0.1} onCommit={(v) => ed.edit(() => { h.scale = v; })} />
+        <NumberField id={`${key}-a`} label="Giro (°)" value={h.angle} min={-360} step={15} digits={0} onCommit={(v) => ed.edit(() => { h.angle = v % 360; })} />
+      </>}
+    </>;
   } else if (sel && o && sel.type === "dim") {
     title = "Cota alineada";
     ro.push(["Valor", `${num(dimGeom(o as Model["dims"][number]).L)} m`]);
@@ -345,6 +385,32 @@ function RunCatalog({ ed }: { ed: Editor }) {
   );
 }
 
+/** Con la herramienta Sombreado: trama, escala y cómo se elige la zona. */
+function HatchTools({ ed }: { ed: Editor }) {
+  const d = ed.defaults;
+  return (
+    <section>
+      <h2>Sombreado</h2>
+      <div className="catalog" role="radiogroup" aria-label="Trama">
+        {HATCH_PATTERNS.map((p) => (
+          <button key={p.id} role="radio" aria-checked={d.hatchPattern === p.id} className="cat sym-cat" onClick={() => { d.hatchPattern = p.id; ed.emit(); }}>
+            <HatchSwatch pattern={p.id} /><span>{p.label}<small>{p.acad}</small></span>
+          </button>
+        ))}
+      </div>
+      <div className="props" style={{ marginTop: 8 }}>
+        <NumberField id="hat-s" label="Escala" value={d.hatchScale} min={0.05} step={0.1} onCommit={(v) => { d.hatchScale = v; ed.emit(); }} />
+        <NumberField id="hat-a" label="Giro (°)" value={d.hatchAngle} min={-360} step={15} digits={0} onCommit={(v) => { d.hatchAngle = v % 360; ed.emit(); }} />
+        <label className="check full">
+          <input type="checkbox" checked={d.hatchMode === "room"} onChange={(e) => { d.hatchMode = e.target.checked ? "room" : "poly"; ed.emit(); }} />
+          Clic dentro de una habitación la sombrea entera
+        </label>
+      </div>
+      <p className="hint">{d.hatchMode === "room" ? "Clic dentro de una habitación cerrada, o fuera de ellas para dibujar un contorno." : "Dibuja el contorno vértice a vértice."} Enter o clic en el primer vértice cierra el contorno.</p>
+    </section>
+  );
+}
+
 /** Con la herramienta Cota: acotado automático de las fachadas (comando AC). */
 function DimTools({ ed }: { ed: Editor }) {
   const auto = ed.model.dims.filter((d) => d.auto).length;
@@ -369,6 +435,7 @@ export function Sidebar({ ed, onFocusCommand }: { ed: Editor; onFocusCommand: ()
       {ed.tool === "fixture" && <MepCatalog ed={ed} />}
       {ed.tool === "run" && <RunCatalog ed={ed} />}
       {ed.tool === "dim" && <DimTools ed={ed} />}
+      {ed.tool === "hatch" && <HatchTools ed={ed} />}
       <Levels ed={ed} />
       <section>
         <h2>Capas</h2>
@@ -396,7 +463,7 @@ export function Sidebar({ ed, onFocusCommand }: { ed: Editor; onFocusCommand: ()
       </section>
       <p className="hint">
         Escribe comandos como en AutoCAD: <b>M</b> muro, <b>P</b> puerta, <b>V</b> ventana, <b>L</b> línea, <b>C</b> cota, <b>AC</b> acotar fachadas,{" "}
-        <b>H</b> habitación, <b>LO</b> losa, <b>CU</b> cubierta, <b>ES</b> escalera, <b>MB</b> mobiliario, <b>EL</b> electricidad, <b>PL</b> plomería, <b>TU</b> tubería, <b>MO</b> mover, <b>CO</b> copiar, <b>SI</b> simetría, <b>TR</b> recortar, <b>AL</b> alargar, <b>DE</b> desfase, <b>CAL</b> calibrar un calco. Mientras dibujas, teclea una longitud (p. ej. <b>4.5</b>) y Enter.
+        <b>H</b> habitación, <b>LO</b> losa, <b>SB</b> sombreado, <b>CU</b> cubierta, <b>ES</b> escalera, <b>MB</b> mobiliario, <b>EL</b> electricidad, <b>PL</b> plomería, <b>TU</b> tubería, <b>MO</b> mover, <b>CO</b> copiar, <b>SI</b> simetría, <b>TR</b> recortar, <b>AL</b> alargar, <b>DE</b> desfase, <b>CAL</b> calibrar un calco. Mientras dibujas, teclea una longitud (p. ej. <b>4.5</b>) y Enter.
         Selecciona un muro y arrastra sus cuadros azules para estirarlo. Arrastra sobre el vacío para seleccionar con ventana (Mayús o Ctrl suma a la selección). Rueda para zoom; arrastra con el botón derecho, la rueda o Espacio para desplazar. F8 orto, F3 referencias.
       </p>
     </aside>

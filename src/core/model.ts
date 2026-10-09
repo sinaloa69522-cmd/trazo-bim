@@ -1,6 +1,7 @@
 // Modelo del proyecto. Coordenadas en metros; el eje Y crece hacia abajo en planta.
 
 import { defaultBudget, type BudgetSettings } from "./budget";
+import type { PatLine } from "./hatch";
 import { autoRoute, mepDef, sanitaryPoints } from "./mep";
 import { typeForThick } from "./wallTypes";
 
@@ -173,6 +174,22 @@ export interface Underlay {
   opacity: number;
 }
 
+/** Sombreado: una zona rellena con una trama (hatch.ts), como el SOMBREA de AutoCAD. */
+export interface HatchRegion {
+  id: number;
+  /** Contornos cerrados; uno dentro de otro es una isla (relleno par-impar) */
+  loops: { x: number; y: number }[][];
+  /** Trama de la biblioteca, o "importado" si trae sus propias líneas */
+  pattern: string;
+  /** Escala y giro (grados, antihorario) de la trama de la biblioteca */
+  scale: number;
+  angle: number;
+  /** Líneas de trama de un sombreado importado, ya colocadas en la planta */
+  lines?: PatLine[];
+  /** Nombre de la trama en el archivo de origen (ANSI31, AR-CONC…) */
+  name?: string;
+}
+
 /** Contenido de un nivel (una planta). Los identificadores son únicos dentro del nivel. */
 export interface Model {
   walls: Wall[];
@@ -189,6 +206,7 @@ export interface Model {
   fixtures: Fixture[];
   runs: Run[];
   underlays: Underlay[];
+  hatches: HatchRegion[];
   nid: number;
 }
 
@@ -215,7 +233,7 @@ export interface Project {
 
 export const defaultInfo = (): ProjectInfo => ({ name: "Vivienda unifamiliar", author: "", client: "", date: new Date().toISOString().slice(0, 10) });
 
-export type LayerId = "muros" | "puertas" | "ventanas" | "cotas" | "anot" | "hab" | "losas" | "cubiertas" | "escaleras" | "mobiliario" | "secciones" | "electricidad" | "plomeria" | "calcos";
+export type LayerId = "muros" | "puertas" | "ventanas" | "cotas" | "anot" | "hab" | "losas" | "cubiertas" | "escaleras" | "mobiliario" | "secciones" | "electricidad" | "plomeria" | "calcos" | "sombreados";
 
 export interface Layer {
   id: LayerId;
@@ -233,6 +251,7 @@ export const LAYERS: Layer[] = [
   { id: "cotas", name: "A-COTAS", label: "Cotas", tok: "--dim" },
   { id: "anot", name: "A-ANOTACION", label: "Anotación", tok: "--anno" },
   { id: "hab", name: "A-HABITACIONES", label: "Habitaciones", tok: "--accent" },
+  { id: "sombreados", name: "A-SOMBREADOS", label: "Sombreados", tok: "--anno" },
   { id: "losas", name: "A-LOSAS", label: "Losas", tok: "--muted" },
   { id: "cubiertas", name: "A-CUBIERTAS", label: "Cubiertas", tok: "--door" },
   { id: "escaleras", name: "A-ESCALERAS", label: "Escaleras", tok: "--fg" },
@@ -243,7 +262,7 @@ export const LAYERS: Layer[] = [
   { id: "calcos", name: "A-CALCOS", label: "Calcos", tok: "--muted" },
 ];
 
-export const emptyModel = (): Model => ({ walls: [], openings: [], lines: [], dims: [], rooms: [], slabs: [], roofs: [], stairs: [], furniture: [], sections: [], texts: [], fixtures: [], runs: [], underlays: [], nid: 1 });
+export const emptyModel = (): Model => ({ walls: [], openings: [], lines: [], dims: [], rooms: [], slabs: [], roofs: [], stairs: [], furniture: [], sections: [], texts: [], fixtures: [], runs: [], underlays: [], hatches: [], nid: 1 });
 
 export const newLevel = (name: string, elev: number, content: Model = emptyModel()): Level => ({ ...content, name, elev });
 
@@ -269,6 +288,7 @@ export function normalizeModel(raw: unknown): Model {
   m.fixtures = m.fixtures ?? [];
   m.runs = m.runs ?? [];
   m.underlays = m.underlays ?? [];
+  m.hatches = m.hatches ?? [];
   return m;
 }
 

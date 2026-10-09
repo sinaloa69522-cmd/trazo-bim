@@ -1,7 +1,8 @@
 import type { Pt } from "./geometry";
+import { mapLines } from "./hatch";
 import { nextId, type Model } from "./model";
 
-export type ElementType = "wall" | "opening" | "line" | "dim" | "room" | "slab" | "roof" | "stair" | "furniture" | "section" | "text" | "fixture" | "run" | "underlay";
+export type ElementType = "wall" | "opening" | "line" | "dim" | "room" | "slab" | "roof" | "stair" | "furniture" | "section" | "text" | "fixture" | "run" | "underlay" | "hatch";
 export interface ElementRef { type: ElementType; id: number }
 
 type Seg = { x1: number; y1: number; x2: number; y2: number };
@@ -32,7 +33,7 @@ function applySeg(s: Seg, t: Xform) {
 }
 
 const listOf = (m: Model, type: ElementType) =>
-  ({ wall: m.walls, opening: m.openings, line: m.lines, dim: m.dims, room: m.rooms, slab: m.slabs, roof: m.roofs, stair: m.stairs, furniture: m.furniture, section: m.sections, text: m.texts, fixture: m.fixtures, run: m.runs, underlay: m.underlays })[type] as { id: number }[];
+  ({ wall: m.walls, opening: m.openings, line: m.lines, dim: m.dims, room: m.rooms, slab: m.slabs, roof: m.roofs, stair: m.stairs, furniture: m.furniture, section: m.sections, text: m.texts, fixture: m.fixtures, run: m.runs, underlay: m.underlays, hatch: m.hatches })[type] as { id: number }[];
 
 export function findElement(m: Model, r: ElementRef) {
   return listOf(m, r.type).find((o) => o.id === r.id) ?? null;
@@ -55,6 +56,8 @@ export function transformElements(m: Model, refs: ElementRef[], t: Xform, copy: 
     // el texto solo cambia de sitio: reflejado seguiría teniendo que leerse
     else if (r.type === "text") { const p = t.map(el); el.x = p.x; el.y = p.y; }
     else if (r.type === "run") el.pts = el.pts.map(t.map);
+    // la trama de la biblioteca va referida al origen; la importada se lleva con el sombreado
+    else if (r.type === "hatch") { el.loops = el.loops.map((q: Pt[]) => q.map(t.map)); if (el.lines) el.lines = mapLines(el.lines, t.map); }
     // el calco no gira ni se refleja: se lleva su centro
     else if (r.type === "underlay") { const c = t.map({ x: el.x + el.w / 2, y: el.y + el.h / 2 }); el.x = c.x - el.w / 2; el.y = c.y - el.h / 2; }
     else if (r.type === "furniture" || r.type === "fixture") {
@@ -111,4 +114,6 @@ export function deleteElements(m: Model, refs: ElementRef[]) {
   m.runs = m.runs.filter((r) => !runs.has(r.id));
   const und = ids("underlay");
   m.underlays = m.underlays.filter((r) => !und.has(r.id));
+  const hat = ids("hatch");
+  m.hatches = m.hatches.filter((r) => !hat.has(r.id));
 }

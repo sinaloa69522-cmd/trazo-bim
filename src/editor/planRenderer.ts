@@ -1,7 +1,8 @@
 import { dimGeom, dimOffset, dir, loc, pieces, roofGeom, stairSteps, textBox, type Pt } from "../core/geometry";
 import { furnitureStrokes, type Stroke } from "../core/furniture";
 import { discOfSystem, fixtureStrokes, fixtureTextAt, mepDef, systemDef, type SymStroke } from "../core/mep";
-import type { Dim, Fixture, Model, Roof, Run, Section, Stair, Wall } from "../core/model";
+import type { Dim, Fixture, HatchRegion, Model, Roof, Run, Section, Stair, Wall } from "../core/model";
+import { hatchSegments, isSolid, patternLines, patternSpacing, type HatchSegments } from "../core/hatch";
 import { RC } from "../core/rooms";
 import { wallType, type Hatch } from "../core/wallTypes";
 import { DISC_LAYER, type Editor, type SelType } from "./Editor";
@@ -37,6 +38,45 @@ function underlayImage(ed: Editor, key: string): HTMLImageElement | null {
     IMAGES.set(key, img);
   }
   return img.complete && img.naturalWidth ? img : null;
+}
+
+/** Trazos de cada sombreado, que solo se recalculan si cambian su contorno o su trama. */
+const HATCH_CACHE = new WeakMap<HatchRegion, { loops: HatchRegion["loops"]; key: string; r: HatchSegments; spacing: number }>();
+function hatchCache(h: HatchRegion) {
+  const key = `${h.pattern}|${h.scale}|${h.angle}|${h.lines?.length ?? 0}`;
+  let c = HATCH_CACHE.get(h);
+  if (!c || c.loops !== h.loops || c.key !== key) {
+    const lines = patternLines(h);
+    c = { loops: h.loops, key, r: hatchSegments(h.loops, lines), spacing: patternSpacing(lines) };
+    HATCH_CACHE.set(h, c);
+  }
+  return c;
+}
+
+/** Sombreado: relleno sólido, o la trama recortada por el contorno; si a esta escala la trama es más fina que 2 px, una mancha. */
+function drawHatch(ctx: CanvasRenderingContext2D, ed: Editor, h: HatchRegion, col: string, sel: boolean, print: boolean) {
+  ctx.save();
+  ctx.beginPath();
+  for (const q of h.loops) { q.forEach((p, i) => { const s = ed.toS(p.x, p.y); if (i) ctx.lineTo(s.x, s.y); else ctx.moveTo(s.x, s.y); }); ctx.closePath(); }
+  const c = isSolid(h) ? null : hatchCache(h);
+  if (!c || c.r.dense || c.spacing * ed.view.scale < 2) {
+    ctx.globalAlpha = !c ? (sel ? 0.55 : 0.4) : 0.18; ctx.fillStyle = col; ctx.fill("evenodd");
+  } else {
+    ctx.beginPath();
+    for (const [a, b] of c.r.segs) {
+      const p = ed.toS(a.x, a.y), q = ed.toS(b.x, b.y);
+      ctx.moveTo(p.x, p.y);
+      // los puntos de la trama (trazo de longitud 0) se ven como un punto
+      if (Math.abs(p.x - q.x) + Math.abs(p.y - q.y) < 0.5) ctx.lineTo(p.x + 0.8, p.y); else ctx.lineTo(q.x, q.y);
+    }
+    ctx.strokeStyle = col; ctx.lineWidth = print ? 0.5 : sel ? 1 : 0.7; ctx.stroke();
+  }
+  ctx.restore();
+  if (sel) {
+    ctx.save(); ctx.setLineDash([6, 3]); ctx.strokeStyle = col; ctx.lineWidth = 1.5;
+    for (const q of h.loops) { ctx.beginPath(); q.forEach((p, i) => { const s = ed.toS(p.x, p.y); if (i) ctx.lineTo(s.x, s.y); else ctx.moveTo(s.x, s.y); }); ctx.closePath(); ctx.stroke(); }
+    ctx.restore();
+  }
 }
 
 /** Dibuja la planta completa en un canvas 2D. W y H en píxeles CSS. */
@@ -138,6 +178,12 @@ export function drawPlan(ctx: CanvasRenderingContext2D, ed: Editor, C: PlanColor
     ctx.beginPath();
     for (const [j, i0, i1] of c.runs) { const s = toS(rg.x0 + i0 * RC, rg.y0 + j * RC); ctx.rect(s.x, s.y, (i1 - i0) * px + 0.6, px + 0.6); }
     ctx.fill(); ctx.globalAlpha = 1;
+  }
+
+  // sombreados, sobre los rellenos y bajo el mobiliario y los muros
+  if (ed.vis.sombreados) for (const h of m.hatches) {
+    const hl = isSel("hatch", h.id) || (hover?.type === "hatch" && hover.id === h.id);
+    drawHatch(ctx, ed, h, hl ? C.accent : C.anno, hl, P);
   }
 
   // mobiliario, bajo los muros
@@ -299,6 +345,11 @@ export function drawPlan(ctx: CanvasRenderingContext2D, ed: Editor, C: PlanColor
         if (f) strokes(furnitureStrokes(f).map((k) => ({ ...k, pts: k.pts.map(xf.map) })), C.accent, 1.2);
         continue;
       }
+      if (r.type === "hatch") {
+        const h = ed.model.hatches.find((x) => x.id === r.id);
+        if (h) for (const q of h.loops) poly(q.map(xf.map), null, C.accent, 1.5);
+        continue;
+      }
       if (r.type === "underlay") {
         const u = ed.model.underlays.find((x) => x.id === r.id);
         if (u) { const q = xf.map(u); poly([q, { x: q.x + u.w, y: q.y }, { x: q.x + u.w, y: q.y + u.h }, { x: q.x, y: q.y + u.h }], null, C.accent, 1.5); }
@@ -329,7 +380,7 @@ export function drawPlan(ctx: CanvasRenderingContext2D, ed: Editor, C: PlanColor
       const w = { x1: last.x, y1: last.y, x2: p.x, y2: p.y }, h = ed.defaults.thick / 2, L = dir(w).L;
       if (L > 0.01) { ctx.globalAlpha = 0.45; poly(quad(w, 0, L, -h, h), C.accent); ctx.globalAlpha = 1; }
       seg(last, p, C.accent, 1, [5, 4]); lengthTag(ctx, ed, C, last, p);
-    } else if (ed.tool === "slab") {
+    } else if (ed.tool === "slab" || ed.tool === "hatch") {
       ctx.globalAlpha = 0.12; poly([...draft.pts, p], C.accent); ctx.globalAlpha = 1;
       for (let i = 0; i + 1 < draft.pts.length; i++) seg(draft.pts[i], draft.pts[i + 1], C.accent, 1.5);
       seg(last, p, C.accent, 1.2, [5, 4]);

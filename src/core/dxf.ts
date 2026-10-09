@@ -1,6 +1,7 @@
 import { furnitureStrokes } from "./furniture";
 import { fixtureStrokes, fixtureTextAt, mepDef } from "./mep";
 import { dimGeom, dir, loc, pieces, roofGeom, stairSteps, type Pt } from "./geometry";
+import { hatchSegments, isSolid, patternLines, solidTrapezoids } from "./hatch";
 import type { Model } from "./model";
 import type { RoomGrid } from "./rooms";
 
@@ -37,6 +38,18 @@ export function toDxf(m: Model, rooms: RoomGrid | null): string {
       rect("A-VENTANAS", [loc(w, a, -h), loc(w, b, -h), loc(w, b, h), loc(w, a, h)]);
       line("A-VENTANAS", loc(w, a, -h / 3), loc(w, b, -h / 3));
       line("A-VENTANAS", loc(w, a, h / 3), loc(w, b, h / 3));
+    }
+  }
+  // sombreados explotados (el R12 no tiene HATCH): la trama en líneas y los sólidos en trapecios SOLID
+  for (const h of m.hatches ?? []) {
+    if (isSolid(h)) {
+      for (const [a, b, c, d] of solidTrapezoids(h.loops))
+        out.push("0", "SOLID", "8", "A-SOMBREADOS", "10", X(a.x), "20", Y(a.y), "30", "0", "11", X(b.x), "21", Y(b.y), "31", "0",
+          "12", X(c.x), "22", Y(c.y), "32", "0", "13", X(d.x), "23", Y(d.y), "33", "0");
+    } else {
+      const r = hatchSegments(h.loops, patternLines(h));
+      for (const [a, b] of r.segs) line("A-SOMBREADOS", a, b);
+      if (r.dense) for (const q of h.loops) q.forEach((p, i) => line("A-SOMBREADOS", p, q[(i + 1) % q.length]));
     }
   }
   for (const sl of m.slabs ?? []) for (const ring of [sl.pts, ...(sl.holes ?? [])]) ring.forEach((p, i) => line("A-LOSAS", p, ring[(i + 1) % ring.length]));
