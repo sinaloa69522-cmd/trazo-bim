@@ -1,3 +1,4 @@
+import { imperial } from "./units";
 import { furnitureDef } from "./furniture";
 import { dir } from "./geometry";
 import { CIRCUITS, MEP, runLength, SYSTEMS, type Discipline } from "./mep";
@@ -37,7 +38,8 @@ export function openingSchedule(p: Project, kind: OpeningKind) {
     if (pl) pl.count++; else t.perLevel.push({ level: lv.name, count: 1 });
   }
   const rows = [...types.entries()].sort(([, a], [, b]) => a.width - b.width || a.height - b.height || a.sill - b.sill);
-  rows.forEach(([, t], i) => { t.mark = `${kind === "door" ? "P" : "V"}${i + 1}`; });
+  // en EE.UU. D1, W1…
+  rows.forEach(([, t], i) => { t.mark = `${kind === "door" ? (imperial() ? "D" : "P") : imperial() ? "W" : "V"}${i + 1}`; });
   const byKey = new Map(rows);
   const marks = p.levels.map((lv) => new Map(lv.openings.filter((o) => o.kind === kind && byKey.has(key(o))).map((o) => [o.id, byKey.get(key(o))!.mark])));
   return { types: rows.map(([, t]) => t), marks };
