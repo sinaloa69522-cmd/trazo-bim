@@ -5,8 +5,19 @@ export const FILE_FORMAT = "trazo-bim";
 export const FILE_VERSION = 1;
 export const FILE_EXT = ".trazo";
 
-export function serializeProject(p: Project, now = new Date()): string {
-  return JSON.stringify({ format: FILE_FORMAT, version: FILE_VERSION, savedAt: now.toISOString(), project: p }, null, 1);
+/** images: imágenes de los calcos (data URL por clave); van con el proyecto para que el archivo sea autónomo. */
+export function serializeProject(p: Project, now = new Date(), images: Record<string, string> = {}): string {
+  const body: Record<string, unknown> = { format: FILE_FORMAT, version: FILE_VERSION, savedAt: now.toISOString(), project: p };
+  if (Object.keys(images).length) body.images = images;
+  return JSON.stringify(body, null, 1);
+}
+
+/** Imágenes de calco guardadas en el archivo (vacío si no tiene o no es válido). */
+export function readProjectImages(text: string): Record<string, string> {
+  try {
+    const r = JSON.parse(text.replace(/^\uFEFF/, "")) as { images?: Record<string, unknown> };
+    return Object.fromEntries(Object.entries(r?.images ?? {}).filter(([, v]) => typeof v === "string" && v.startsWith("data:image/"))) as Record<string, string>;
+  } catch { return {}; }
 }
 
 /**

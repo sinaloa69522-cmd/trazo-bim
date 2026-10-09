@@ -52,7 +52,7 @@ function Properties({ ed, onFocusCommand }: { ed: Editor; onFocusCommand: () => 
   let title = "Valores por defecto", body: JSX.Element | null = null;
   const n = ed.sels.length;
   const key = sel ? `${sel.type}-${sel.id}` : n > 1 ? "multi" : "def";
-  const TYPE_LABEL = { wall: "Muros", opening: "Puertas y ventanas", line: "Líneas", dim: "Cotas", room: "Habitaciones", slab: "Losas", roof: "Cubiertas", stair: "Escaleras", furniture: "Mobiliario", section: "Secciones", text: "Textos", fixture: "Instalaciones", run: "Tuberías" } as const;
+  const TYPE_LABEL = { wall: "Muros", opening: "Puertas y ventanas", line: "Líneas", dim: "Cotas", room: "Habitaciones", slab: "Losas", roof: "Cubiertas", stair: "Escaleras", furniture: "Mobiliario", section: "Secciones", text: "Textos", fixture: "Instalaciones", run: "Tuberías", underlay: "Calcos" } as const;
 
   if (sel && o && sel.type === "wall") {
     const w = o as Model["walls"][number], up = ed.levelAbove();
@@ -195,6 +195,16 @@ function Properties({ ed, onFocusCommand }: { ed: Editor; onFocusCommand: () => 
     const l = o as Model["lines"][number];
     title = "Línea";
     ro.push(["Longitud", `${num(Math.hypot(l.x2 - l.x1, l.y2 - l.y1))} m`]);
+  } else if (sel && o && sel.type === "underlay") {
+    const u = o as Model["underlays"][number];
+    title = "Calco";
+    ro.push(["Imagen", u.name], ["Tamaño", `${num(u.w)} × ${num(u.h)} m`]);
+    body = <>
+      <label htmlFor={`${key}-op`}>Opacidad</label>
+      <input id={`${key}-op`} type="range" min={0.1} max={1} step={0.05} value={u.opacity}
+        onChange={(e) => { u.opacity = +e.target.value; ed.touch(); }} />
+      <NumberField id={`${key}-w`} label="Ancho (m)" value={u.w} onCommit={(v) => ed.edit(() => { u.h *= v / u.w; u.w = v; })} />
+    </>;
   } else if (sel && o && sel.type === "dim") {
     title = "Cota alineada";
     ro.push(["Valor", `${num(dimGeom(o as Model["dims"][number]).L)} m`]);
@@ -238,6 +248,10 @@ function Properties({ ed, onFocusCommand }: { ed: Editor; onFocusCommand: () => 
         )}
         {ed.sels.some((x) => x.type === "line") && (
           <button className="btn full" onClick={() => ed.linesToWalls()}>Convertir líneas en muros</button>
+        )}
+        {ed.sels.some((x) => x.type === "underlay" || x.type === "line") && (
+          <button className="btn full" onClick={() => { ed.setTool("calibrate"); onFocusCommand(); }}
+            title="Marca dos puntos de una medida conocida y escribe cuánto mide (comando CAL)">Calibrar escala</button>
         )}
         {n > 0 && <button className="btn full" onClick={() => ed.deleteSel()}>{n > 1 ? `Borrar ${n} elementos` : "Borrar elemento"}</button>}
       </div>
@@ -382,7 +396,7 @@ export function Sidebar({ ed, onFocusCommand }: { ed: Editor; onFocusCommand: ()
       </section>
       <p className="hint">
         Escribe comandos como en AutoCAD: <b>M</b> muro, <b>P</b> puerta, <b>V</b> ventana, <b>L</b> línea, <b>C</b> cota, <b>AC</b> acotar fachadas,{" "}
-        <b>H</b> habitación, <b>LO</b> losa, <b>CU</b> cubierta, <b>ES</b> escalera, <b>MB</b> mobiliario, <b>EL</b> electricidad, <b>PL</b> plomería, <b>TU</b> tubería, <b>MO</b> mover, <b>CO</b> copiar, <b>SI</b> simetría, <b>TR</b> recortar, <b>AL</b> alargar, <b>DE</b> desfase. Mientras dibujas, teclea una longitud (p. ej. <b>4.5</b>) y Enter.
+        <b>H</b> habitación, <b>LO</b> losa, <b>CU</b> cubierta, <b>ES</b> escalera, <b>MB</b> mobiliario, <b>EL</b> electricidad, <b>PL</b> plomería, <b>TU</b> tubería, <b>MO</b> mover, <b>CO</b> copiar, <b>SI</b> simetría, <b>TR</b> recortar, <b>AL</b> alargar, <b>DE</b> desfase, <b>CAL</b> calibrar un calco. Mientras dibujas, teclea una longitud (p. ej. <b>4.5</b>) y Enter.
         Selecciona un muro y arrastra sus cuadros azules para estirarlo. Arrastra sobre el vacío para seleccionar con ventana (Mayús o Ctrl suma a la selección). Rueda para zoom; arrastra con el botón derecho, la rueda o Espacio para desplazar. F8 orto, F3 referencias.
       </p>
     </aside>

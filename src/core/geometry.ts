@@ -89,7 +89,7 @@ export interface Bounds {
 }
 
 /** Extensión del dibujo con 1.5 m de margen. */
-export function bounds(m: Model): Bounds {
+export function bounds(m: Model, extra: Pt[] = []): Bounds {
   let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
   const add = (x: number, y: number) => {
     x0 = Math.min(x0, x); y0 = Math.min(y0, y); x1 = Math.max(x1, x); y1 = Math.max(y1, y);
@@ -98,6 +98,7 @@ export function bounds(m: Model): Bounds {
   for (const sl of m.slabs ?? []) for (const p of sl.pts) add(p.x, p.y);
   for (const f of m.furniture ?? []) add(f.x, f.y);
   for (const t of m.texts ?? []) for (const p of textBox(t)) add(p.x, p.y);
+  for (const p of extra) add(p.x, p.y);
   if (!isFinite(x0)) return { x0: -5, y0: -4, x1: 5, y1: 4 };
   return { x0: x0 - 1.5, y0: y0 - 1.5, x1: x1 + 1.5, y1: y1 + 1.5 };
 }

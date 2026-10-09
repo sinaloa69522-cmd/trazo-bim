@@ -24,6 +24,21 @@ export interface PlanOpts {
   roomLabelDy?: number;
 }
 
+/** Imágenes de los calcos ya decodificadas; al terminar de cargar una se vuelve a dibujar. */
+const IMAGES = new Map<string, HTMLImageElement>();
+function underlayImage(ed: Editor, key: string): HTMLImageElement | null {
+  let img = IMAGES.get(key);
+  if (!img) {
+    const src = ed.images.get(key);
+    if (!src) return null;
+    img = new Image();
+    img.onload = () => ed.emit();
+    img.src = src;
+    IMAGES.set(key, img);
+  }
+  return img.complete && img.naturalWidth ? img : null;
+}
+
 /** Dibuja la planta completa en un canvas 2D. W y H en píxeles CSS. */
 export function drawPlan(ctx: CanvasRenderingContext2D, ed: Editor, C: PlanColors, W: number, H: number, opts: PlanOpts = {}) {
   const m = ed.model, P = !!opts.print, hover = P ? null : ed.hover;
@@ -73,6 +88,16 @@ export function drawPlan(ctx: CanvasRenderingContext2D, ed: Editor, C: PlanColor
     if (fill && i === 0 && k.closed) { ctx.fillStyle = fill; ctx.fill(); }
     ctx.strokeStyle = col; ctx.lineWidth = lw; ctx.stroke();
   });
+
+  // calcos: imágenes de referencia bajo todo lo demás (solo en pantalla, no en las láminas)
+  if (!P && ed.vis.calcos) for (const u of m.underlays) {
+    const img = underlayImage(ed, u.img), a = toS(u.x, u.y), sel = isSel("underlay", u.id);
+    if (img) { ctx.globalAlpha = u.opacity; ctx.drawImage(img, a.x, a.y, u.w * ed.view.scale, u.h * ed.view.scale); ctx.globalAlpha = 1; }
+    ctx.setLineDash(sel ? [] : [6, 4]);
+    ctx.strokeStyle = sel ? C.accent : C.muted; ctx.lineWidth = sel ? 2 : 1;
+    ctx.strokeRect(a.x, a.y, u.w * ed.view.scale, u.h * ed.view.scale);
+    ctx.setLineDash([]);
+  }
 
   // nivel inferior como referencia (gris claro), como el subyacente de Revit
   const below = ed.levelBelow();
@@ -242,6 +267,13 @@ export function drawPlan(ctx: CanvasRenderingContext2D, ed: Editor, C: PlanColor
     ctx.strokeStyle = C.accent; ctx.lineWidth = 1.5;
     ctx.beginPath(); ctx.moveTo(s.x, s.y); ctx.lineTo(s.x, s.y - hgt); ctx.moveTo(s.x - 4, s.y); ctx.lineTo(s.x + 4, s.y); ctx.stroke();
   }
+  if (ed.tool === "calibrate" && draft?.pts.length) {
+    const a = draft.pts[0], b = draft.pts[1] ?? p;
+    seg(a, b, C.danger, 2, [8, 4]);
+    for (const q of [a, b]) { const s = toS(q.x, q.y); ctx.strokeStyle = C.danger; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.moveTo(s.x - 6, s.y - 6); ctx.lineTo(s.x + 6, s.y + 6); ctx.moveTo(s.x + 6, s.y - 6); ctx.lineTo(s.x - 6, s.y + 6); ctx.stroke(); }
+    const mid = toS((a.x + b.x) / 2, (a.y + b.y) / 2);
+    ctx.font = MONO; ctx.fillStyle = C.danger; ctx.fillText(`${Math.hypot(b.x - a.x, b.y - a.y).toFixed(3)}`, mid.x + 8, mid.y - 8);
+  }
   const xf = ed.previewXform();
   if (xf && draft) {
     ctx.globalAlpha = 0.55;
@@ -265,6 +297,11 @@ export function drawPlan(ctx: CanvasRenderingContext2D, ed: Editor, C: PlanColor
       if (r.type === "furniture") {
         const f = ed.model.furniture.find((x) => x.id === r.id);
         if (f) strokes(furnitureStrokes(f).map((k) => ({ ...k, pts: k.pts.map(xf.map) })), C.accent, 1.2);
+        continue;
+      }
+      if (r.type === "underlay") {
+        const u = ed.model.underlays.find((x) => x.id === r.id);
+        if (u) { const q = xf.map(u); poly([q, { x: q.x + u.w, y: q.y }, { x: q.x + u.w, y: q.y + u.h }, { x: q.x, y: q.y + u.h }], null, C.accent, 1.5); }
         continue;
       }
       const list: { id: number }[] = ed.model[({ wall: "walls", line: "lines", dim: "dims", room: "rooms", roof: "roofs", stair: "stairs", section: "sections", text: "texts" } as const)[r.type]];

@@ -9,7 +9,9 @@ Herramienta web de dibujo arquitectónico que toma como referencia AutoCAD (plan
 - **Edición:** selecciona un muro y arrastra sus pinzamientos para estirarlo o moverlo; los muros unidos lo siguen y los huecos conservan su posición.
 - **Selección múltiple:** Mayús o Ctrl + clic, o ventana de selección (de izquierda a derecha, lo que queda dentro; de derecha a izquierda, también lo que cruza). Mover, copiar, simetría (`SI`) y borrar actúan sobre toda la selección.
 - **Recortar, alargar y desfase:** recorta el tramo de muro o línea entre los bordes más cercanos al clic, alarga un extremo hasta el siguiente muro o línea, y crea copias paralelas a una distancia tecleada. Las puertas y ventanas conservan su posición.
-- **Importar DXF:** líneas y polilíneas (LINE, LWPOLYLINE, POLYLINE) como anotación, con detección de unidades. "Convertir líneas en muros" las pasa a muros.
+- **Importar DWG y DXF:** líneas, polilíneas (con sus arcos), arcos, círculos, elipses, splines y bloques explotados como anotación, con detección de unidades. El DWG se lee en el navegador con LibreDWG (WebAssembly). "Convertir líneas en muros" las pasa a muros.
+- **Importar PDF:** un PDF exportado de CAD se pasa a líneas a la escala del plano (1:50, 1:100…); un plano escaneado se pone de calco.
+- **Calcos:** imágenes (PNG, JPG) o páginas de PDF bajo el dibujo, con opacidad. `CAL` calibra la escala marcando una medida conocida. Se guardan dentro del archivo `.trazo`.
 - **Habitaciones:** superficie útil calculada desde los muros.
 - **Niveles:** varias plantas con nombre y cota. "Nuevo nivel" crea una planta vacía encima (el nivel de abajo se ve en gris como referencia) y "Duplicar" copia la planta activa.
 - **Losas:** contorno por puntos (`LO`), se cierra en el primer punto o con Intro; muestra superficie y espesor.
@@ -45,3 +47,7 @@ npm run build      # comprobación de tipos y build de producción
 3. Documentación: secciones, varias vistas por lámina, cotas automáticas.
 4. Intercambio: importación IFC, materiales y propiedades en el IFC.
 5. Proyectos en la nube y colaboración.
+
+## Licencia
+
+GPL-3.0 o posterior (ver `LICENSE`). La lectura de DWG usa [LibreDWG](https://www.gnu.org/software/libredwg/) a través de `@mlightcad/libredwg-web`, que es GPL-3.0.
