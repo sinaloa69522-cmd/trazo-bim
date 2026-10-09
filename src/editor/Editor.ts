@@ -266,14 +266,14 @@ export class Editor {
     // la copia no lleva cubiertas (se mueven abajo) ni secciones (cortan todo el edificio)
     const content = copy ? { ...cloneModel(this.model), roofs: [], sections: [] } : undefined;
     const lv = newLevel(n === 1 ? "Planta 1" : `Planta ${n}`, elev, content);
-    // al copiar la planta más alta, su cubierta sube a la copia para seguir coronando el edificio
-    const src = this.model, moved = copy && src.elev >= top - 1e-6 ? src.roofs.length : 0;
+    // la cubierta de la planta más alta sube al nivel nuevo, vacío o copia, para seguir coronando el edificio
+    const src = this.project.levels.find((l) => Math.abs(l.elev - top) < 1e-6)!, moved = src.roofs.length;
     if (moved) { lv.roofs = src.roofs; src.roofs = []; }
     this.project.levels.push(lv);
     this.project.levels.sort((a, b) => a.elev - b.elev);
     this.active = this.project.levels.indexOf(lv);
     this.sels = [];
-    this.message = copy ? `${lv.name} creada como copia, a ${fmtLen(elev)}.${moved ? " La cubierta ha subido a la nueva planta." : ""}` : `${lv.name} creada a ${fmtLen(elev)}. El nivel de abajo se ve en gris como referencia.`;
+    this.message = copy ? `${lv.name} creada como copia, a ${fmtLen(elev)}.${moved ? " La cubierta ha subido a la nueva planta." : ""}` : `${lv.name} creada a ${fmtLen(elev)}. El nivel de abajo se ve en gris como referencia.${moved ? " La cubierta ha subido a la nueva planta." : ""}`;
     this.changed();
   }
   renameLevel(name: string) { this.edit(() => { this.model.name = name; }); }
@@ -1297,6 +1297,21 @@ export class Editor {
   levelAbove(): Level | null {
     const e = this.model.elev;
     return this.project.levels.filter((l) => l.elev > e + 1e-6).sort((a, b) => a.elev - b.elev)[0] ?? null;
+  }
+
+  /** Pasa una cubierta al nivel de arriba (p. ej. la de la planta baja tras añadir una planta encima). */
+  moveRoofUp(id: number) {
+    const r = this.model.roofs.find((x) => x.id === id), up = this.levelAbove();
+    if (!r) return;
+    if (!up) { this.log("No hay ningún nivel por encima. Crea uno con Nuevo nivel."); return; }
+    this.snapshot();
+    this.model.roofs = this.model.roofs.filter((x) => x !== r);
+    // arranca sobre los muros del nivel de arriba si ya los tiene
+    const hs = up.walls.map((w) => w.height);
+    up.roofs.push({ ...r, id: nextId(up), base: hs.length ? Math.max(...hs) : r.base });
+    this.sels = [];
+    this.message = `Cubierta movida a ${up.name}.`;
+    this.changed();
   }
 
   /** Abre en la losa del nivel de arriba un hueco con la huella de la escalera. */
