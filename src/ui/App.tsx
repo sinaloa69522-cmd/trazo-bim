@@ -10,6 +10,8 @@ import { BudgetView } from "./BudgetView";
 import { SheetView } from "./SheetView";
 import { Sidebar } from "./Sidebar";
 import { View3D, type View3DHandle } from "./View3D";
+import { framing, framingTakeoff, type MemberKind } from "../core/framing";
+import { FT, imperial } from "../core/units";
 
 type ViewMode = "plan" | "split" | "3d" | "sheet" | "budget";
 
@@ -54,6 +56,26 @@ function storage(): Storage | null {
 
 export function useEditorVersion(ed: Editor) {
   return useSyncExternalStore(ed.subscribe, ed.getVersion);
+}
+
+const FRAME_LABEL: Record<MemberKind, [string, string]> = {
+  footing: ["Zapatas", "#b3b0a8"], plate: ["Soleras", "#c99b62"], stud: ["Montantes", "#e2c08f"], header: ["Dinteles", "#a8763f"],
+  joist: ["Viguetas", "#d6ad74"], rafter: ["Cabios", "#d9b27c"], ridge: ["Cumbrera y limatesas", "#9c6c3a"],
+};
+
+/** Leyenda de colores de la vista de estructura, con piezas y metros lineales por escuadría. */
+function FramingLegend({ ed }: { ed: Editor }) {
+  const v = ed.version;
+  const rows = useMemo(() => framingTakeoff(framing(ed.project)), [ed, v]).sort((a, b) => Object.keys(FRAME_LABEL).indexOf(a.kind) - Object.keys(FRAME_LABEL).indexOf(b.kind) || a.size.localeCompare(b.size));
+  return (
+    <div className="framelegend">
+      <b>Estructura de madera (predimensionado IRC)</b>
+      <table><tbody>{rows.map((r) => (
+        <tr key={`${r.kind}${r.size}`}><td><i style={{ background: FRAME_LABEL[r.kind][1] }} /> {FRAME_LABEL[r.kind][0]}</td><td>{r.size}</td>
+          <td className="r">{r.count} pzas</td><td className="r">{imperial() ? `${Math.round(r.length / FT)} ft` : `${r.length.toFixed(1)} m`}</td></tr>
+      ))}</tbody></table>
+    </div>
+  );
 }
 
 export function App() {
@@ -193,8 +215,12 @@ export function App() {
           {view === "budget" && <BudgetView ed={ed} />}
           <div className="pane pane3d">
             <View3D ref={view3d} ed={ed} />
-            <span className="tag">3D · Vista axonométrica</span>
-            <div className="paneover"><button className="btn" onClick={() => view3d.current?.fit()}>Encuadrar</button></div>
+            <span className="tag">3D · {ed.framing ? "Estructura de framing" : "Vista axonométrica"}</span>
+            <div className="paneover">
+              <button className={`btn${ed.framing ? " on" : ""}`} aria-pressed={ed.framing} title="Ver toda la estructura de madera: zapatas, soleras, montantes, dinteles, viguetas y cabios" onClick={() => ed.toggleFraming()}>Estructura</button>
+              <button className="btn" onClick={() => view3d.current?.fit()}>Encuadrar</button>
+            </div>
+            {ed.framing && <FramingLegend ed={ed} />}
           </div>
         </section>
       </div>
