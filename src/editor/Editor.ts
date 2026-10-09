@@ -3,6 +3,7 @@ import {
   attachWalls, cloneModel, emptyProject, newLevel, nextId, nextSectionName, normalizeProject, sampleProject, type Level, type Project, type ProjectInfo,
   type LayerId, type Model, type RoofKind, type RunSystem, type Wall,
 } from "../core/model";
+import { autoDims } from "../core/autodim";
 import { parseDxf } from "../core/dxfImport";
 import { parseProjectFile, projectFileName, serializeProject } from "../core/projectFile";
 import { FURNITURE, furnitureDef, furnitureOutline } from "../core/furniture";
@@ -710,6 +711,32 @@ export class Editor {
   /** Lista de piezas de la biblioteca. */
   get furnitureCatalog() { return FURNITURE; }
 
+  /** Acota las fachadas del nivel: sustituye las cotas automáticas anteriores y respeta las dibujadas a mano. */
+  autoDimension() {
+    const m = this.model, dims = autoDims(m);
+    if (!dims.length) { this.log("No hay muros de fachada paralelos a los ejes que acotar."); return; }
+    this.snapshot();
+    const removed = m.dims.filter((d) => d.auto).length;
+    this.sels = this.sels.filter((x) => x.type !== "dim" || m.dims.some((d) => d.id === x.id && !d.auto));
+    m.dims = m.dims.filter((d) => !d.auto);
+    for (const d of dims) m.dims.push({ id: nextId(m), ...d });
+    this.vis.cotas = true;
+    this.message = `${dims.length} cotas exteriores en cadena (huecos, muros y total)${removed ? ", sustituyendo las automáticas anteriores" : ""}. Las tuyas se conservan.`;
+    this.changed();
+  }
+
+  /** Borra solo las cotas puestas por el acotado automático. */
+  clearAutoDims() {
+    const m = this.model, n = m.dims.filter((d) => d.auto).length;
+    if (!n) return;
+    this.snapshot();
+    const gone = new Set(m.dims.filter((d) => d.auto).map((d) => d.id));
+    m.dims = m.dims.filter((d) => !d.auto);
+    this.sels = this.sels.filter((x) => !(x.type === "dim" && gone.has(x.id)));
+    this.message = `${n} cotas automáticas quitadas.`;
+    this.changed();
+  }
+
   // ---------- instalaciones ----------
   /** Lista de mecanismos y puntos de la biblioteca de instalaciones. */
   get mepCatalog() { return MEP; }
@@ -905,6 +932,7 @@ export class Editor {
       if (this.lastCmd) this.runCommand(this.lastCmd);
       return;
     }
+    if (s === "AC" || s === "ACOTAR") { this.lastCmd = s; this.autoDimension(); return; }
     if (DISC_COMMANDS[s]) { this.lastCmd = s; this.pickDiscipline(DISC_COMMANDS[s]); return; }
     if (COMMANDS[s]) { this.lastCmd = s; this.setTool(COMMANDS[s]); if (this.tool === COMMANDS[s]) this.log(`Comando: ${s}`); return; }
     if (s === "B" || s === "BORRAR") return this.deleteSel();

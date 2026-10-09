@@ -331,6 +331,22 @@ function RunCatalog({ ed }: { ed: Editor }) {
   );
 }
 
+/** Con la herramienta Cota: acotado automático de las fachadas (comando AC). */
+function DimTools({ ed }: { ed: Editor }) {
+  const auto = ed.model.dims.filter((d) => d.auto).length;
+  return (
+    <section>
+      <h2>Cotas</h2>
+      <p className="hint">Clic en dos puntos y un tercero para separar la cota del dibujo.</p>
+      <button className="btn primary wide" onClick={() => ed.autoDimension()} title="Comando AC">
+        {auto ? "Rehacer cotas de fachada" : "Acotar fachadas"}
+      </button>
+      {auto > 0 && <button className="btn wide" onClick={() => ed.clearAutoDims()}>Quitar cotas automáticas ({auto})</button>}
+      <p className="hint">Pone tres cadenas por fachada: huecos, muros que acometen y total, a cara exterior.</p>
+    </section>
+  );
+}
+
 export function Sidebar({ ed, onFocusCommand }: { ed: Editor; onFocusCommand: () => void }) {
   const counts = ed.layerCounts(), s = ed.stats();
   return (
@@ -338,6 +354,7 @@ export function Sidebar({ ed, onFocusCommand }: { ed: Editor; onFocusCommand: ()
       {ed.tool === "furniture" && <Catalog ed={ed} />}
       {ed.tool === "fixture" && <MepCatalog ed={ed} />}
       {ed.tool === "run" && <RunCatalog ed={ed} />}
+      {ed.tool === "dim" && <DimTools ed={ed} />}
       <Levels ed={ed} />
       <section>
         <h2>Capas</h2>
@@ -364,7 +381,7 @@ export function Sidebar({ ed, onFocusCommand }: { ed: Editor; onFocusCommand: ()
         </dl>
       </section>
       <p className="hint">
-        Escribe comandos como en AutoCAD: <b>M</b> muro, <b>P</b> puerta, <b>V</b> ventana, <b>L</b> línea, <b>C</b> cota,{" "}
+        Escribe comandos como en AutoCAD: <b>M</b> muro, <b>P</b> puerta, <b>V</b> ventana, <b>L</b> línea, <b>C</b> cota, <b>AC</b> acotar fachadas,{" "}
         <b>H</b> habitación, <b>LO</b> losa, <b>CU</b> cubierta, <b>ES</b> escalera, <b>MB</b> mobiliario, <b>EL</b> electricidad, <b>PL</b> plomería, <b>TU</b> tubería, <b>MO</b> mover, <b>CO</b> copiar, <b>SI</b> simetría, <b>TR</b> recortar, <b>AL</b> alargar, <b>DE</b> desfase. Mientras dibujas, teclea una longitud (p. ej. <b>4.5</b>) y Enter.
         Selecciona un muro y arrastra sus cuadros azules para estirarlo. Arrastra sobre el vacío para seleccionar con ventana (Mayús o Ctrl suma a la selección). Rueda para zoom; arrastra con el botón derecho, la rueda o Espacio para desplazar. F8 orto, F3 referencias.
       </p>

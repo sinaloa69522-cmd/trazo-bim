@@ -230,3 +230,4 @@ dialog .acts span{margin-right:auto;color:var(--muted);font-size:12px}
 .cat.sym-cat{flex-direction:row;align-items:center;gap:7px}
 .cat.sym-cat span{display:flex;flex-direction:column}
 .sym{flex:none;vertical-align:middle}
+.btn.wide{display:block;width:100%;margin:6px 0}
