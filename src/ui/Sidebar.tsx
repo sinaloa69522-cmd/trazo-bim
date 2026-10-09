@@ -1,19 +1,31 @@
 import { Fragment, useState } from "react";
-import { dimGeom, dir, fits, polygonArea } from "../core/geometry";
-import { LAYERS, type Model } from "../core/model";
-import type { Editor } from "../editor/Editor";
+import { dimGeom, dir, fits, polygonArea, roofGeom, stairSteps } from "../core/geometry";
+import { LAYERS, type Model, type RoofKind } from "../core/model";
+import { ROOF_LABEL, type Editor } from "../editor/Editor";
 
 const num = (v: number) => v.toFixed(2);
 
-function NumberField({ id, label, value, onCommit }: { id: string; label: string; value: number; onCommit: (v: number) => void }) {
+function NumberField({ id, label, value, onCommit, min = 0.01, step = 0.01, digits = 2 }:
+  { id: string; label: string; value: number; onCommit: (v: number) => void; min?: number; step?: number; digits?: number }) {
   const [draft, setDraft] = useState<string | null>(null);
   return (
     <>
       <label htmlFor={id}>{label}</label>
-      <input id={id} type="number" step="0.01" min="0.01" value={draft ?? num(value)}
+      <input id={id} type="number" step={step} min={min} value={draft ?? value.toFixed(digits)}
         onChange={(e) => setDraft(e.target.value)}
         onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
-        onBlur={(e) => { const v = parseFloat(e.target.value); setDraft(null); if (v > 0 && v !== value) onCommit(v); }} />
+        onBlur={(e) => { const v = parseFloat(e.target.value); setDraft(null); if (v >= min && v !== value) onCommit(v); }} />
+    </>
+  );
+}
+
+function RoofKindField({ id, value, onChange }: { id: string; value: RoofKind; onChange: (k: RoofKind) => void }) {
+  return (
+    <>
+      <label htmlFor={id}>Tipo de cubierta</label>
+      <select id={id} value={value} onChange={(e) => onChange(e.target.value as RoofKind)}>
+        {(Object.keys(ROOF_LABEL) as RoofKind[]).map((k) => <option key={k} value={k}>{ROOF_LABEL[k]}</option>)}
+      </select>
     </>
   );
 }
@@ -24,7 +36,7 @@ function Properties({ ed, onFocusCommand }: { ed: Editor; onFocusCommand: () => 
   let title = "Valores por defecto", body: JSX.Element | null = null;
   const n = ed.sels.length;
   const key = sel ? `${sel.type}-${sel.id}` : n > 1 ? "multi" : "def";
-  const TYPE_LABEL = { wall: "Muros", opening: "Puertas y ventanas", line: "Líneas", dim: "Cotas", room: "Habitaciones", slab: "Losas" } as const;
+  const TYPE_LABEL = { wall: "Muros", opening: "Puertas y ventanas", line: "Líneas", dim: "Cotas", room: "Habitaciones", slab: "Losas", roof: "Cubiertas", stair: "Escaleras" } as const;
 
   if (sel && o && sel.type === "wall") {
     const w = o as Model["walls"][number];
@@ -61,6 +73,26 @@ function Properties({ ed, onFocusCommand }: { ed: Editor; onFocusCommand: () => 
     title = "Losa";
     ro.push(["Superficie", `${num(polygonArea(sl.pts))} m²`], ["Vértices", String(sl.pts.length)]);
     body = <NumberField id={`${key}-t`} label="Espesor (m)" value={sl.thick} onCommit={(v) => ed.edit(() => { sl.thick = v; })} />;
+  } else if (sel && o && sel.type === "roof") {
+    const r = o as Model["roofs"][number], g = roofGeom(r);
+    title = `Cubierta ${ROOF_LABEL[r.kind].toLowerCase()}`;
+    ro.push(["Superficie en planta", `${num(polygonArea(g.outline))} m²`], ["Altura cumbrera", `${num(g.top)} m`]);
+    body = <>
+      <RoofKindField id={`${key}-k`} value={r.kind} onChange={(k) => ed.edit(() => { r.kind = k; })} />
+      {r.kind !== "flat" && <NumberField id={`${key}-p`} label="Pendiente (°)" value={r.pitch} min={1} step={1} digits={0} onCommit={(v) => ed.edit(() => { r.pitch = Math.min(75, v); })} />}
+      <NumberField id={`${key}-o`} label="Vuelo (m)" value={r.overhang} min={0} onCommit={(v) => ed.edit(() => { r.overhang = v; })} />
+      <NumberField id={`${key}-b`} label="Arranque (m)" value={r.base} min={0} onCommit={(v) => ed.edit(() => { r.base = v; })} />
+    </>;
+  } else if (sel && o && sel.type === "stair") {
+    const st = o as Model["stairs"][number], k = stairSteps(st);
+    title = "Escalera recta";
+    ro.push(["Peldaños", String(k.n)], ["Huella", `${(k.tread * 100).toFixed(1)} cm`], ["Contrahuella", `${(k.riser * 100).toFixed(1)} cm`],
+      ["Longitud", `${num(k.L)} m`]);
+    if (k.tread < 0.25) ro.push(["Aviso", "huella corta"]);
+    body = <>
+      <NumberField id={`${key}-w`} label="Ancho (m)" value={st.width} onCommit={(v) => ed.edit(() => { st.width = v; })} />
+      <NumberField id={`${key}-h`} label="Desnivel (m)" value={st.height} onCommit={(v) => ed.edit(() => { st.height = v; })} />
+    </>;
   } else if (sel && o && sel.type === "line") {
     const l = o as Model["lines"][number];
     title = "Línea";
@@ -82,6 +114,9 @@ function Properties({ ed, onFocusCommand }: { ed: Editor; onFocusCommand: () => 
       <NumberField id="def-ww" label="Ancho ventana" value={d.winW} onCommit={(v) => { d.winW = v; ed.emit(); }} />
       <NumberField id="def-s" label="Antepecho" value={d.sill} onCommit={(v) => { d.sill = v; ed.emit(); }} />
       <NumberField id="def-sl" label="Espesor losa" value={d.slabThick} onCommit={(v) => { d.slabThick = v; ed.emit(); }} />
+      <RoofKindField id="def-rk" value={d.roofKind} onChange={(k) => { d.roofKind = k; ed.emit(); }} />
+      <NumberField id="def-rp" label="Pendiente (°)" value={d.pitch} min={1} step={1} digits={0} onCommit={(v) => { d.pitch = Math.min(75, v); ed.emit(); }} />
+      <NumberField id="def-sw" label="Ancho escalera" value={d.stairW} onCommit={(v) => { d.stairW = v; ed.emit(); }} />
     </>;
   }
 
@@ -127,7 +162,7 @@ function Levels({ ed }: { ed: Editor }) {
         <NumberField id="lv-elev" label="Cota (m)" value={cur.elev} onCommit={(v) => ed.setLevelElevation(v)} />
         <div className="full" style={{ display: "flex", gap: 6 }}>
           <button className="btn" style={{ flex: 1 }} onClick={() => ed.addLevel(false)} title="Nivel vacío encima, con el de abajo en gris como referencia">Nuevo nivel</button>
-          <button className="btn" style={{ flex: 1 }} onClick={() => ed.addLevel(true)} title="Copia muros, huecos y losas del nivel activo">Duplicar</button>
+          <button className="btn" style={{ flex: 1 }} onClick={() => ed.addLevel(true)} title="Copia muros, huecos, losas y escaleras del nivel activo">Duplicar</button>
         </div>
         {levels.length > 1 && <button className="btn full" onClick={() => ed.deleteLevel()}>Borrar nivel</button>}
       </div>
@@ -166,7 +201,7 @@ export function Sidebar({ ed, onFocusCommand }: { ed: Editor; onFocusCommand: ()
       </section>
       <p className="hint">
         Escribe comandos como en AutoCAD: <b>M</b> muro, <b>P</b> puerta, <b>V</b> ventana, <b>L</b> línea, <b>C</b> cota,{" "}
-        <b>H</b> habitación, <b>LO</b> losa, <b>MO</b> mover, <b>CO</b> copiar, <b>SI</b> simetría, <b>TR</b> recortar, <b>AL</b> alargar, <b>DE</b> desfase. Mientras dibujas, teclea una longitud (p. ej. <b>4.5</b>) y Enter.
+        <b>H</b> habitación, <b>LO</b> losa, <b>CU</b> cubierta, <b>ES</b> escalera, <b>MO</b> mover, <b>CO</b> copiar, <b>SI</b> simetría, <b>TR</b> recortar, <b>AL</b> alargar, <b>DE</b> desfase. Mientras dibujas, teclea una longitud (p. ej. <b>4.5</b>) y Enter.
         Selecciona un muro y arrastra sus cuadros azules para estirarlo. Arrastra sobre el vacío para seleccionar con ventana (Mayús o Ctrl suma a la selección). Rueda para zoom; arrastra con el botón derecho, la rueda o Espacio para desplazar. F8 orto, F3 referencias.
       </p>
     </aside>

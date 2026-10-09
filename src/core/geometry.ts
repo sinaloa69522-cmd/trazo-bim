@@ -1,4 +1,4 @@
-import type { Dim, Model, Opening, Wall } from "./model";
+import type { Dim, Model, Opening, Roof, Stair, Wall } from "./model";
 
 export interface Pt {
   x: number;
@@ -94,7 +94,7 @@ export function bounds(m: Model): Bounds {
   const add = (x: number, y: number) => {
     x0 = Math.min(x0, x); y0 = Math.min(y0, y); x1 = Math.max(x1, x); y1 = Math.max(y1, y);
   };
-  for (const s of [...m.walls, ...m.lines, ...m.dims]) { add(s.x1, s.y1); add(s.x2, s.y2); }
+  for (const s of [...m.walls, ...m.lines, ...m.dims, ...(m.roofs ?? []), ...(m.stairs ?? [])]) { add(s.x1, s.y1); add(s.x2, s.y2); }
   for (const sl of m.slabs ?? []) for (const p of sl.pts) add(p.x, p.y);
   if (!isFinite(x0)) return { x0: -5, y0: -4, x1: 5, y1: 4 };
   return { x0: x0 - 1.5, y0: y0 - 1.5, x1: x1 + 1.5, y1: y1 + 1.5 };
@@ -115,4 +115,70 @@ export function polygonArea(poly: Pt[]) {
   let a = 0;
   for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) a += (poly[j].x + poly[i].x) * (poly[j].y - poly[i].y);
   return Math.abs(a) / 2;
+}
+
+/** Punto 3D: x, y de la planta y z altura sobre la cota del nivel. */
+export interface P3 { x: number; y: number; z: number }
+
+export interface RoofGeom {
+  /** Contorno del alero en planta */
+  outline: Pt[];
+  /** Aristas interiores (cumbrera, limatesas) para dibujar en planta */
+  ridges: [Pt, Pt][];
+  /** Faldones (polígonos convexos) en 3D */
+  faces: P3[][];
+  /** Hastiales: triángulos verticales sobre los muros de los extremos en las cubiertas a dos aguas */
+  gables: P3[][];
+  /** Altura de la cumbrera sobre la cota del nivel */
+  top: number;
+}
+
+/**
+ * Geometría de una cubierta rectangular. La cumbrera va siempre en la dirección larga.
+ * A dos aguas cae hacia los lados largos; a cuatro aguas, hacia los cuatro lados.
+ */
+export function roofGeom(r: Roof): RoofGeom {
+  const o = r.overhang;
+  const x0 = Math.min(r.x1, r.x2) - o, x1 = Math.max(r.x1, r.x2) + o;
+  const y0 = Math.min(r.y1, r.y2) - o, y1 = Math.max(r.y1, r.y2) + o;
+  const outline = [{ x: x0, y: y0 }, { x: x1, y: y0 }, { x: x1, y: y1 }, { x: x0, y: y1 }];
+  // el alero baja con la pendiente lo que vuela, para que el plano pase por el arranque sobre el muro
+  const tan = Math.tan((Math.max(0, Math.min(75, r.pitch)) * Math.PI) / 180);
+  const z0 = r.kind === "flat" ? r.base : r.base - o * tan;
+  // los faldones se dibujan por su cara superior: el espesor medido en vertical tapa la coronación de los muros
+  const lift = r.kind === "flat" ? r.thick : r.thick / Math.cos(Math.atan(tan));
+  if (r.kind === "flat") {
+    const f = outline.map((p) => ({ ...p, z: z0 + lift }));
+    return { outline, ridges: [], faces: [f], gables: [], top: z0 + lift };
+  }
+  // trabajamos en ejes locales: u en la dirección larga, v en la corta
+  const alongX = x1 - x0 >= y1 - y0;
+  const U0 = alongX ? x0 : y0, U1 = alongX ? x1 : y1, V0 = alongX ? y0 : x0, V1 = alongX ? y1 : x1;
+  const half = (V1 - V0) / 2, vm = (V0 + V1) / 2, zt = z0 + half * tan;
+  const P = (u: number, v: number, z: number): P3 => (alongX ? { x: u, y: v, z } : { x: v, y: u, z });
+  const pt = (q: P3): Pt => ({ x: q.x, y: q.y });
+  const inset = r.kind === "hip" ? Math.min(half, (U1 - U0) / 2) : 0;
+  const ra = P(U0 + inset, vm, zt), rb = P(U1 - inset, vm, zt);
+  const c00 = P(U0, V0, z0), c10 = P(U1, V0, z0), c11 = P(U1, V1, z0), c01 = P(U0, V1, z0);
+  const faces: P3[][] = [[c00, c10, rb, ra], [c11, c01, ra, rb]];
+  const gables: P3[][] = [];
+  const ridges: [Pt, Pt][] = [];
+  if (Math.hypot(rb.x - ra.x, rb.y - ra.y) > 1e-6) ridges.push([pt(ra), pt(rb)]);
+  if (r.kind === "hip") {
+    faces.push([c01, c00, ra], [c10, c11, rb]);
+    ridges.push([pt(c00), pt(ra)], [pt(c01), pt(ra)], [pt(c10), pt(rb)], [pt(c11), pt(rb)]);
+  } else {
+    // hastiales sobre la línea del muro (sin el vuelo), del arranque a la cumbrera
+    const ua = U0 + o, ub = U1 - o, va = V0 + o, vb = V1 - o;
+    gables.push([P(ua, va, r.base), P(ua, vm, zt + lift), P(ua, vb, r.base)], [P(ub, va, r.base), P(ub, vm, zt + lift), P(ub, vb, r.base)]);
+  }
+  const top = (f: P3[]) => f.filter((q, i) => i === 0 || Math.hypot(q.x - f[i - 1].x, q.y - f[i - 1].y) > 1e-6).map((q) => ({ ...q, z: q.z + lift }));
+  return { outline, ridges, faces: faces.map(top), gables, top: zt + lift };
+}
+
+/** Peldaños de una escalera recta: número, huella y contrahuella. */
+export function stairSteps(s: Stair) {
+  const L = Math.hypot(s.x2 - s.x1, s.y2 - s.y1);
+  const n = Math.max(2, Math.round(s.height / 0.175));
+  return { n, L, tread: L / n, riser: s.height / n };
 }

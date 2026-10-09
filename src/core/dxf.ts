@@ -1,4 +1,4 @@
-import { dimGeom, dir, loc, pieces, type Pt } from "./geometry";
+import { dimGeom, dir, loc, pieces, roofGeom, stairSteps, type Pt } from "./geometry";
 import type { Model } from "./model";
 import type { RoomGrid } from "./rooms";
 
@@ -38,6 +38,17 @@ export function toDxf(m: Model, rooms: RoomGrid | null): string {
     }
   }
   for (const sl of m.slabs ?? []) sl.pts.forEach((p, i) => line("A-LOSAS", p, sl.pts[(i + 1) % sl.pts.length]));
+  for (const r of m.roofs ?? []) {
+    const g = roofGeom(r);
+    rect("A-CUBIERTAS", g.outline);
+    for (const [a, b] of g.ridges) line("A-CUBIERTAS", a, b);
+  }
+  for (const st of m.stairs ?? []) {
+    const k = stairSteps(st), h = st.width / 2;
+    rect("A-ESCALERAS", [loc(st, 0, -h), loc(st, k.L, -h), loc(st, k.L, h), loc(st, 0, h)]);
+    for (let i = 1; i < k.n; i++) line("A-ESCALERAS", loc(st, i * k.tread, -h), loc(st, i * k.tread, h));
+    line("A-ESCALERAS", loc(st, 0, 0), loc(st, k.L, 0));
+  }
   for (const l of m.lines) line("A-ANOTACION", { x: l.x1, y: l.y1 }, { x: l.x2, y: l.y2 });
   for (const d of m.dims) {
     const g = dimGeom(d), sg = Math.sign(d.off || 1);

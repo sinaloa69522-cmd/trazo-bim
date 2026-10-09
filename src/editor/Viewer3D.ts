@@ -1,6 +1,6 @@
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
-import { bounds, dir, loc, pieces } from "../core/geometry";
+import { bounds, dir, loc, pieces, roofGeom, stairSteps, type P3 } from "../core/geometry";
 import type { Wall } from "../core/model";
 import type { Editor } from "./Editor";
 
@@ -25,6 +25,10 @@ export class Viewer3D {
     glass: new THREE.MeshStandardMaterial({ color: 0x8fc5e8, transparent: true, opacity: 0.35, roughness: 0.1, metalness: 0.1 }),
     frame: new THREE.MeshStandardMaterial({ color: 0x40464a, roughness: 0.5 }),
     slab: new THREE.MeshStandardMaterial({ color: 0xb9b6ae, roughness: 0.95 }),
+    roof: new THREE.MeshStandardMaterial({ color: 0xa4553a, roughness: 0.85, side: THREE.DoubleSide }),
+    roofSel: new THREE.MeshStandardMaterial({ color: 0x6e9cff, roughness: 0.6, side: THREE.DoubleSide }),
+    gable: new THREE.MeshStandardMaterial({ color: 0xece9e2, roughness: 0.92, side: THREE.DoubleSide }),
+    stair: new THREE.MeshStandardMaterial({ color: 0xd8d2c6, roughness: 0.9 }),
     edge: new THREE.LineBasicMaterial({ color: 0x2b3330, transparent: true, opacity: 0.55 }),
   };
 
@@ -99,6 +103,21 @@ export class Viewer3D {
         this.group.add(e);
       }
     };
+    /** Polígonos convexos (x, y de planta y z de altura) como una malla triangulada en abanico. */
+    const polys = (ps: P3[][], mat: THREE.Material) => {
+      const v: number[] = [];
+      for (const f of ps) for (let i = 1; i + 1 < f.length; i++)
+        for (const q of [f[0], f[i], f[i + 1]]) v.push(q.x, base + q.z, q.y);
+      if (!v.length) return;
+      const g = new THREE.BufferGeometry();
+      g.setAttribute("position", new THREE.Float32BufferAttribute(v, 3));
+      g.computeVertexNormals();
+      const mesh = new THREE.Mesh(g, mat);
+      mesh.castShadow = mesh.receiveShadow = true;
+      this.group.add(mesh);
+      const e = new THREE.LineSegments(new THREE.EdgesGeometry(g, 20), this.mat.edge);
+      this.group.add(e);
+    };
     const b = projectBounds(this.ed);
     const floor = new THREE.Mesh(new THREE.BoxGeometry(b.x1 - b.x0, 0.1, b.y1 - b.y0), this.mat.floor);
     floor.position.set((b.x0 + b.x1) / 2, -0.32, (b.y0 + b.y1) / 2);
@@ -107,7 +126,7 @@ export class Viewer3D {
 
     project.levels.forEach((m, li) => {
       base = m.elev;
-      const isSel = (t: "wall" | "opening" | "slab", id: number) => li === active && this.ed.isSelected(t, id);
+      const isSel = (t: "wall" | "opening" | "slab" | "roof" | "stair", id: number) => li === active && this.ed.isSelected(t, id);
       // losas: el contorno se extruye hacia abajo desde la cota del nivel
       if (vis.losas) for (const sl of m.slabs) {
         if (sl.pts.length < 3) continue;
@@ -121,6 +140,15 @@ export class Viewer3D {
         const e = new THREE.LineSegments(new THREE.EdgesGeometry(g), this.mat.edge);
         e.rotation.copy(mesh.rotation); e.position.copy(mesh.position);
         this.group.add(e);
+      }
+      if (vis.cubiertas) for (const r of m.roofs) {
+        const g = roofGeom(r);
+        polys(g.faces, isSel("roof", r.id) ? this.mat.roofSel : this.mat.roof);
+        polys(g.gables, this.mat.gable);
+      }
+      if (vis.escaleras) for (const st of m.stairs) {
+        const k = stairSteps(st), mat = isSel("stair", st.id) ? this.mat.sel : this.mat.stair;
+        for (let i = 0; i < k.n; i++) box(st as unknown as Wall, i * k.tread, (i + 1) * k.tread, 0, (i + 1) * k.riser, st.width, mat);
       }
       if (vis.muros) for (const w of m.walls) {
         const { solids, ops } = pieces(m, w), H = w.height;
@@ -164,3 +192,4 @@ function projectBounds(ed: Editor) {
     x1: Math.max(...bs.map((b) => b.x1)), y1: Math.max(...bs.map((b) => b.y1)),
   };
 }
+
