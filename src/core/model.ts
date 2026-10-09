@@ -8,6 +8,8 @@ export interface Wall {
   y2: number;
   thick: number;
   height: number;
+  /** Si hay un nivel encima, la altura se ajusta para llegar a la cara inferior de su losa */
+  attach: boolean;
 }
 
 export type OpeningKind = "door" | "window";
@@ -186,6 +188,7 @@ export function cloneModel(m: Model): Model {
 /** Acepta modelos guardados por versiones anteriores. */
 export function normalizeModel(raw: unknown): Model {
   const m = { ...emptyModel(), ...(raw as Partial<Model>) };
+  m.walls = (m.walls ?? []).map((w) => ({ ...w, attach: w.attach ?? true }));
   m.rooms = m.rooms ?? [];
   m.slabs = (m.slabs ?? []).map((s) => ({ ...s, holes: s.holes ?? [] }));
   m.roofs = m.roofs ?? [];
@@ -228,7 +231,7 @@ export function sampleProject(): Project {
 export function sampleModel(): Model {
   const m = emptyModel();
   const W = (x1: number, y1: number, x2: number, y2: number, thick = 0.25) => {
-    const w: Wall = { id: nextId(m), x1, y1, x2, y2, thick, height: 2.7 };
+    const w: Wall = { id: nextId(m), x1, y1, x2, y2, thick, height: 2.7, attach: true };
     m.walls.push(w);
     return w;
   };
@@ -264,4 +267,38 @@ export function nextSectionName(p: Project): string {
     const n = i < 26 ? String.fromCharCode(65 + i) : `S${i - 25}`;
     if (!used.has(n)) return n;
   }
+}
+
+/**
+ * Ajusta la altura de los muros enlazados al nivel de encima para que lleguen a la cara inferior
+ * de la losa que tienen encima (o al nivel, si no quedan enteros bajo una losa). En el último nivel no cambia nada.
+ * Devuelve cuántos muros han cambiado.
+ */
+export function attachWalls(p: Project): number {
+  const lv = [...p.levels].sort((a, b) => a.elev - b.elev);
+  let n = 0;
+  lv.forEach((l, i) => {
+    const up = lv[i + 1];
+    if (!up) return;
+    for (const w of l.walls) {
+      if (!w.attach) continue;
+      // muestras en el eje y a cada lado: un muro de fachada (con el eje en el borde de la losa) no queda
+      // entero bajo ella y sube hasta el nivel, para que la fachada sea continua
+      const L = Math.hypot(w.x2 - w.x1, w.y2 - w.y1) || 1, nx = -(w.y2 - w.y1) / L, ny = (w.x2 - w.x1) / L, o = w.thick / 2 - 0.01;
+      const probes = [0, o, -o].map((k) => ({ x: (w.x1 + w.x2) / 2 + nx * k, y: (w.y1 + w.y2) / 2 + ny * k }));
+      const over = up.slabs.filter((s) => probes.every((q) => inPoly(q, s.pts) && !s.holes.some((h) => inPoly(q, h))));
+      const h = Math.round((up.elev - l.elev - Math.max(0, ...over.map((s) => s.thick))) * 1000) / 1000;
+      if (h > 0.5 && Math.abs(h - w.height) > 1e-6) { w.height = h; n++; }
+    }
+  });
+  return n;
+}
+
+function inPoly(p: { x: number; y: number }, poly: { x: number; y: number }[]) {
+  let inside = false;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const a = poly[i], b = poly[j];
+    if ((a.y > p.y) !== (b.y > p.y) && p.x < ((b.x - a.x) * (p.y - a.y)) / (b.y - a.y) + a.x) inside = !inside;
+  }
+  return inside;
 }

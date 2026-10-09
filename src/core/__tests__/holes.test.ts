@@ -46,7 +46,7 @@ describe("huecos en losas", () => {
     const el = section(ed.project, { id: 0, x1: -1, y1: 3, x2: 11, y2: 3, name: "A" });
     // losa de arriba (cota 3): dos tramos, de x = 0 a 6.5 y de 7.5 a 10 (u = x + 1)
     const upper = el.faces.filter((f) => f.cut && f.kind === "cut" && Math.max(...f.pts.map((q) => q.z)) === ed.project.levels[1].elev && Math.min(...f.pts.map((q) => q.z)) < ed.project.levels[1].elev - 0.1);
-    const spans = upper.map((f) => [Math.min(...f.pts.map((q) => q.u)), Math.max(...f.pts.map((q) => q.u))]).sort((a, b) => a[0] - b[0]);
+    const spans = upper.filter((f) => Math.max(...f.pts.map((q) => q.u)) - Math.min(...f.pts.map((q) => q.u)) > 1).map((f) => [Math.min(...f.pts.map((q) => q.u)), Math.max(...f.pts.map((q) => q.u))]).sort((a, b) => a[0] - b[0]);
     expect(spans).toHaveLength(2);
     expect(spans[0][1]).toBeCloseTo(7.5); expect(spans[1][0]).toBeCloseTo(8.5);
     expect(toIfc(ed.project)).toContain("IFCARBITRARYPROFILEDEFWITHVOIDS");

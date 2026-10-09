@@ -37,7 +37,7 @@ describe("habitaciones", () => {
 
   it("marca como abierto un espacio sin cerrar", () => {
     const m = emptyModel();
-    m.walls.push({ id: 1, x1: 0, y1: 0, x2: 5, y2: 0, thick: 0.2, height: 2.7 });
+    m.walls.push({ id: 1, x1: 0, y1: 0, x2: 5, y2: 0, thick: 0.2, height: 2.7, attach: true });
     m.rooms.push({ id: 2, x: 2, y: 2, name: "Patio" });
     expect(computeRooms(m)!.rooms.get(2)!.ok).toBe(false);
   });
