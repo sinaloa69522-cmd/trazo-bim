@@ -682,7 +682,8 @@ export class Editor {
 
   /** Pasa a líneas de anotación los segmentos leídos de un DXF, DWG o PDF y los deja seleccionados. */
   importSegments(r: CadImportResult, fileName: string, note = "") {
-    if (!r.segments.length) { this.log(`${fileName}: no se encontraron líneas para importar.${note ? ` ${note}` : ""}`); return; }
+    const texts = r.texts ?? [];
+    if (!r.segments.length && !texts.length) { this.log(`${fileName}: no se encontraron líneas para importar.${note ? ` ${note}` : ""}`); return; }
     this.snapshot();
     const m = this.model, made: Selection[] = [];
     for (const s of r.segments) {
@@ -690,12 +691,17 @@ export class Editor {
       m.lines.push({ id, x1: s.a.x, y1: s.a.y, x2: s.b.x, y2: s.b.y });
       made.push({ type: "line", id });
     }
+    for (const t of texts) {
+      const id = nextId(m);
+      m.texts.push({ id, x: t.x, y: t.y, text: t.text, size: t.size, rot: Math.round(t.rot * 1000) / 1000 });
+      made.push({ type: "text", id });
+    }
     this.vis.anot = true;
     this.tool = "select"; this.draft = null;
     this.sels = made;
     const skipped = Object.entries(r.skipped).map(([k, v]) => `${v} ${k}`).join(", ");
     const moved = r.moved ? ` Se trajo al origen (estaba a ${Math.round(r.moved.x)}, ${Math.round(r.moved.y)} m).` : "";
-    this.message = `${fileName}: ${made.length} líneas importadas (unidades: ${r.unitsLabel})${skipped ? `; sin importar: ${skipped}` : ""}.${moved}${note ? ` ${note}` : ""} Usa "Convertir en muros" para pasarlas a muros.`;
+    this.message = `${fileName}: ${r.segments.length} líneas${texts.length ? ` y ${texts.length} texto${texts.length > 1 ? "s" : ""}` : ""} importados (unidades: ${r.unitsLabel})${skipped ? `; sin importar: ${skipped}` : ""}.${moved}${note ? ` ${note}` : ""} Usa "Convertir en muros" para pasarlas a muros.`;
     this.changed();
     this.fitRequest?.();
   }
