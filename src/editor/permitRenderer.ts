@@ -46,13 +46,6 @@ function dimension(ctx: CanvasRenderingContext2D, ed: Editor, a: Pt, b: Pt, off:
   label(ctx, text, (P.x + Q.x) / 2 + Math.sign(off) * Math.sin(ang) * 6, (P.y + Q.y) / 2 - Math.sign(off) * Math.cos(ang) * 6, 7, "center", ang);
 }
 
-/** Flecha del norte, arriba a la derecha del dibujo. */
-function northArrow(ctx: CanvasRenderingContext2D, x: number, y: number) {
-  ctx.beginPath(); ctx.arc(x, y, 12, 0, Math.PI * 2); ctx.lineWidth = 0.8; ctx.strokeStyle = INK; ctx.stroke();
-  ctx.beginPath(); ctx.moveTo(x, y - 12); ctx.lineTo(x + 5, y + 6); ctx.lineTo(x, y + 2); ctx.closePath(); ctx.fillStyle = INK; ctx.fill();
-  label(ctx, "N", x, y - 20, 9);
-}
-
 /** Etiqueta con línea de llamada desde el punto del elemento. */
 function callout(ctx: CanvasRenderingContext2D, ed: Editor, at: Pt, dx: number, dy: number, text: string) {
   const s = ed.toS(at.x, at.y);
@@ -62,7 +55,7 @@ function callout(ctx: CanvasRenderingContext2D, ed: Editor, at: Pt, dx: number, 
   label(ctx, text, s.x + dx + Math.sign(dx || 1) * 8, s.y + dy, 7, dx < 0 ? "right" : "left");
 }
 
-export function drawPermitOverlay(ctx: CanvasRenderingContext2D, ed: Editor, kind: PermitPlan, W: number) {
+export function drawPermitOverlay(ctx: CanvasRenderingContext2D, ed: Editor, kind: PermitPlan, _W: number) {
   const m = ed.model;
   ctx.save();
   ctx.lineCap = "butt";
@@ -153,7 +146,6 @@ export function drawPermitOverlay(ctx: CanvasRenderingContext2D, ed: Editor, kin
     const em = ed.toS(f[2].x, f[2].y - 1.2), wm = ed.toS(f[3].x + 1.5, d.y - 1);
     callout(ctx, ed, ed.toW(em.x, em.y), 22, 10, "ELEC. METER");
     callout(ctx, ed, ed.toW(wm.x, wm.y), -22, -8, "WATER METER");
-    northArrow(ctx, W - 30, 34);
   } else if (kind === "hvac") {
     const h = hvac(m, ed.rooms);
     if (h) {
