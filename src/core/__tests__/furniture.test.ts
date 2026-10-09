@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { Editor } from "../../editor/Editor";
 import { toDxf } from "../dxf";
-import { FURNITURE, furnitureOutline, furnitureToPlan } from "../furniture";
+import { FURNITURE, FURNITURE_CATS, furnitureOutline, furnitureSolids, furnitureToPlan } from "../furniture";
 import { toIfc } from "../ifc";
 import { emptyModel, sampleProject } from "../model";
 import { reflection, transformElements, translation } from "../transform";
@@ -53,5 +53,25 @@ describe("mobiliario", () => {
     const ifc = toIfc(p);
     expect(ifc).toMatch(/=IFCFURNITURE\('[^']+',\$,'Cama doble'/);
     expect(ifc).toMatch(/=IFCSANITARYTERMINAL\('[^']+',\$,'Inodoro',.*\.TOILETPAN\.\)/);
+  });
+
+  it("catálogo por grupos, con vehículos, personas y vegetación", () => {
+    expect(FURNITURE_CATS).toEqual(expect.arrayContaining(["Dormitorio", "Estar", "Baño", "Exterior y jardín", "Vehículos", "Personas", "Vegetación"]));
+    expect(new Set(FURNITURE.map((f) => f.kind)).size).toBe(FURNITURE.length);
+    expect(FURNITURE.length).toBeGreaterThanOrEqual(60);
+    // el árbol tiene tronco y copa redonda de su color, por encima del suelo
+    const [trunk, crown] = furnitureSolids("treeM");
+    expect(trunk.shape).toBe("cyl");
+    expect(crown).toMatchObject({ shape: "sphere", w: 4 });
+    expect(crown.z0 + crown.h).toBeCloseTo(5.5);
+  });
+
+  it("árboles, coches y personas salen en IFC como elemento geográfico o genérico", () => {
+    const p = sampleProject();
+    p.levels[0].furniture.push({ id: 900, kind: "treeL", x: 15, y: 3, rot: 0 }, { id: 901, kind: "car", x: 15, y: 9, rot: 0 }, { id: 902, kind: "person", x: 12, y: 9, rot: 0 });
+    const ifc = toIfc(p);
+    expect(ifc).toMatch(/=IFCGEOGRAPHICELEMENT\('[^']+',\$,'[^']*rbol grande/);
+    expect(ifc).toMatch(/=IFCBUILDINGELEMENTPROXY\('[^']+',\$,'Autom[^']*sed[^']*n'/);
+    expect(ifc).toMatch(/=IFCBUILDINGELEMENTPROXY\('[^']+',\$,'Persona de pie'/);
   });
 });

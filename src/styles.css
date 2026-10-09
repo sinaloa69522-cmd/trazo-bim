@@ -311,6 +311,12 @@ dialog .acts span{margin-right:auto;color:var(--muted);font-size:12px}
 .cat[aria-checked="true"]{border-color:var(--accent);background:var(--accent-soft)}
 .cat.sym-cat{flex-direction:row;align-items:center;gap:7px}
 .cat.sym-cat span{display:flex;flex-direction:column}
+.cat.furn-cat{flex-direction:row;align-items:center;gap:7px}
+.cat.furn-cat span{display:flex;flex-direction:column;min-width:0;overflow-wrap:anywhere}
+.cat.furn-cat .sym{flex:none;color:var(--fg)}
+.cattabs{display:flex;flex-wrap:wrap;gap:3px;margin:0 0 6px}
+.cattabs button{border:1px solid var(--line);background:var(--bg);color:var(--fg);border-radius:999px;padding:2px 8px;font:inherit;font-size:11px;cursor:pointer}
+.cattabs button.on{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
 .swatch{flex:none;color:var(--anno);background:var(--plan-bg, var(--panel));border-radius:2px}
 .sym{flex:none;vertical-align:middle}
 .btn.wide{display:block;width:100%;margin:6px 0}
