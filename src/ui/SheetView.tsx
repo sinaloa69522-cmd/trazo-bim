@@ -324,17 +324,44 @@ export function sheetSet(ed: Editor): { content: Content; level: number; scale: 
   return set;
 }
 
+/** Título corto de una lámina del juego, para el navegador. */
+function entryTitle(ed: Editor, c: Content, level: number) {
+  const lvs = ed.project.levels, lv = lvs.length > 1 ? ` · ${lvs[level]?.name ?? ""}` : "";
+  switch (c) {
+    case "plan": return `Planta${lv}`;
+    case "elec": return `Electricidad${lv}`;
+    case "plum": return `Plomería${lv}`;
+    case "fach": return level ? "Fachadas este y oeste" : "Fachadas sur y norte";
+    case "elev": return "Alzados";
+    case "sec": return "Secciones";
+    default: return SHEET_TITLES[c].es;
+  }
+}
+
+const ZMIN = 0.1, ZMAX = 4;
+
 export function SheetView({ ed }: { ed: Editor }) {
   const host = useRef<HTMLDivElement>(null);
-  const [zoom, setZoom] = useState(1);
+  const [fitZoom, setFitZoom] = useState(1);
+  // zoom del usuario; null = ajustar la lámina al hueco
+  const [userZoom, setUserZoom] = useState<number | null>(null);
+  const zoom = userZoom ?? fitZoom;
   const [den, setDen] = useState<number | null>(null);
   const [content, setContent] = useState<Content>("plan");
   const [part, setPart] = useState(0);
+  const [lvl, setLvl] = useState<number | null>(null);
+  const [all, setAll] = useState(false);
+  const [info_, setInfo] = useState(false);
   const [printSet, setPrintSet] = useState(false);
   const secs = allSections(ed.project);
-  const autoScale = autoScaleOf(ed, content, content === "site" ? 0 : ed.active);
+  const levelFor = (c: Content) => (c === "fach" ? part : TEXT_SHEETS.includes(c) || c === "site" || c === "found" ? 0 : Math.min(lvl ?? ed.active, ed.project.levels.length - 1));
+  const autoScale = autoScaleOf(ed, content, levelFor(content));
   const scale = den ?? autoScale;
   const info = ed.project.info;
+  // punto (en coordenadas del contenido) que debe quedar bajo el cursor después de un zoom
+  const anchor = useRef<{ fx: number; fy: number; cx: number; cy: number } | null>(null);
+  const zoomRef = useRef(zoom);
+  zoomRef.current = zoom;
 
   // juego completo: se montan todas las láminas fuera de la app, se imprime y se desmontan al terminar
   useEffect(() => {
@@ -351,12 +378,75 @@ export function SheetView({ ed }: { ed: Editor }) {
     const el = host.current!;
     const fit = () => {
       const r = el.getBoundingClientRect();
-      setZoom(Math.max(0.1, Math.min((r.width - 32) / (sheetSize().w * PX_MM), (r.height - 32) / (sheetSize().h * PX_MM))));
+      setFitZoom(Math.max(ZMIN, Math.min((r.width - 32) / (sheetSize().w * PX_MM), (r.height - 32) / (sheetSize().h * PX_MM))));
     };
     const ro = new ResizeObserver(fit);
     ro.observe(el);
     fit();
     return () => ro.disconnect();
+  }, []);
+
+  /** Cambia el zoom manteniendo fijo el punto (cx, cy) del hueco, en px relativos a él. */
+  const zoomAt = (z: number, cx?: number, cy?: number) => {
+    const el = host.current!, old = zoomRef.current;
+    z = Math.max(ZMIN, Math.min(ZMAX, z));
+    if (Math.abs(z - old) < 1e-4) return;
+    cx ??= el.clientWidth / 2; cy ??= el.clientHeight / 2;
+    anchor.current = { fx: (el.scrollLeft + cx) / old, fy: (el.scrollTop + cy) / old, cx, cy };
+    setUserZoom(z);
+  };
+  useLayoutEffect(() => {
+    const a = anchor.current, el = host.current;
+    if (!a || !el) return;
+    anchor.current = null;
+    el.scrollLeft = a.fx * zoom - a.cx;
+    el.scrollTop = a.fy * zoom - a.cy;
+  }, [zoom]);
+
+  // Ctrl/⌘ + rueda (o pellizco del trackpad) amplía; dos dedos en pantalla táctil, igual;
+  // arrastrar con el ratón (o con la rueda pulsada) desplaza la lámina
+  useEffect(() => {
+    const el = host.current!;
+    const rel = (x: number, y: number) => { const r = el.getBoundingClientRect(); return [x - r.left, y - r.top] as const; };
+    const wheel = (e: WheelEvent) => {
+      if (!e.ctrlKey && !e.metaKey) return;
+      e.preventDefault();
+      const [x, y] = rel(e.clientX, e.clientY);
+      zoomAt(zoomRef.current * Math.exp(-e.deltaY * (e.deltaMode ? 0.04 : 0.0015)), x, y);
+    };
+    let pinch: { d: number; z: number } | null = null;
+    const dist = (t: TouchList) => Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY);
+    const tstart = (e: TouchEvent) => { if (e.touches.length === 2) pinch = { d: dist(e.touches), z: zoomRef.current }; };
+    const tmove = (e: TouchEvent) => {
+      if (!pinch || e.touches.length !== 2) return;
+      e.preventDefault();
+      const [x, y] = rel((e.touches[0].clientX + e.touches[1].clientX) / 2, (e.touches[0].clientY + e.touches[1].clientY) / 2);
+      zoomAt(pinch.z * dist(e.touches) / pinch.d, x, y);
+    };
+    const tend = (e: TouchEvent) => { if (e.touches.length < 2) pinch = null; };
+    let drag: { x: number; y: number; sl: number; st: number } | null = null;
+    const down = (e: PointerEvent) => {
+      if (e.pointerType !== "mouse" || (e.button !== 0 && e.button !== 1)) return;
+      if ((e.target as HTMLElement).closest("input,select,button,a")) return;
+      if (el.scrollWidth <= el.clientWidth && el.scrollHeight <= el.clientHeight) return;
+      drag = { x: e.clientX, y: e.clientY, sl: el.scrollLeft, st: el.scrollTop };
+      el.setPointerCapture(e.pointerId); el.classList.add("panning"); e.preventDefault();
+    };
+    const move = (e: PointerEvent) => { if (drag) { el.scrollLeft = drag.sl - (e.clientX - drag.x); el.scrollTop = drag.st - (e.clientY - drag.y); } };
+    const up = () => { drag = null; el.classList.remove("panning"); };
+    el.addEventListener("wheel", wheel, { passive: false });
+    el.addEventListener("touchstart", tstart, { passive: true });
+    el.addEventListener("touchmove", tmove, { passive: false });
+    el.addEventListener("touchend", tend);
+    el.addEventListener("pointerdown", down);
+    el.addEventListener("pointermove", move);
+    el.addEventListener("pointerup", up);
+    el.addEventListener("pointercancel", up);
+    return () => {
+      el.removeEventListener("wheel", wheel); el.removeEventListener("touchstart", tstart); el.removeEventListener("touchmove", tmove);
+      el.removeEventListener("touchend", tend); el.removeEventListener("pointerdown", down); el.removeEventListener("pointermove", move);
+      el.removeEventListener("pointerup", up); el.removeEventListener("pointercancel", up);
+    };
   }, []);
 
   const field = (k: "name" | "author" | "client" | "date", label: string, type = "text") => (
@@ -368,20 +458,37 @@ export function SheetView({ ed }: { ed: Editor }) {
   );
   const en = imperial(), permits = en ? permitSet(ed) : undefined;
   const set = printSet ? (permits ?? sheetSet(ed)) : [];
-  const levelFor = (c: Content) => (c === "fach" ? part : TEXT_SHEETS.includes(c) || c === "site" || c === "found" ? 0 : ed.active);
+  const nLv = ed.project.levels.length;
+  // todas las láminas del juego, numeradas, para el navegador y la vista «Todas»
+  const entries = (permits ?? sheetSet(ed)).map((x) => ({ ...x, no: sheetNumber(nLv, x.content, x.level, permits), label: entryTitle(ed, x.content, x.level) }));
+  const curLevel = levelFor(content);
+  const cur = entries.findIndex((x) => x.content === content && x.level === curLevel);
+  const go = (i: number) => {
+    const x = entries[i];
+    if (!x) return;
+    if (all) { host.current?.querySelector(`[data-sheet="${i}"]`)?.scrollIntoView({ block: "start" }); return; }
+    setContent(x.content);
+    if (x.content === "fach") setPart(x.level); else if (!TEXT_SHEETS.includes(x.content) && x.content !== "site" && x.content !== "found") setLvl(x.level);
+    setDen(null);
+    if (host.current) host.current.scrollTop = 0;
+  };
+  const pct = Math.round((zoom / fitZoom) * 100);
 
   return (
     <div className="sheetpane">
       <div className="sheetbar">
-        {field("name", "Proyecto")}
-        {field("author", "Autor")}
-        {field("client", "Cliente")}
-        {field("date", "Fecha", "date")}
+        <button className="btn infobtn" aria-expanded={info_} onClick={() => setInfo(!info_)}>Datos del proyecto</button>
+        <div className={`sheetinfo${info_ ? " open" : ""}`}>
+          {field("name", "Proyecto")}
+          {field("author", "Autor")}
+          {field("client", "Cliente")}
+          {field("date", "Fecha", "date")}
+        </div>
         <label>Contenido
           <select value={content === "fach" ? `fach${part}` : content} onChange={(e) => {
             const v = e.target.value;
             if (v.startsWith("fach")) { setContent("fach"); setPart(Number(v.slice(4))); } else setContent(v as Content);
-            setDen(null);
+            setDen(null); setLvl(null); setAll(false);
           }}>
             <option value="plan">Planta del nivel activo</option>
             <option value="elec">Electricidad del nivel activo</option>
@@ -396,20 +503,52 @@ export function SheetView({ ed }: { ed: Editor }) {
           </select>
         </label>
         <label>Escala
-          <select value={den ?? "auto"} onChange={(e) => setDen(e.target.value === "auto" ? null : Number(e.target.value))}>
+          <select value={den ?? "auto"} onChange={(e) => setDen(e.target.value === "auto" ? null : Number(e.target.value))} disabled={all}>
             <option value="auto">Ajustar ({scaleLabel(autoScale)})</option>
             {scalesFor().map((d) => <option key={d} value={d}>{scaleLabel(d)}</option>)}
           </select>
         </label>
-        <button className="btn primary" onClick={() => window.print()} title={`En el diálogo de impresión elige ${imperial() ? "Tabloid (11 × 17)" : "A3"} horizontal o Guardar como PDF`}>Imprimir / PDF</button>
+        <div className="zoombar" role="group" aria-label="Zoom de la lámina">
+          <button className="btn" onClick={() => zoomAt(zoom / 1.25)} title="Alejar (Ctrl + rueda)" aria-label="Alejar">−</button>
+          <button className="btn zpct" onClick={() => setUserZoom(null)} title="Ajustar la lámina a la ventana">{pct}%</button>
+          <button className="btn" onClick={() => zoomAt(zoom * 1.25)} title="Acercar (Ctrl + rueda)" aria-label="Acercar">+</button>
+        </div>
+        <button className="btn primary" onClick={() => (all ? setPrintSet(true) : window.print())} title={`En el diálogo de impresión elige ${imperial() ? "Tabloid (11 × 17)" : "A3"} horizontal o Guardar como PDF`}>{all ? "Imprimir todas" : "Imprimir / PDF"}</button>
         <button className="btn" onClick={() => setPrintSet(true)} disabled={printSet}
           title={en ? "Juego de permiso de EE.UU. completo (cover, notas, site, estructura, arquitectura, detalles, eléctrico, plomería y HVAC) en un solo PDF" : "Plantas, fachadas, secciones, electricidad y plomería en un solo PDF, una lámina por página"}>{en ? "Juego para permiso" : "Juego completo"}</button>
       </div>
       {/* papel Tabloid en EE.UU.; el CSS fijo es para A3 */}
       {imperial() && <style>{"@page{size:17in 11in;margin:0}@media print{html,body{width:431.8mm!important;height:279.4mm!important}}"}</style>}
-      <div className="sheethost" ref={host}>
-        <div className="sheetfit" style={{ width: `${sheetSize().w * PX_MM * zoom}px`, height: `${sheetSize().h * PX_MM * zoom}px` }}>
-          <Sheet ed={ed} content={content} level={levelFor(content)} scale={scale} zoom={zoom} set={permits} />
+      <div className="sheetbody">
+        <nav className="sheetnav" aria-label="Láminas del juego">
+          <div className="sn-head">
+            <span>{en ? "Juego de permiso" : "Juego de láminas"} · {entries.length}</span>
+            <button className={`btn${all ? " primary" : ""}`} onClick={() => { setAll(!all); setUserZoom(null); }} title="Ver todas las láminas una debajo de otra">{all ? "Una" : "Todas"}</button>
+          </div>
+          <div className="sn-arrows">
+            <button className="btn" disabled={all || cur <= 0} onClick={() => go(cur - 1)} aria-label="Lámina anterior">‹</button>
+            <button className="btn" disabled={all || cur >= entries.length - 1} onClick={() => go(cur < 0 ? 0 : cur + 1)} aria-label="Lámina siguiente">›</button>
+          </div>
+          <ol>
+            {entries.map((x, i) => (
+              <li key={`${x.content}-${x.level}`}>
+                <button className={!all && i === cur ? "on" : ""} onClick={() => go(i)}><b>{x.no}</b><span>{x.label}</span></button>
+              </li>
+            ))}
+          </ol>
+        </nav>
+        <div className="sheethost" ref={host}>
+          <div className={`sheetstack${all ? " all" : ""}`}>
+            {all ? entries.map((x, i) => (
+              <div key={`${x.content}-${x.level}`} data-sheet={i} className="sheetfit" style={{ width: `${sheetSize().w * PX_MM * zoom}px`, height: `${sheetSize().h * PX_MM * zoom}px` }}>
+                <Sheet ed={ed} content={x.content} level={x.level} scale={x.scale} zoom={zoom} set={permits} />
+              </div>
+            )) : (
+              <div className="sheetfit" style={{ width: `${sheetSize().w * PX_MM * zoom}px`, height: `${sheetSize().h * PX_MM * zoom}px` }}>
+                <Sheet ed={ed} content={content} level={curLevel} scale={scale} zoom={zoom} set={permits} />
+              </div>
+            )}
+          </div>
         </div>
       </div>
       {printSet && createPortal(
