@@ -249,7 +249,11 @@ function Properties({ ed, onFocusCommand }: { ed: Editor; onFocusCommand: () => 
       <select id={`${key}-k`} value={dk.kind} onChange={(e) => ed.setDeckKind(dk.id, e.target.value as typeof dk.kind)}>
         {DECK_TYPES.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
       </select>
-      <NumberField id={`${key}-h`} label="Altura sobre el terreno (m)" value={dk.height} min={0} onCommit={(v) => ed.edit(() => { dk.height = v; })} />
+      <NumberField id={`${key}-h`} label="Altura sobre el terreno (m)" value={dk.height} min={0} onCommit={(v) => ed.edit(() => { dk.height = v; dk.matchFloor = false; })} />
+      {g.house !== null && <label className="check full">
+        <input type="checkbox" checked={dk.matchFloor !== false} onChange={(e) => ed.edit(() => { dk.matchFloor = e.target.checked; })} />
+        Al nivel del piso de la casa (1" abajo)
+      </label>}
       <label htmlFor={`${key}-r`}>Barandal</label>
       <select id={`${key}-r`} value={dk.rail} onChange={(e) => ed.edit(() => { dk.rail = e.target.value as typeof dk.rail; })}>
         {RAILS.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}

@@ -116,8 +116,10 @@ export interface Deck {
   x2: number;
   y2: number;
   kind: DeckKind;
-  /** Altura de la cara superior del piso sobre la cota del nivel */
+  /** Altura de la cara superior del piso sobre el terreno */
   height: number;
+  /** Pegado a la casa, su piso queda 1" bajo el de la casa (por defecto); false si la altura se fijó a mano */
+  matchFloor?: boolean;
   rail: RailKind;
   /** Lado de los escalones (0 arriba, 1 derecha, 2 abajo, 3 izquierda en planta); sin valor: sin escalones */
   stairSide?: 0 | 1 | 2 | 3 | null;
