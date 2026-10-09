@@ -1,5 +1,6 @@
 // Modelo del proyecto. Coordenadas en metros; el eje Y crece hacia abajo en planta.
 
+import { defaultBudget, type BudgetSettings } from "./budget";
 import { autoRoute, mepDef, sanitaryPoints } from "./mep";
 import { typeForThick } from "./wallTypes";
 
@@ -188,6 +189,8 @@ export interface ProjectInfo {
 export interface Project {
   levels: Level[];
   info: ProjectInfo;
+  /** Moneda, porcentajes y precios propios del presupuesto */
+  budget: BudgetSettings;
 }
 
 export const defaultInfo = (): ProjectInfo => ({ name: "Vivienda unifamiliar", author: "", client: "", date: new Date().toISOString().slice(0, 10) });
@@ -223,7 +226,7 @@ export const emptyModel = (): Model => ({ walls: [], openings: [], lines: [], di
 
 export const newLevel = (name: string, elev: number, content: Model = emptyModel()): Level => ({ ...content, name, elev });
 
-export const emptyProject = (): Project => ({ levels: [newLevel("Planta baja", 0)], info: defaultInfo() });
+export const emptyProject = (): Project => ({ levels: [newLevel("Planta baja", 0)], info: defaultInfo(), budget: defaultBudget() });
 
 export const nextId = (m: Model) => m.nid++;
 
@@ -251,9 +254,10 @@ export function normalizeModel(raw: unknown): Model {
 export function normalizeProject(raw: unknown): Project {
   const r = raw as Partial<Project> & Partial<Model>;
   const info = { ...defaultInfo(), ...(r?.info ?? {}) };
+  const budget = { ...defaultBudget(), ...(r?.budget ?? {}) };
   if (Array.isArray(r?.levels) && r.levels.length)
-    return { levels: r.levels.map((l, i) => ({ ...normalizeModel(l), name: l.name ?? `Nivel ${i}`, elev: l.elev ?? 0 })), info };
-  return { levels: [newLevel("Planta baja", 0, normalizeModel(raw))], info };
+    return { levels: r.levels.map((l, i) => ({ ...normalizeModel(l), name: l.name ?? `Nivel ${i}`, elev: l.elev ?? 0 })), info, budget };
+  return { levels: [newLevel("Planta baja", 0, normalizeModel(raw))], info, budget };
 }
 
 /** Vivienda de ejemplo: planta baja de 10 x 7 m con su losa y cubierta a dos aguas. */
@@ -274,7 +278,7 @@ export function sampleProject(): Project {
   sampleInstallations(m);
   // corte transversal por el dormitorio y el estar, mirando al norte
   m.sections.push({ id: nextId(m), x1: -1.2, y1: 3, x2: 11.2, y2: 3, name: "A" });
-  return { levels: [newLevel("Planta baja", 0, m)], info: defaultInfo() };
+  return { levels: [newLevel("Planta baja", 0, m)], info: defaultInfo(), budget: defaultBudget() };
 }
 
 /** Vivienda de ejemplo de 10 x 7 m. */

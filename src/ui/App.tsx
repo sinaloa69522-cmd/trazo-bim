@@ -4,11 +4,12 @@ import { mepDef, type Discipline } from "../core/mep";
 import { CommandLine } from "./CommandLine";
 import { ExportDialog, type ExportFormat } from "./ExportDialog";
 import { PlanView } from "./PlanView";
+import { BudgetView } from "./BudgetView";
 import { SheetView } from "./SheetView";
 import { Sidebar } from "./Sidebar";
 import { View3D, type View3DHandle } from "./View3D";
 
-type ViewMode = "plan" | "split" | "3d" | "sheet";
+type ViewMode = "plan" | "split" | "3d" | "sheet" | "budget";
 
 const TOOLS: { tool: Tool; label: string; key: string; icon: JSX.Element; disc?: Discipline }[] = [
   { tool: "select", label: "Seleccionar", key: "S", icon: <path d="M3 2l9 5-4 1.2L6.5 13z" /> },
@@ -88,7 +89,7 @@ export function App() {
           ))}
         </div>
         <div className="group" role="group" aria-label="Vista">
-          {([["plan", "Planta"], ["split", "Dividida"], ["3d", "3D"], ["sheet", "Lámina"]] as const).map(([v, label]) => (
+          {([["plan", "Planta"], ["split", "Dividida"], ["3d", "3D"], ["sheet", "Lámina"], ["budget", "Presupuesto"]] as const).map(([v, label]) => (
             <button key={v} className="tb" aria-pressed={view === v} onClick={() => setView(v)}>{label}</button>
           ))}
         </div>
@@ -117,6 +118,7 @@ export function App() {
             <span className="tag">PLANTA · {ed.model.name} · 1:100</span>
           </div>
           {view === "sheet" && <SheetView ed={ed} />}
+          {view === "budget" && <BudgetView ed={ed} />}
           <div className="pane pane3d">
             <View3D ref={view3d} ed={ed} />
             <span className="tag">3D · Vista axonométrica</span>
