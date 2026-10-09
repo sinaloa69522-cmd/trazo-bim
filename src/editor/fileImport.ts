@@ -23,7 +23,16 @@ export async function readDwg(buf: ArrayBuffer): Promise<CadImportResult> {
     // el paquete no exporta el .wasm: se toma de su carpeta
     import("../../node_modules/@mlightcad/libredwg-web/wasm/libredwg-web.wasm?url"),
   ]);
-  const lib = LibreDwg.createByWasmInstance(await createModule({ locateFile: () => wasmUrl }));
+  let mod: Awaited<ReturnType<typeof createModule>>;
+  try {
+    mod = await createModule({ locateFile: () => wasmUrl });
+  } catch (e) {
+    const msg = String((e as Error)?.message ?? e);
+    if (/WebAssembly|unsafe-eval|Content Security Policy/i.test(msg))
+      throw new Error("este navegador o esta página no permiten cargar el lector de DWG (WebAssembly bloqueado). Prueba en Chrome, Edge o Firefox actualizados, o guarda el plano como DXF desde AutoCAD.");
+    throw new Error(`no se pudo cargar el lector de DWG (${msg}). Revisa la conexión y vuelve a intentarlo.`);
+  }
+  const lib = LibreDwg.createByWasmInstance(mod);
   const data = lib.dwg_read_data(buf, Dwg_File_Type.DWG);
   if (data === undefined) throw new Error("no se pudo leer: puede estar dañado o ser de una versión que LibreDWG aún no lee.");
   try {

@@ -36,8 +36,6 @@ const TOOLS: { tool: Tool; label: string; key: string; icon: JSX.Element; disc?:
   { tool: "offset", label: "Desfase", key: "DE", icon: <path d="M2 5h12M2 11h12" /> },
 ];
 
-const IMPORT_ACCEPT = ".dwg,.dxf,.pdf,.png,.jpg,.jpeg,.webp";
-
 /** Descarga un texto como archivo. */
 function download(name: string, text: string, type = "application/json") {
   const a = document.createElement("a");
@@ -144,13 +142,14 @@ export function App() {
         <button className="btn" onClick={save} title={`Guardar el proyecto en un archivo .trazo (Ctrl+S)${ed.dirty ? ": hay cambios sin guardar en archivo" : ""}`}>
           Guardar{ed.dirty && <span className="dot" aria-label="cambios sin guardar" />}
         </button>
-        <input ref={openRef} type="file" accept={`.trazo,.json,${IMPORT_ACCEPT}`} hidden onChange={(e) => {
+        {/* sin filtro "accept": en móviles y algunos escritorios .dwg y .trazo no se reconocen y salían en gris */}
+        <input ref={openRef} type="file" hidden onChange={(e) => {
           const f = e.target.files?.[0];
           e.target.value = "";
           if (f) void openAny(f);
         }} />
         <button className="btn" onClick={() => fileRef.current?.click()} title="DWG y DXF de AutoCAD como líneas; PDF como líneas o calco; imágenes como calco">Importar</button>
-        <input ref={fileRef} type="file" accept={IMPORT_ACCEPT} hidden onChange={(e) => {
+        <input ref={fileRef} type="file" hidden onChange={(e) => {
           const f = e.target.files?.[0];
           e.target.value = "";
           if (f) void openAny(f);

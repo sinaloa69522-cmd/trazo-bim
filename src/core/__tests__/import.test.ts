@@ -134,3 +134,12 @@ describe("calcos", () => {
     expect(ed.model.underlays).toHaveLength(0);
   });
 });
+
+describe("LibreDWG sin eval", () => {
+  it("el parche quita las funciones generadas con new Function del enlace de LibreDWG", async () => {
+    const { patchEmbind } = await import("../../../build/noEvalEmbind");
+    const glue = new TextDecoder().decode(readFileSync(new URL("../../../node_modules/@mlightcad/libredwg-web/wasm/libredwg-web.js", import.meta.url)));
+    expect(glue).toContain("newFunc(Function");
+    expect(patchEmbind(glue)).not.toContain("newFunc(Function");
+  });
+});
