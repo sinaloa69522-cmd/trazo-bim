@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { elevation, FACADES, type Elevation } from "../core/elevation";
+import { allSections, elevation, FACADES, section, type Elevation } from "../core/elevation";
 import { bounds } from "../core/geometry";
 import { levelMarks, openingSchedule, roomSchedule } from "../core/schedules";
 import type { Editor } from "../editor/Editor";
@@ -30,11 +30,16 @@ export function fitScale(ed: Editor) {
 
 const n2 = (v: number) => v.toFixed(2);
 
-/** Cada alzado ocupa un cuarto de la zona de dibujo; a la derecha quedan unos 16 mm para las cotas de nivel. */
-const CELL = { w: PLAN.w / 2 - 22, h: PLAN.h / 2 - 16 };
+/** Rejilla de vistas: hasta cuatro, en 1×1, 2×1 o 2×2. */
+export const grid = (n: number) => ({ cols: n > 1 ? 2 : 1, rows: n > 2 ? 2 : 1 });
+/** Cada vista ocupa su celda; a la derecha quedan unos 16 mm para las cotas de nivel. */
+const cell = (n: number) => { const g = grid(n); return { w: PLAN.w / g.cols - 22, h: PLAN.h / g.rows - 16 }; };
 export function fitElevScale(els: Elevation[]) {
-  return SCALES.find((d) => els.every((e) => ((e.u1 - e.u0) * 1000) / d <= CELL.w && ((e.z1 - e.z0) * 1000) / d <= CELL.h)) ?? 1000;
+  const c = cell(els.length);
+  return SCALES.find((d) => els.every((e) => ((e.u1 - e.u0) * 1000) / d <= c.w && ((e.z1 - e.z0) * 1000) / d <= c.h)) ?? 1000;
 }
+
+type Content = "plan" | "elev" | "sec";
 
 function ScaleBar({ den }: { den: number }) {
   // tramos de 1 m (o 5 m en escalas pequeñas) hasta unos 50 mm de largo
@@ -57,13 +62,15 @@ export function SheetView({ ed }: { ed: Editor }) {
   const host = useRef<HTMLDivElement>(null);
   const [zoom, setZoom] = useState(1);
   const [den, setDen] = useState<number | null>(null);
-  const [content, setContent] = useState<"plan" | "elev">("plan");
-  const elevs = content === "elev" ? FACADES.map((f) => ({ ...f, el: elevation(ed.project, f.id) })) : [];
-  const autoScale = content === "elev" ? fitElevScale(elevs.map((e) => e.el)) : fitScale(ed);
+  const [content, setContent] = useState<Content>("plan");
+  const secs = allSections(ed.project);
+  const views = content === "elev" ? FACADES.map((f) => ({ label: f.label, el: elevation(ed.project, f.id) }))
+    : content === "sec" ? secs.slice(0, 4).map((s) => ({ label: `Sección ${s.name}-${s.name}'`, el: section(ed.project, s) })) : [];
+  const autoScale = content === "plan" ? fitScale(ed) : fitElevScale(views.map((e) => e.el));
   const scale = den ?? autoScale;
   const p = ed.project, info = p.info, lv = ed.model;
   const doors = openingSchedule(p, "door").types, windows = openingSchedule(p, "window").types, rooms = roomSchedule(p);
-  const sheetNo = `A-${String(content === "elev" ? p.levels.length + 1 : ed.active + 1).padStart(2, "0")}`;
+  const sheetNo = `A-${String(content === "elev" ? p.levels.length + 1 : content === "sec" ? p.levels.length + 2 : ed.active + 1).padStart(2, "0")}`;
 
   // dibujo de la planta a escala, con la vista del editor cambiada solo mientras se dibuja
   useEffect(() => {
@@ -73,14 +80,19 @@ export function SheetView({ ed }: { ed: Editor }) {
     cv.width = Math.round(W * OVERSAMPLE); cv.height = Math.round(H * OVERSAMPLE);
     const ctx = cv.getContext("2d")!;
     ctx.setTransform(OVERSAMPLE, 0, 0, OVERSAMPLE, 0, 0);
-    if (content === "elev") {
-      const s = (1000 / scale) * PX_MM;
+    if (content !== "plan") {
+      const s = (1000 / scale) * PX_MM, g = grid(views.length), cw = W / g.cols, ch = H / g.rows;
       ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, W, H);
-      elevs.forEach((e, i) => {
-        // celdas 2×2, cada dibujo centrado en su celda
-        const cx = (i % 2) * (W / 2), cy = Math.floor(i / 2) * (H / 2);
+      if (!views.length) {
+        ctx.fillStyle = "#6b6b6b"; ctx.font = "14px 'IBM Plex Sans', sans-serif"; ctx.textAlign = "center";
+        ctx.fillText("No hay secciones. Dibuja una línea de corte en la planta con la herramienta Sección (SE).", W / 2, H / 2);
+        return;
+      }
+      views.forEach((e, i) => {
+        // cada dibujo centrado en su celda
+        const cx = (i % g.cols) * cw, cy = Math.floor(i / g.cols) * ch;
         const w = (e.el.u1 - e.el.u0) * s, h = (e.el.z1 - e.el.z0) * s;
-        const ox = cx + (W / 2 - 22 * PX_MM - w) / 2 + 6 * PX_MM, oy = cy + (H / 2 - 16 * PX_MM + h) / 2 + 4 * PX_MM;
+        const ox = cx + (cw - 22 * PX_MM - w) / 2 + 6 * PX_MM, oy = cy + (ch - 16 * PX_MM + h) / 2 + 4 * PX_MM;
         drawElevation(ctx, e.el, ox, oy, s, e.label);
       });
       return;
@@ -122,9 +134,10 @@ export function SheetView({ ed }: { ed: Editor }) {
         {field("client", "Cliente")}
         {field("date", "Fecha", "date")}
         <label>Contenido
-          <select value={content} onChange={(e) => { setContent(e.target.value as "plan" | "elev"); setDen(null); }}>
+          <select value={content} onChange={(e) => { setContent(e.target.value as Content); setDen(null); }}>
             <option value="plan">Planta del nivel activo</option>
             <option value="elev">Alzados (4 fachadas)</option>
+            <option value="sec">Secciones ({secs.length > 4 ? "las 4 primeras" : secs.length})</option>
           </select>
         </label>
         <label>Escala
@@ -140,7 +153,7 @@ export function SheetView({ ed }: { ed: Editor }) {
           <article className="sheet" style={{ transform: `scale(${zoom})` }} aria-label={`Lámina ${sheetNo}`}>
             <canvas ref={canvas} className="sheetplan" style={{ left: `${PLAN.x}mm`, top: `${PLAN.y}mm`, width: `${PLAN.w}mm`, height: `${PLAN.h}mm` }} />
             <div className="viewtitle" style={{ left: `${PLAN.x + 6}mm`, top: `${PLAN.y + PLAN.h + 1}mm` }}>
-              <span className="vt-n">{content === "elev" ? "ALZADOS" : lv.name.toUpperCase()}</span>
+              <span className="vt-n">{content === "elev" ? "ALZADOS" : content === "sec" ? "SECCIONES" : lv.name.toUpperCase()}</span>
               <span className="vt-s">E 1:{scale}{content === "plan" && ` · cota ${lv.elev >= 0 ? "+" : ""}${n2(lv.elev)}`}</span>
               <ScaleBar den={scale} />
             </div>
@@ -164,7 +177,7 @@ export function SheetView({ ed }: { ed: Editor }) {
               <div className="cajetin">
                 <div className="c-proj"><small>Proyecto</small>{info.name || "—"}</div>
                 <div className="c-row">
-                  <div><small>Plano</small>{content === "elev" ? "Alzados norte, sur, este y oeste" : lv.name}</div>
+                  <div><small>Plano</small>{content === "elev" ? "Alzados norte, sur, este y oeste" : content === "sec" ? (views.length ? `Secciones ${secs.slice(0, 4).map((x) => `${x.name}-${x.name}'`).join(", ")}` : "Secciones") : lv.name}</div>
                 </div>
                 <div className="c-row">
                   <div><small>Autor</small>{info.author || "—"}</div>

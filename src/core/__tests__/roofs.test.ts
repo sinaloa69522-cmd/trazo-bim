@@ -71,7 +71,7 @@ describe("escaleras", () => {
     ed.commitPoint({ x: 7, y: 6 });
     const st = ed.model.stairs[0];
     expect(st.height).toBeCloseTo(3);
-    expect(ed.pick(7, 3)).toEqual({ type: "stair", id: st.id });
+    expect(ed.pick(7, 2)).toEqual({ type: "stair", id: st.id });
     expect(toDxf(ed.model, null)).toContain("A-ESCALERAS");
   });
 

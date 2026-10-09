@@ -1,6 +1,6 @@
 import { bounds, dimOffset, dir, distSeg, dimGeom, fits, loc, pointInPolygon, polygonArea, roofGeom, stairSteps, type Pt } from "../core/geometry";
 import {
-  cloneModel, emptyProject, newLevel, nextId, normalizeProject, sampleProject, type Level, type Project, type ProjectInfo,
+  cloneModel, emptyProject, newLevel, nextId, nextSectionName, normalizeProject, sampleProject, type Level, type Project, type ProjectInfo,
   type LayerId, type Model, type RoofKind, type Wall,
 } from "../core/model";
 import { parseDxf } from "../core/dxfImport";
@@ -9,12 +9,12 @@ import { extend, offset, trim, type Linear } from "../core/modify";
 import { computeRooms, roomAt, type RoomGrid } from "../core/rooms";
 import { deleteElements, reflection, transformElements, translation, type Xform } from "../core/transform";
 
-export type Tool = "select" | "wall" | "door" | "window" | "line" | "dim" | "room" | "move" | "copy" | "mirror" | "trim" | "extend" | "offset" | "slab" | "roof" | "stair" | "furniture";
+export type Tool = "select" | "wall" | "door" | "window" | "line" | "dim" | "room" | "move" | "copy" | "mirror" | "trim" | "extend" | "offset" | "slab" | "roof" | "stair" | "furniture" | "section";
 /** Herramientas que actúan pulsando directamente sobre un muro o una línea. */
 const PICK_TOOLS: Tool[] = ["trim", "extend", "offset"];
 /** Herramientas que actúan sobre la selección actual. */
 const MODIFY_TOOLS: Tool[] = ["move", "copy", "mirror"];
-export type SelType = "wall" | "opening" | "line" | "dim" | "room" | "slab" | "roof" | "stair" | "furniture";
+export type SelType = "wall" | "opening" | "line" | "dim" | "room" | "slab" | "roof" | "stair" | "furniture" | "section";
 export interface Selection { type: SelType; id: number }
 export interface SnapPt extends Pt { kind: "end" | "mid" | null }
 export interface OpeningCandidate { w: Wall; t: number; ok: boolean }
@@ -44,6 +44,7 @@ const COMMANDS: Record<string, Tool> = {
   MO: "move", MOVER: "move", CO: "copy", COPIA: "copy", SI: "mirror", SIMETRIA: "mirror", "SIMETRÍA": "mirror",
   LO: "slab", LOSA: "slab", TR: "trim", RECORTAR: "trim", AL: "extend", ALARGAR: "extend", DE: "offset", DESFASE: "offset", EQ: "offset", EQUIDISTANCIA: "offset",
   CU: "roof", CUBIERTA: "roof", TEJADO: "roof", ES: "stair", ESCALERA: "stair", MB: "furniture", MOBILIARIO: "furniture", MUEBLE: "furniture",
+  SE: "section", SECCION: "section", "SECCIÓN": "section", CORTE: "section",
 };
 
 /**
@@ -58,7 +59,7 @@ export class Editor {
   get model(): Level { return this.project.levels[this.active]; }
   set model(m: Model) { this.project.levels[this.active] = { ...this.model, ...m }; }
   rooms: RoomGrid | null = null;
-  vis: Record<LayerId, boolean> = { muros: true, puertas: true, ventanas: true, cotas: true, anot: true, hab: true, losas: true, cubiertas: true, escaleras: true, mobiliario: true };
+  vis: Record<LayerId, boolean> = { muros: true, puertas: true, ventanas: true, cotas: true, anot: true, hab: true, losas: true, cubiertas: true, escaleras: true, mobiliario: true, secciones: true };
   defaults = { thick: 0.15, height: 2.7, doorW: 0.9, doorH: 2.1, winW: 1.2, winH: 1.2, sill: 0.9, slabThick: 0.2, roofKind: "gable" as RoofKind, pitch: 30, overhang: 0.5, stairW: 1, furnKind: "bed2", furnRot: 0 };
   tool: Tool = "select";
   /** Elementos seleccionados. */
@@ -161,8 +162,8 @@ export class Editor {
     const top = Math.max(...this.project.levels.map((l) => l.elev));
     const elev = Math.round((Math.max(top, this.model.elev) + this.storyHeight()) * 100) / 100;
     const n = this.project.levels.length;
-    // la copia no lleva cubiertas: la cubierta suele pasar a la planta de arriba
-    const content = copy ? { ...cloneModel(this.model), roofs: [] } : undefined;
+    // la copia no lleva cubiertas (suelen pasar a la planta de arriba) ni secciones (cortan todo el edificio)
+    const content = copy ? { ...cloneModel(this.model), roofs: [], sections: [] } : undefined;
     const lv = newLevel(n === 1 ? "Planta 1" : `Planta ${n}`, elev, content);
     this.project.levels.push(lv);
     this.project.levels.sort((a, b) => a.elev - b.elev);
@@ -194,15 +195,15 @@ export class Editor {
   // ---------- consultas ----------
   wallById(id: number) { return this.model.walls.find((w) => w.id === id); }
   isSelected(type: SelType, id: number) { return this.sels.some((s) => s.type === type && s.id === id); }
-  selObj(): (Seg & { id: number }) | Model["openings"][number] | Model["rooms"][number] | Model["slabs"][number] | Model["roofs"][number] | Model["stairs"][number] | Model["furniture"][number] | null {
+  selObj(): (Seg & { id: number }) | Model["openings"][number] | Model["rooms"][number] | Model["slabs"][number] | Model["roofs"][number] | Model["stairs"][number] | Model["furniture"][number] | Model["sections"][number] | null {
     if (!this.sel) return null;
     const m = this.model;
-    const list = { wall: m.walls, line: m.lines, dim: m.dims, opening: m.openings, room: m.rooms, slab: m.slabs, roof: m.roofs, stair: m.stairs, furniture: m.furniture }[this.sel.type] as { id: number }[];
+    const list = { wall: m.walls, line: m.lines, dim: m.dims, opening: m.openings, room: m.rooms, slab: m.slabs, roof: m.roofs, stair: m.stairs, furniture: m.furniture, section: m.sections }[this.sel.type] as { id: number }[];
     return (list.find((o) => o.id === this.sel!.id) as never) ?? null;
   }
   grips(): { k: 0 | 1 | "mid"; x: number; y: number }[] {
     const o = this.selObj();
-    if (!o || !["wall", "line", "roof", "stair"].includes(this.sel!.type)) return [];
+    if (!o || !["wall", "line", "roof", "stair", "section"].includes(this.sel!.type)) return [];
     const s = o as Seg;
     const g: { k: 0 | 1 | "mid"; x: number; y: number }[] = [{ k: 0, x: s.x1, y: s.y1 }, { k: 1, x: s.x2, y: s.y2 }];
     if (this.sel!.type !== "roof") g.push({ k: "mid", x: (s.x1 + s.x2) / 2, y: (s.y1 + s.y2) / 2 });
@@ -224,6 +225,7 @@ export class Editor {
       case "slab": return n < 3 ? `LOSA  Precisa ${n ? "siguiente" : "primer"} vértice del contorno:` : "LOSA  Siguiente vértice [Enter o clic en el primero cierra]:";
       case "roof": return n ? "CUBIERTA  Esquina opuesta del perímetro:" : `CUBIERTA  Primera esquina del perímetro (${ROOF_LABEL[d.roofKind].toLowerCase()}, ${d.pitch}°):`;
       case "stair": return n ? "ESCALERA  Punto de llegada (o longitud):" : `ESCALERA  Punto de arranque (ancho ${d.stairW.toFixed(2)} m):`;
+      case "section": return n ? "SECCIÓN  Punto final de la línea de corte (se mira a su izquierda):" : "SECCIÓN  Primer punto de la línea de corte:";
       case "furniture": return `MOBILIARIO  Haz clic para colocar ${furnitureDef(d.furnKind).label.toLowerCase()} [R gira 90°, Esc termina]:`;
       case "trim": return "RECORTAR  Haz clic en el tramo de muro o línea que quieres quitar:";
       case "extend": return "ALARGAR  Haz clic cerca del extremo que quieres alargar:";
@@ -249,7 +251,7 @@ export class Editor {
       muros: m.walls.length, puertas: m.openings.filter((o) => o.kind === "door").length,
       ventanas: m.openings.filter((o) => o.kind === "window").length,
       cotas: m.dims.length, anot: m.lines.length, hab: m.rooms.length, losas: m.slabs.length,
-      cubiertas: m.roofs.length, escaleras: m.stairs.length, mobiliario: m.furniture.length,
+      cubiertas: m.roofs.length, escaleras: m.stairs.length, mobiliario: m.furniture.length, secciones: m.sections.length,
     };
   }
 
@@ -340,6 +342,7 @@ export class Editor {
       if (crossing ? inside(f.x, f.y) || ol.some((p) => inside(p.x, p.y)) : ol.every((p) => inside(p.x, p.y))) found.push({ type: "furniture", id: f.id });
     }
     if (this.vis.escaleras) for (const st of m.stairs) if (segHit(st)) found.push({ type: "stair", id: st.id });
+    if (this.vis.secciones) for (const se of m.sections) if (segHit(se)) found.push({ type: "section", id: se.id });
     const merged = additive ? [...this.sels] : [];
     for (const f of found) if (!merged.some((x) => x.type === f.type && x.id === f.id)) merged.push(f);
     this.sels = merged;
@@ -388,6 +391,7 @@ export class Editor {
     if (this.vis.muros) for (const w of m.walls) { const r = distSeg(wx, wy, w.x1, w.y1, w.x2, w.y2); if (r.d < w.thick / 2 + tol) take(r.d, { type: "wall", id: w.id }); }
     if (this.vis.anot) for (const l of m.lines) { const r = distSeg(wx, wy, l.x1, l.y1, l.x2, l.y2); if (r.d < tol) take(r.d, { type: "line", id: l.id }); }
     if (this.vis.cotas) for (const d of m.dims) { const g = dimGeom(d), r = distSeg(wx, wy, g.a.x, g.a.y, g.b.x, g.b.y); if (r.d < tol * 2) take(r.d, { type: "dim", id: d.id }); }
+    if (this.vis.secciones) for (const se of m.sections) { const r = distSeg(wx, wy, se.x1, se.y1, se.x2, se.y2); if (r.d < tol) take(r.d, { type: "section", id: se.id }); }
     if (this.vis.escaleras) for (const st of m.stairs) { const r = distSeg(wx, wy, st.x1, st.y1, st.x2, st.y2); if (r.d < st.width / 2) take(r.d + 0.2, { type: "stair", id: st.id }); }
     if (this.vis.mobiliario) for (const f of m.furniture)
       if (pointInPolygon({ x: wx, y: wy }, furnitureOutline(f))) take(0.15 + Math.hypot(wx - f.x, wy - f.y) * 0.01, { type: "furniture", id: f.id });
@@ -463,6 +467,19 @@ export class Editor {
       this.changed();
       return;
     }
+    if (this.tool === "section") {
+      if (!this.draft) { this.draft = { pts: [p] }; this.emit(); return; }
+      const a = this.draft.pts[0];
+      if (Math.hypot(p.x - a.x, p.y - a.y) < 0.5) { this.log("La línea de corte es demasiado corta."); return; }
+      this.snapshot();
+      const se = { id: nextId(m), x1: a.x, y1: a.y, x2: p.x, y2: p.y, name: nextSectionName(this.project) };
+      m.sections.push(se);
+      this.sels = [{ type: "section", id: se.id }];
+      this.draft = null;
+      this.message = `Sección ${se.name}-${se.name}' creada. Mírala en Lámina › Secciones; Invertir en Propiedades cambia el lado que se ve.`;
+      this.changed();
+      return;
+    }
     if (this.tool === "furniture") {
       this.snapshot();
       const f = { id: nextId(m), kind: this.defaults.furnKind, x: p.x, y: p.y, rot: this.defaults.furnRot };
@@ -491,6 +508,8 @@ export class Editor {
     this.snapshot();
     const copy = this.tool !== "move";
     const result = transformElements(this.model, this.sels, xf, copy);
+    // cada sección copiada lleva su propia letra
+    if (copy) for (const r of result) if (r.type === "section") { const se = this.model.sections.find((x) => x.id === r.id); if (se) se.name = nextSectionName(this.project); }
     const n = result.length;
     if (this.tool === "copy") {
       this.message = `${n} copia${n > 1 ? "s" : ""} creada${n > 1 ? "s" : ""}. Haz clic para otra copia o Esc para terminar.`;
@@ -792,6 +811,12 @@ export class Editor {
     }
     this.rooms = computeRooms(this.model);
     this.refresh3d();
+  }
+
+  /** Invierte el sentido de una sección: se ve el otro lado del corte. */
+  flipSection(id: number) {
+    const se = this.model.sections.find((x) => x.id === id);
+    if (se) this.edit(() => { [se.x1, se.y1, se.x2, se.y2] = [se.x2, se.y2, se.x1, se.y1]; });
   }
 
   /** Copia independiente del modelo, útil para pruebas. */

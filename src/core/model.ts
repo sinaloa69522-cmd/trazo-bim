@@ -94,6 +94,20 @@ export interface Furniture {
   rot: number;
 }
 
+/**
+ * Línea de corte de una sección. Se mira hacia la izquierda del sentido (x1,y1) → (x2,y2):
+ * en el dibujo de la sección, x1 queda a la izquierda. El corte atraviesa todos los niveles.
+ */
+export interface Section {
+  id: number;
+  x1: number;
+  y1: number;
+  x2: number;
+  y2: number;
+  /** Letra de la sección: A, B… */
+  name: string;
+}
+
 /** Contenido de un nivel (una planta). Los identificadores son únicos dentro del nivel. */
 export interface Model {
   walls: Wall[];
@@ -105,6 +119,7 @@ export interface Model {
   roofs: Roof[];
   stairs: Stair[];
   furniture: Furniture[];
+  sections: Section[];
   nid: number;
 }
 
@@ -129,7 +144,7 @@ export interface Project {
 
 export const defaultInfo = (): ProjectInfo => ({ name: "Vivienda unifamiliar", author: "", client: "", date: new Date().toISOString().slice(0, 10) });
 
-export type LayerId = "muros" | "puertas" | "ventanas" | "cotas" | "anot" | "hab" | "losas" | "cubiertas" | "escaleras" | "mobiliario";
+export type LayerId = "muros" | "puertas" | "ventanas" | "cotas" | "anot" | "hab" | "losas" | "cubiertas" | "escaleras" | "mobiliario" | "secciones";
 
 export interface Layer {
   id: LayerId;
@@ -151,9 +166,10 @@ export const LAYERS: Layer[] = [
   { id: "cubiertas", name: "A-CUBIERTAS", label: "Cubiertas", tok: "--door" },
   { id: "escaleras", name: "A-ESCALERAS", label: "Escaleras", tok: "--fg" },
   { id: "mobiliario", name: "A-MOBILIARIO", label: "Mobiliario", tok: "--anno" },
+  { id: "secciones", name: "A-SECCIONES", label: "Secciones", tok: "--fg" },
 ];
 
-export const emptyModel = (): Model => ({ walls: [], openings: [], lines: [], dims: [], rooms: [], slabs: [], roofs: [], stairs: [], furniture: [], nid: 1 });
+export const emptyModel = (): Model => ({ walls: [], openings: [], lines: [], dims: [], rooms: [], slabs: [], roofs: [], stairs: [], furniture: [], sections: [], nid: 1 });
 
 export const newLevel = (name: string, elev: number, content: Model = emptyModel()): Level => ({ ...content, name, elev });
 
@@ -173,6 +189,7 @@ export function normalizeModel(raw: unknown): Model {
   m.roofs = m.roofs ?? [];
   m.stairs = m.stairs ?? [];
   m.furniture = m.furniture ?? [];
+  m.sections = m.sections ?? [];
   return m;
 }
 
@@ -200,6 +217,8 @@ export function sampleProject(): Project {
     { id: nextId(m), kind: "kitchen", x: 7.8, y: 0.43, rot: 0 },
   );
   m.roofs.push({ id: nextId(m), x1: 0, y1: 0, x2: 10, y2: 7, kind: "gable", pitch: 30, overhang: 0.5, base: 2.7, thick: 0.15 });
+  // corte transversal por el dormitorio y el estar, mirando al norte
+  m.sections.push({ id: nextId(m), x1: -1.2, y1: 3, x2: 11.2, y2: 3, name: "A" });
   return { levels: [newLevel("Planta baja", 0, m)], info: defaultInfo() };
 }
 
@@ -234,4 +253,13 @@ export function sampleModel(): Model {
     { id: nextId(m), x: 8, y: 3.5, name: "Estar-comedor" },
   );
   return m;
+}
+
+/** Siguiente letra libre para una sección en todo el proyecto. */
+export function nextSectionName(p: Project): string {
+  const used = new Set(p.levels.flatMap((l) => l.sections.map((s) => s.name)));
+  for (let i = 0; ; i++) {
+    const n = i < 26 ? String.fromCharCode(65 + i) : `S${i - 25}`;
+    if (!used.has(n)) return n;
+  }
 }

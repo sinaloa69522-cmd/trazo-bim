@@ -1,7 +1,7 @@
 import type { Pt } from "./geometry";
 import { nextId, type Model } from "./model";
 
-export type ElementType = "wall" | "opening" | "line" | "dim" | "room" | "slab" | "roof" | "stair" | "furniture";
+export type ElementType = "wall" | "opening" | "line" | "dim" | "room" | "slab" | "roof" | "stair" | "furniture" | "section";
 export interface ElementRef { type: ElementType; id: number }
 
 type Seg = { x1: number; y1: number; x2: number; y2: number };
@@ -29,7 +29,7 @@ function applySeg(s: Seg, t: Xform) {
 }
 
 const listOf = (m: Model, type: ElementType) =>
-  ({ wall: m.walls, opening: m.openings, line: m.lines, dim: m.dims, room: m.rooms, slab: m.slabs, roof: m.roofs, stair: m.stairs, furniture: m.furniture })[type] as { id: number }[];
+  ({ wall: m.walls, opening: m.openings, line: m.lines, dim: m.dims, room: m.rooms, slab: m.slabs, roof: m.roofs, stair: m.stairs, furniture: m.furniture, section: m.sections })[type] as { id: number }[];
 
 export function findElement(m: Model, r: ElementRef) {
   return listOf(m, r.type).find((o) => o.id === r.id) ?? null;
@@ -56,7 +56,11 @@ export function transformElements(m: Model, refs: ElementRef[], t: Xform, copy: 
       el.x = c.x; el.y = c.y; el.rot = (Math.round(deg * 1000) / 1000 + 360) % 360;
     }
     else if (r.type === "slab") { el.pts = el.pts.map(t.map); if (t.reflects) el.pts.reverse(); }
-    else applySeg(el, t);
+    else {
+      applySeg(el, t);
+      // una sección reflejada mira al lado reflejado
+      if (t.reflects && r.type === "section") [el.x1, el.y1, el.x2, el.y2] = [el.x2, el.y2, el.x1, el.y1];
+    }
     // la simetría invierte el lado de la normal: la cota cambia de lado y las puertas abren al lado contrario
     if (t.reflects && r.type === "dim") el.off = -el.off;
     if (copy) listOf(m, r.type).push(el);
@@ -87,4 +91,6 @@ export function deleteElements(m: Model, refs: ElementRef[]) {
   m.stairs = m.stairs.filter((r) => !stairs.has(r.id));
   const furn = ids("furniture");
   m.furniture = m.furniture.filter((r) => !furn.has(r.id));
+  const secs = ids("section");
+  m.sections = m.sections.filter((r) => !secs.has(r.id));
 }
