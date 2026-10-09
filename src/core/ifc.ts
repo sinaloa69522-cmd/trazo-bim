@@ -198,7 +198,7 @@ export function toIfc(p: Project, opts: { now?: Date; random?: () => number } = 
     "ISO-10303-21;",
     "HEADER;",
     "FILE_DESCRIPTION(('ViewDefinition [ReferenceView_V1.2]'),'2;1');",
-    `FILE_NAME(${str(`${p.info.name || "proyecto"}.ifc`)},'${stamp}',(${str(p.info.author)}),(''),'Trazo BIM','Trazo BIM','');`,
+    `FILE_NAME(${str(`${p.info.name || "proyecto"}.ifc`)},'${stamp}',(${str(p.info.author)}),(''),'Smartarchitect','Smartarchitect','');`,
     "FILE_SCHEMA(('IFC4'));",
     "ENDSEC;",
     "DATA;",

@@ -1,4 +1,4 @@
-# Trazo BIM
+# Smartarchitect
 
 Herramienta web de dibujo arquitectónico que toma como referencia AutoCAD (planta 2D, línea de comandos, capas, cotas) y Revit (muros, puertas y ventanas como elementos, modelo 3D que se genera solo).
 
