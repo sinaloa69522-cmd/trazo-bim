@@ -96,6 +96,7 @@ export function bounds(m: Model): Bounds {
   };
   for (const s of [...m.walls, ...m.lines, ...m.dims, ...(m.roofs ?? []), ...(m.stairs ?? [])]) { add(s.x1, s.y1); add(s.x2, s.y2); }
   for (const sl of m.slabs ?? []) for (const p of sl.pts) add(p.x, p.y);
+  for (const f of m.furniture ?? []) add(f.x, f.y);
   if (!isFinite(x0)) return { x0: -5, y0: -4, x1: 5, y1: 4 };
   return { x0: x0 - 1.5, y0: y0 - 1.5, x1: x1 + 1.5, y1: y1 + 1.5 };
 }

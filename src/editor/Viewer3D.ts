@@ -1,5 +1,6 @@
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
+import { furnitureSolids, furnitureToPlan } from "../core/furniture";
 import { bounds, dir, loc, pieces, roofGeom, stairSteps, type P3 } from "../core/geometry";
 import type { Wall } from "../core/model";
 import type { Editor } from "./Editor";
@@ -29,6 +30,7 @@ export class Viewer3D {
     roofSel: new THREE.MeshStandardMaterial({ color: 0x6e9cff, roughness: 0.6, side: THREE.DoubleSide }),
     gable: new THREE.MeshStandardMaterial({ color: 0xece9e2, roughness: 0.92, side: THREE.DoubleSide }),
     stair: new THREE.MeshStandardMaterial({ color: 0xd8d2c6, roughness: 0.9 }),
+    furn: new THREE.MeshStandardMaterial({ color: 0xc7b299, roughness: 0.85 }),
     edge: new THREE.LineBasicMaterial({ color: 0x2b3330, transparent: true, opacity: 0.55 }),
   };
 
@@ -126,7 +128,7 @@ export class Viewer3D {
 
     project.levels.forEach((m, li) => {
       base = m.elev;
-      const isSel = (t: "wall" | "opening" | "slab" | "roof" | "stair", id: number) => li === active && this.ed.isSelected(t, id);
+      const isSel = (t: "wall" | "opening" | "slab" | "roof" | "stair" | "furniture", id: number) => li === active && this.ed.isSelected(t, id);
       // losas: el contorno se extruye hacia abajo desde la cota del nivel
       if (vis.losas) for (const sl of m.slabs) {
         if (sl.pts.length < 3) continue;
@@ -149,6 +151,16 @@ export class Viewer3D {
       if (vis.escaleras) for (const st of m.stairs) {
         const k = stairSteps(st), mat = isSel("stair", st.id) ? this.mat.sel : this.mat.stair;
         for (let i = 0; i < k.n; i++) box(st as unknown as Wall, i * k.tread, (i + 1) * k.tread, 0, (i + 1) * k.riser, st.width, mat);
+      }
+      if (vis.mobiliario) for (const f of m.furniture) {
+        const mat = isSel("furniture", f.id) ? this.mat.sel : this.mat.furn;
+        for (const s of furnitureSolids(f.kind)) {
+          const g = new THREE.BoxGeometry(s.w, s.h, s.d), mesh = new THREE.Mesh(g, mat), c = furnitureToPlan(f, s);
+          mesh.position.set(c.x, base + s.z0 + s.h / 2, c.y);
+          mesh.rotation.y = (-f.rot * Math.PI) / 180;
+          mesh.castShadow = mesh.receiveShadow = true;
+          this.group.add(mesh);
+        }
       }
       if (vis.muros) for (const w of m.walls) {
         const { solids, ops } = pieces(m, w), H = w.height;

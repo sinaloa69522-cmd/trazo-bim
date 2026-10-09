@@ -1,4 +1,5 @@
 import { dimGeom, dimOffset, dir, loc, pieces, roofGeom, stairSteps, type Pt } from "../core/geometry";
+import { furnitureStrokes, type Stroke } from "../core/furniture";
 import type { Dim, Model, Roof, Stair, Wall } from "../core/model";
 import { RC } from "../core/rooms";
 import type { Editor, SelType } from "./Editor";
@@ -58,6 +59,14 @@ export function drawPlan(ctx: CanvasRenderingContext2D, ed: Editor, C: PlanColor
   const quad = (w: Wall | { x1: number; y1: number; x2: number; y2: number }, a: number, b: number, n0: number, n1: number) =>
     [loc(w, a, n0), loc(w, b, n0), loc(w, b, n1), loc(w, a, n1)];
   const isSel = (type: SelType, id: number) => !P && ed.isSelected(type, id);
+  /** Trazos del mobiliario; el primero (contorno) se rellena para tapar la trama de la habitación. */
+  const strokes = (ks: Stroke[], col: string, lw: number, fill?: string) => ks.forEach((k, i) => {
+    ctx.beginPath();
+    k.pts.forEach((q, j) => { const s = toS(q.x, q.y); if (j) ctx.lineTo(s.x, s.y); else ctx.moveTo(s.x, s.y); });
+    if (k.closed) ctx.closePath();
+    if (fill && i === 0 && k.closed) { ctx.fillStyle = fill; ctx.fill(); }
+    ctx.strokeStyle = col; ctx.lineWidth = lw; ctx.stroke();
+  });
 
   // nivel inferior como referencia (gris claro), como el subyacente de Revit
   const below = ed.levelBelow();
@@ -88,6 +97,12 @@ export function drawPlan(ctx: CanvasRenderingContext2D, ed: Editor, C: PlanColor
     ctx.beginPath();
     for (const [j, i0, i1] of c.runs) { const s = toS(rg.x0 + i0 * RC, rg.y0 + j * RC); ctx.rect(s.x, s.y, (i1 - i0) * px + 0.6, px + 0.6); }
     ctx.fill(); ctx.globalAlpha = 1;
+  }
+
+  // mobiliario, bajo los muros
+  if (ed.vis.mobiliario) for (const f of m.furniture) {
+    const hl = isSel("furniture", f.id) || (hover?.type === "furniture" && hover.id === f.id);
+    strokes(furnitureStrokes(f), hl ? C.accent : C.anno, hl ? 1.6 : 0.9, C["plan-bg"]);
   }
 
   // muros
@@ -176,6 +191,11 @@ export function drawPlan(ctx: CanvasRenderingContext2D, ed: Editor, C: PlanColor
         if (sl) poly(sl.pts.map(xf.map), null, C.accent, 1.5);
         continue;
       }
+      if (r.type === "furniture") {
+        const f = ed.model.furniture.find((x) => x.id === r.id);
+        if (f) strokes(furnitureStrokes(f).map((k) => ({ ...k, pts: k.pts.map(xf.map) })), C.accent, 1.2);
+        continue;
+      }
       const list: { id: number }[] = ed.model[({ wall: "walls", line: "lines", dim: "dims", room: "rooms", roof: "roofs", stair: "stairs" } as const)[r.type]];
       const o = list.find((x) => x.id === r.id) as Wall | Model["lines"][number] | Model["rooms"][number] | undefined;
       if (!o) continue;
@@ -220,6 +240,12 @@ export function drawPlan(ctx: CanvasRenderingContext2D, ed: Editor, C: PlanColor
       if (draft.pts.length === 1) { seg(last, p, C.accent, 1, [5, 4]); lengthTag(ctx, ed, C, last, p); }
       else { const [a, b] = draft.pts; drawDim(ctx, ed, { id: 0, x1: a.x, y1: a.y, x2: b.x, y2: b.y, off: dimOffset(a, b, p) }, C.accent); }
     }
+  }
+  // pieza de mobiliario que se va a colocar
+  if (ed.tool === "furniture" && ed.mouse.in) {
+    ctx.globalAlpha = 0.7;
+    strokes(furnitureStrokes({ kind: ed.defaults.furnKind, x: p.x, y: p.y, rot: ed.defaults.furnRot }), C.accent, 1.2);
+    ctx.globalAlpha = 1;
   }
   // desfase: copia fantasma en el lado del cursor
   if (ed.tool === "offset" && ed.offsetTarget && ed.mouse.in) {

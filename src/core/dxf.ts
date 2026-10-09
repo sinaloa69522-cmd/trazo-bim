@@ -1,3 +1,4 @@
+import { furnitureStrokes } from "./furniture";
 import { dimGeom, dir, loc, pieces, roofGeom, stairSteps, type Pt } from "./geometry";
 import type { Model } from "./model";
 import type { RoomGrid } from "./rooms";
@@ -48,6 +49,10 @@ export function toDxf(m: Model, rooms: RoomGrid | null): string {
     rect("A-ESCALERAS", [loc(st, 0, -h), loc(st, k.L, -h), loc(st, k.L, h), loc(st, 0, h)]);
     for (let i = 1; i < k.n; i++) line("A-ESCALERAS", loc(st, i * k.tread, -h), loc(st, i * k.tread, h));
     line("A-ESCALERAS", loc(st, 0, 0), loc(st, k.L, 0));
+  }
+  for (const fu of m.furniture ?? []) for (const k of furnitureStrokes(fu)) {
+    const n = k.closed ? k.pts.length : k.pts.length - 1;
+    for (let i = 0; i < n; i++) line("A-MOBILIARIO", k.pts[i], k.pts[(i + 1) % k.pts.length]);
   }
   for (const l of m.lines) line("A-ANOTACION", { x: l.x1, y: l.y1 }, { x: l.x2, y: l.y2 });
   for (const d of m.dims) {

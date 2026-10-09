@@ -1,5 +1,6 @@
 import { Fragment, useState } from "react";
 import { dimGeom, dir, fits, polygonArea, roofGeom, stairSteps } from "../core/geometry";
+import { FURNITURE, furnitureDef } from "../core/furniture";
 import { LAYERS, type Model, type RoofKind } from "../core/model";
 import { ROOF_LABEL, type Editor } from "../editor/Editor";
 
@@ -36,7 +37,7 @@ function Properties({ ed, onFocusCommand }: { ed: Editor; onFocusCommand: () => 
   let title = "Valores por defecto", body: JSX.Element | null = null;
   const n = ed.sels.length;
   const key = sel ? `${sel.type}-${sel.id}` : n > 1 ? "multi" : "def";
-  const TYPE_LABEL = { wall: "Muros", opening: "Puertas y ventanas", line: "Líneas", dim: "Cotas", room: "Habitaciones", slab: "Losas", roof: "Cubiertas", stair: "Escaleras" } as const;
+  const TYPE_LABEL = { wall: "Muros", opening: "Puertas y ventanas", line: "Líneas", dim: "Cotas", room: "Habitaciones", slab: "Losas", roof: "Cubiertas", stair: "Escaleras", furniture: "Mobiliario" } as const;
 
   if (sel && o && sel.type === "wall") {
     const w = o as Model["walls"][number];
@@ -92,6 +93,18 @@ function Properties({ ed, onFocusCommand }: { ed: Editor; onFocusCommand: () => 
     body = <>
       <NumberField id={`${key}-w`} label="Ancho (m)" value={st.width} onCommit={(v) => ed.edit(() => { st.width = v; })} />
       <NumberField id={`${key}-h`} label="Desnivel (m)" value={st.height} onCommit={(v) => ed.edit(() => { st.height = v; })} />
+    </>;
+  } else if (sel && o && sel.type === "furniture") {
+    const f = o as Model["furniture"][number], d = furnitureDef(f.kind);
+    title = d.label;
+    ro.push(["Medidas (m)", `${num(d.w)}×${num(d.d)}`]);
+    body = <>
+      <label htmlFor={`${key}-k`}>Pieza</label>
+      <select id={`${key}-k`} value={f.kind} onChange={(e) => ed.edit(() => { f.kind = e.target.value; })}>
+        {FURNITURE.map((x) => <option key={x.kind} value={x.kind}>{x.label}</option>)}
+      </select>
+      <NumberField id={`${key}-r`} label="Giro (°)" value={f.rot} min={0} step={15} digits={0} onCommit={(v) => ed.edit(() => { f.rot = v % 360; })} />
+      <button className="btn full" onClick={() => ed.edit(() => { f.rot = (f.rot + 90) % 360; })}>Girar 90°</button>
     </>;
   } else if (sel && o && sel.type === "line") {
     const l = o as Model["lines"][number];
@@ -170,10 +183,27 @@ function Levels({ ed }: { ed: Editor }) {
   );
 }
 
+function Catalog({ ed }: { ed: Editor }) {
+  return (
+    <section>
+      <h2>Mobiliario</h2>
+      <div className="catalog" role="radiogroup" aria-label="Pieza a colocar">
+        {FURNITURE.map((f) => (
+          <button key={f.kind} role="radio" aria-checked={ed.defaults.furnKind === f.kind} className="cat" onClick={() => ed.pickFurniture(f.kind)}>
+            {f.label}<small>{num(f.w)} × {num(f.d)}</small>
+          </button>
+        ))}
+      </div>
+      <p className="hint">Clic en la planta para colocar. <b>R</b> y Enter gira 90° (ahora {ed.defaults.furnRot}°).</p>
+    </section>
+  );
+}
+
 export function Sidebar({ ed, onFocusCommand }: { ed: Editor; onFocusCommand: () => void }) {
   const counts = ed.layerCounts(), s = ed.stats();
   return (
     <aside className="side">
+      {ed.tool === "furniture" && <Catalog ed={ed} />}
       <Levels ed={ed} />
       <section>
         <h2>Capas</h2>
@@ -201,7 +231,7 @@ export function Sidebar({ ed, onFocusCommand }: { ed: Editor; onFocusCommand: ()
       </section>
       <p className="hint">
         Escribe comandos como en AutoCAD: <b>M</b> muro, <b>P</b> puerta, <b>V</b> ventana, <b>L</b> línea, <b>C</b> cota,{" "}
-        <b>H</b> habitación, <b>LO</b> losa, <b>CU</b> cubierta, <b>ES</b> escalera, <b>MO</b> mover, <b>CO</b> copiar, <b>SI</b> simetría, <b>TR</b> recortar, <b>AL</b> alargar, <b>DE</b> desfase. Mientras dibujas, teclea una longitud (p. ej. <b>4.5</b>) y Enter.
+        <b>H</b> habitación, <b>LO</b> losa, <b>CU</b> cubierta, <b>ES</b> escalera, <b>MB</b> mobiliario, <b>MO</b> mover, <b>CO</b> copiar, <b>SI</b> simetría, <b>TR</b> recortar, <b>AL</b> alargar, <b>DE</b> desfase. Mientras dibujas, teclea una longitud (p. ej. <b>4.5</b>) y Enter.
         Selecciona un muro y arrastra sus cuadros azules para estirarlo. Arrastra sobre el vacío para seleccionar con ventana (Mayús o Ctrl suma a la selección). Rueda para zoom; arrastra con el botón derecho, la rueda o Espacio para desplazar. F8 orto, F3 referencias.
       </p>
     </aside>
