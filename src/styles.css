@@ -71,6 +71,8 @@ button,input,select,textarea{font:inherit;color:inherit}
 .work{position:relative;display:grid;min-width:0;min-height:0;grid-template-columns:1fr 1fr}
 .work[data-view="plan"]{grid-template-columns:1fr}
 .work[data-view="3d"]{grid-template-columns:1fr}
+.work[data-view="sheet"]{grid-template-columns:1fr}
+.work[data-view="sheet"] .pane{display:none}
 .work[data-view="plan"] .pane3d,.work[data-view="3d"] .paneplan{display:none}
 .pane{position:relative;min-width:0;min-height:0;overflow:hidden}
 .paneplan{background:var(--plan-bg)}
@@ -119,3 +121,49 @@ dialog .acts span{margin-right:auto;color:var(--muted);font-size:12px}
 @media (max-width:1560px){.tb kbd{display:none}.brand small{display:none}}
 @media (max-width:1400px){#tools .tb .lbl{display:none}}
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
+
+/* ---------- lámina ---------- */
+.sheetpane{display:grid;grid-template-rows:auto 1fr;min-width:0;min-height:0;background:var(--view-bg)}
+.sheetbar{display:flex;flex-wrap:wrap;gap:8px 12px;align-items:end;padding:8px 16px;background:var(--panel);border-bottom:1px solid var(--line)}
+.sheetbar label{display:flex;flex-direction:column;gap:2px;font-size:11px;color:var(--muted)}
+.sheetbar input,.sheetbar select{padding:4px 6px;border:1px solid var(--line);border-radius:4px;background:var(--plan-bg);font-size:12px;color:var(--fg);min-width:0;width:150px}
+.sheetbar input[type="date"]{width:130px}
+.sheetbar select{width:140px}
+.sheethost{position:relative;overflow:auto;min-height:0;display:grid;place-items:center;padding:16px}
+.sheetfit{position:relative;flex:none}
+.sheet{position:absolute;left:0;top:0;width:420mm;height:297mm;transform-origin:0 0;background:#fff;color:#111;box-shadow:0 2px 14px rgba(0,0,0,.18);font-family:var(--f-body);color-scheme:light}
+.sheet .frame{position:absolute;pointer-events:none;left:10mm;top:10mm;right:10mm;bottom:10mm;border:.5mm solid #111}
+.sheet .sheetplan{position:absolute}
+.sheet .viewtitle{position:absolute;display:flex;align-items:center;gap:4mm;height:14mm}
+.sheet .vt-n{font-family:var(--f-display);font-weight:600;font-size:13pt;letter-spacing:.04em;border-bottom:.4mm solid #111;padding-bottom:.5mm}
+.sheet .vt-s{font-family:var(--f-mono);font-size:8pt;color:#444}
+.sheet .scalebar{display:block}
+.sheet .scalebar text{font-family:var(--f-mono);fill:#111}
+.sheetside{position:absolute;border-left:.5mm solid #111;display:flex;flex-direction:column}
+.sheetside .tables{flex:1;padding:4mm;overflow:hidden}
+.sheetside h4{font-family:var(--f-display);font-size:8pt;letter-spacing:.12em;text-transform:uppercase;margin:0 0 1.5mm;color:#111}
+.sheetside h4:not(:first-child){margin-top:5mm}
+.sheetside table{width:100%;border-collapse:collapse;font-size:7.5pt;font-variant-numeric:tabular-nums}
+.sheetside th{text-align:left;font-weight:600;border-bottom:.3mm solid #111;padding:.6mm 1mm}
+.sheetside td{border-bottom:.15mm solid #bbb;padding:.6mm 1mm}
+.sheetside .r{text-align:right;font-family:var(--f-mono)}
+.sheetside .tot td{border-bottom:0;border-top:.3mm solid #111;font-weight:600}
+.sheetside .empty{font-size:7.5pt;color:#666;margin:0}
+.cajetin{border-top:.5mm solid #111;font-size:8pt}
+.cajetin small{display:block;font-size:6pt;letter-spacing:.1em;text-transform:uppercase;color:#666;margin-bottom:.5mm}
+.cajetin>div{padding:1.5mm 3mm;border-bottom:.2mm solid #111}
+.cajetin>div:last-child{border-bottom:0}
+.cajetin .c-proj{font-family:var(--f-display);font-weight:600;font-size:12pt}
+.cajetin .c-row{display:flex;padding:0}
+.cajetin .c-row>div{flex:1;padding:1.5mm 3mm;border-right:.2mm solid #111}
+.cajetin .c-row>div:last-child{border-right:0}
+.cajetin .c-no{font-family:var(--f-display);font-weight:600;font-size:12pt}
+
+@page{size:A3 landscape;margin:0}
+@media print{
+  html,body{width:420mm;height:297mm!important;overflow:hidden!important;background:#fff!important}
+  #root,.app{height:100%!important;overflow:hidden!important}
+  body *{visibility:hidden}
+  .sheet,.sheet *{visibility:visible}
+  .sheet{position:fixed;left:0;top:0;transform:none!important;box-shadow:none}
+}

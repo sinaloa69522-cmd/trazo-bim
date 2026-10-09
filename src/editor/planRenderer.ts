@@ -10,9 +10,16 @@ export type PlanColors = Record<
 
 const MONO = "11px 'IBM Plex Mono', ui-monospace, monospace";
 
+export interface PlanOpts {
+  /** Para la lámina: sin rejilla, origen, nivel de referencia, selección ni vistas previas. */
+  print?: boolean;
+  /** Marca de tipo de cada puerta o ventana (P1, V2…), por id del hueco. */
+  marks?: Map<number, string>;
+}
+
 /** Dibuja la planta completa en un canvas 2D. W y H en píxeles CSS. */
-export function drawPlan(ctx: CanvasRenderingContext2D, ed: Editor, C: PlanColors, W: number, H: number) {
-  const m = ed.model;
+export function drawPlan(ctx: CanvasRenderingContext2D, ed: Editor, C: PlanColors, W: number, H: number, opts: PlanOpts = {}) {
+  const m = ed.model, P = !!opts.print, hover = P ? null : ed.hover;
   const toS = (x: number, y: number) => ed.toS(x, y);
   ctx.fillStyle = C["plan-bg"];
   ctx.fillRect(0, 0, W, H);
@@ -26,14 +33,15 @@ export function drawPlan(ctx: CanvasRenderingContext2D, ed: Editor, C: PlanColor
     for (let y = Math.floor(tl.y / step) * step; y <= br.y; y += step) { const s = Math.round(toS(0, y).y) + 0.5; ctx.moveTo(0, s); ctx.lineTo(W, s); }
     ctx.stroke();
   };
-  grid(0.1, C.grid);
-  grid(1, C["grid-major"]);
-
-  // origen
-  const o = toS(0, 0);
-  ctx.strokeStyle = C.muted; ctx.lineWidth = 1; ctx.beginPath();
-  ctx.moveTo(o.x, o.y); ctx.lineTo(o.x + 28, o.y); ctx.moveTo(o.x, o.y); ctx.lineTo(o.x, o.y + 28); ctx.stroke();
-  ctx.font = MONO; ctx.fillStyle = C.muted; ctx.fillText("X", o.x + 31, o.y + 3); ctx.fillText("Y", o.x - 3, o.y + 39);
+  if (!P) {
+    grid(0.1, C.grid);
+    grid(1, C["grid-major"]);
+    // origen
+    const o = toS(0, 0);
+    ctx.strokeStyle = C.muted; ctx.lineWidth = 1; ctx.beginPath();
+    ctx.moveTo(o.x, o.y); ctx.lineTo(o.x + 28, o.y); ctx.moveTo(o.x, o.y); ctx.lineTo(o.x, o.y + 28); ctx.stroke();
+    ctx.font = MONO; ctx.fillStyle = C.muted; ctx.fillText("X", o.x + 31, o.y + 3); ctx.fillText("Y", o.x - 3, o.y + 39);
+  }
 
   const poly = (pts: Pt[], fill?: string | null, stroke?: string, lw = 1) => {
     ctx.beginPath();
@@ -49,11 +57,11 @@ export function drawPlan(ctx: CanvasRenderingContext2D, ed: Editor, C: PlanColor
   };
   const quad = (w: Wall | { x1: number; y1: number; x2: number; y2: number }, a: number, b: number, n0: number, n1: number) =>
     [loc(w, a, n0), loc(w, b, n0), loc(w, b, n1), loc(w, a, n1)];
-  const isSel = (type: SelType, id: number) => ed.isSelected(type, id);
+  const isSel = (type: SelType, id: number) => !P && ed.isSelected(type, id);
 
   // nivel inferior como referencia (gris claro), como el subyacente de Revit
   const below = ed.levelBelow();
-  if (below && ed.vis.muros) {
+  if (below && ed.vis.muros && !P) {
     ctx.globalAlpha = 0.18;
     for (const w of below.walls) { const h = w.thick / 2, L = dir(w).L; poly(quad(w, 0, L, -h, h), C.muted); }
     ctx.globalAlpha = 1;
@@ -61,7 +69,7 @@ export function drawPlan(ctx: CanvasRenderingContext2D, ed: Editor, C: PlanColor
 
   // losas: contorno discontinuo y trama suave
   if (ed.vis.losas) for (const sl of m.slabs) {
-    const hl = isSel("slab", sl.id) || (ed.hover?.type === "slab" && ed.hover.id === sl.id);
+    const hl = isSel("slab", sl.id) || (hover?.type === "slab" && hover.id === sl.id);
     ctx.globalAlpha = hl ? 0.14 : 0.05;
     poly(sl.pts, hl ? C.accent : C.muted);
     ctx.globalAlpha = 1;
@@ -84,7 +92,7 @@ export function drawPlan(ctx: CanvasRenderingContext2D, ed: Editor, C: PlanColor
 
   // muros
   if (ed.vis.muros) for (const w of m.walls) {
-    const h = w.thick / 2, hl = isSel("wall", w.id) || (ed.hover?.type === "wall" && ed.hover.id === w.id);
+    const h = w.thick / 2, hl = isSel("wall", w.id) || (hover?.type === "wall" && hover.id === w.id);
     for (const [a, b] of pieces(m, w).solids) poly(quad(w, a, b, -h, h), C.wall, hl ? C.accent : C.wall, isSel("wall", w.id) ? 2.5 : 1);
   }
 
@@ -111,15 +119,15 @@ export function drawPlan(ctx: CanvasRenderingContext2D, ed: Editor, C: PlanColor
   }
 
   if (ed.vis.anot) for (const l of m.lines) {
-    const hl = isSel("line", l.id) || (ed.hover?.type === "line" && ed.hover.id === l.id);
+    const hl = isSel("line", l.id) || (hover?.type === "line" && hover.id === l.id);
     seg({ x: l.x1, y: l.y1 }, { x: l.x2, y: l.y2 }, hl ? C.accent : C.anno, hl ? 2.5 : 1.2);
   }
   if (ed.vis.escaleras) for (const st of m.stairs) {
-    const hl = isSel("stair", st.id) || (ed.hover?.type === "stair" && ed.hover.id === st.id);
+    const hl = isSel("stair", st.id) || (hover?.type === "stair" && hover.id === st.id);
     drawStair(ctx, ed, st, hl ? C.accent : C.fg, hl ? 2 : 1);
   }
   if (ed.vis.cubiertas) for (const r of m.roofs) {
-    const hl = isSel("roof", r.id) || (ed.hover?.type === "roof" && ed.hover.id === r.id);
+    const hl = isSel("roof", r.id) || (hover?.type === "roof" && hover.id === r.id);
     drawRoof(ctx, ed, r, hl ? C.accent : C.door, hl ? 2 : 1);
   }
   if (ed.vis.cotas) for (const d of m.dims) drawDim(ctx, ed, d, isSel("dim", d.id) ? C.accent : C.dim);
@@ -135,6 +143,19 @@ export function drawPlan(ctx: CanvasRenderingContext2D, ed: Editor, C: PlanColor
     ctx.fillText(c.ok ? `${c.area.toFixed(2)} m²` : "espacio sin cerrar", s.x, s.y + 13);
     ctx.textAlign = "left";
   }
+
+  // marcas de tipo de puertas y ventanas
+  if (opts.marks) for (const op of m.openings) {
+    const w = ed.wallById(op.wallId), mk = opts.marks.get(op.id);
+    if (!w || !mk || (op.kind === "door" ? !ed.vis.puertas : !ed.vis.ventanas)) continue;
+    const sd = op.kind === "door" ? (op.flip ? 1 : -1) : -1, c = loc(w, op.t * dir(w).L, sd * (w.thick / 2 + 0.32)), s = toS(c.x, c.y);
+    ctx.font = "600 9px 'IBM Plex Mono', ui-monospace, monospace"; ctx.textAlign = "center";
+    const tw = ctx.measureText(mk).width + 6;
+    ctx.fillStyle = C["plan-bg"]; ctx.fillRect(s.x - tw / 2, s.y - 7, tw, 13);
+    ctx.strokeStyle = op.kind === "door" ? C.door : C.window; ctx.lineWidth = 0.8; ctx.strokeRect(s.x - tw / 2, s.y - 7, tw, 13);
+    ctx.fillStyle = C.fg; ctx.fillText(mk, s.x, s.y + 3); ctx.textAlign = "left";
+  }
+  if (P) return;
 
   // pinzamientos
   if (ed.tool === "select") for (const g of ed.grips()) {
