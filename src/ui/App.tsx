@@ -12,6 +12,7 @@ import { Sidebar } from "./Sidebar";
 import { View3D, type View3DHandle } from "./View3D";
 import { framing, framingTakeoff, MEMBER_COLOR, type MemberKind } from "../core/framing";
 import { FT, imperial } from "../core/units";
+import { useInstall, useLaunchFiles } from "./pwa";
 
 type ViewMode = "plan" | "split" | "3d" | "sheet" | "budget";
 
@@ -122,6 +123,8 @@ export function App() {
     view3d.current?.fit();
   };
   const view3d = useRef<View3DHandle>(null);
+  const app = useInstall();
+  useLaunchFiles((f) => void openAny(f));
   const spaceDown = useRef(false);
   // en pantallas táctiles enfocar la línea de comandos abre el teclado y tapa la planta
   const focusCmd = () => { if (!matchMedia("(pointer: coarse)").matches) cmdRef.current?.focus(); };
@@ -178,6 +181,7 @@ export function App() {
           ))}
         </div>
         <div className="spacer" />
+        {app.show && <button className="btn primary" onClick={() => void app.install().then((m) => m && ed.log(m))} title="Instalar Smartarchitect como aplicación: abre en su propia ventana y funciona sin internet">Instalar app</button>}
         <button className="btn" onClick={() => ed.undo()} title="Deshacer (Ctrl+Z)">Deshacer</button>
         <button className="btn menubtn" aria-expanded={menu} onClick={() => setMenu(!menu)}>Archivo</button>
         <div className="more" onClick={(e) => { if ((e.target as HTMLElement).closest("button")) setMenu(false); }}>

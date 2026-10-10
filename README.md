@@ -1,5 +1,7 @@
 # Smartarchitect
 
+**Abrir la app:** https://sinaloa69522-cmd.github.io/trazo-bim/ · se instala como aplicación (botón «Instalar app» en Chrome y Edge, o Compartir › «Agregar a pantalla de inicio» en iPhone) y funciona sin internet. Cada cambio en `main` se publica solo con la acción «Publicar app» en la rama `gh-pages`.
+
 Herramienta web de dibujo arquitectónico que toma como referencia AutoCAD (planta 2D, línea de comandos, capas, cotas) y Revit (muros, puertas y ventanas como elementos, modelo 3D que se genera solo).
 
 ## Qué hace hoy
