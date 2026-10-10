@@ -20,6 +20,7 @@ import { SymbolIcon, SystemIcon } from "./MepIcons";
 import { MX_KINDS, MX_TITLES, MxFoundationDetails, MxNotes, MxSide, MxStructDetails, type MxKind } from "./MxSheets";
 import { MX_EXTRA_SIDE, MxArchDetails, MxCoverBody, MxExtraSide, MxInstDetails, MxNotesBody, MxStructDetails2 } from "./MxExtra";
 import { drawMxOverlay } from "../editor/mxRenderer";
+import { SiteEditor } from "./SiteMap";
 import { FinishSym, mepEn, NorthArrow, SheetLegend } from "./SheetLegend";
 
 /** Lámina apaisada, en milímetros: A3, o en EE.UU. Tabloid (ANSI B, 11" × 17"). */
@@ -423,6 +424,7 @@ export function SheetView({ ed }: { ed: Editor }) {
   const [lvl, setLvl] = useState<number | null>(null);
   const [all, setAll] = useState(false);
   const [info_, setInfo] = useState(false);
+  const [siteOpen, setSiteOpen] = useState(false);
   const [printSet, setPrintSet] = useState(false);
   const secs = allSections(ed.project);
   const levelFor = (c: Content) => (c === "fach" ? part : TEXT_SHEETS.includes(c) || groundOnly(c) ? 0 : Math.min(lvl ?? ed.active, ed.project.levels.length - 1));
@@ -555,6 +557,9 @@ export function SheetView({ ed }: { ed: Editor }) {
           {field("client", "Cliente")}
           {field("date", "Fecha", "date")}
         </div>
+        <button className={`btn${ed.project.info.site ? "" : " primary"}`} aria-expanded={siteOpen} onClick={() => setSiteOpen(!siteOpen)}
+          title="Croquis de localización de la portada: busca la dirección, usa tu ubicación o sube una imagen">Ubicación del predio</button>
+        {siteOpen && <SiteEditor ed={ed} onClose={() => setSiteOpen(false)} />}
         <label>Contenido
           <select value={content === "fach" ? `fach${part}` : content} onChange={(e) => {
             const v = e.target.value;

@@ -6,6 +6,7 @@ import { projectAreas } from "../core/permit";
 import { roomSchedule } from "../core/schedules";
 import { fmtArea } from "../core/units";
 import type { Editor } from "../editor/Editor";
+import { SiteMap } from "./SiteMap";
 import { Bar, Block, Break, CONC, cellsOf, Dim, Earth, FONT, Grid, NoteCol, Notes, NOTES, Section, T, Title, type Box } from "./MxSheets";
 import { box, Ln, Shape, type Frame, type XY } from "./PermitSheets";
 import { columnSpec, K1 } from "../core/mxStruct";
@@ -124,7 +125,7 @@ export function MxCoverBody({ ed, box: b }: { ed: Editor; box: Box }) {
       </div>
       <div>
         <h4>Croquis de localización</h4>
-        <div className="pc-map">UBICACIÓN DEL PREDIO · CALLE, COLONIA Y MUNICIPIO</div>
+        <SiteMap ed={ed} h={38} empty="UBICACIÓN DEL PREDIO · ponla en «Datos del proyecto»" />
         <h4>Responsables</h4>
         <table><tbody>
           <tr><td>Proyectista</td><td>{info.author || "—"}</td></tr>
@@ -173,6 +174,10 @@ export function MxExtraSide({ ed, content, set = [] }: { ed: Editor; content: st
       <tr><td><b>IE</b></td><td>Instalación eléctrica</td></tr><tr><td><b>IH</b></td><td>Instalación hidráulica</td></tr><tr><td><b>IS</b></td><td>Instalación sanitaria</td></tr>
       <tr><td><b>DI</b></td><td>Detalles de instalaciones</td></tr>
     </tbody></table>
+    {ed.project.info.site && !(ed.project.info.site.lat === 0 && ed.project.info.site.lon === 0) && <>
+      <h4>Localización en la zona</h4>
+      <SiteMap ed={ed} h={55} dz={-3} empty="" />
+    </>}
   </div>;
   if (content === "mxnotas") return <div className="tables">
     <h4>Abreviaturas</h4>
