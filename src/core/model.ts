@@ -1,5 +1,6 @@
 // Modelo del proyecto. Coordenadas en metros; el eje Y crece hacia abajo en planta.
 
+import type { Site } from "./site";
 import type { UnitSystem } from "./units";
 import { defaultBudget, type BudgetSettings } from "./budget";
 import type { PatLine } from "./hatch";
@@ -304,6 +305,8 @@ export interface ProjectInfo {
   author: string;
   client: string;
   date: string;
+  /** Ubicación del predio para el croquis de localización de la portada */
+  site?: Site;
 }
 
 export interface Project {
@@ -392,6 +395,8 @@ export function normalizeModel(raw: unknown): Model {
 export function normalizeProject(raw: unknown): Project {
   const r = raw as Partial<Project> & Partial<Model>;
   const info = { ...defaultInfo(), ...(r?.info ?? {}) };
+  const st = info.site;
+  if (st && !(Number.isFinite(st.lat) && Number.isFinite(st.lon))) delete info.site;
   const budget = { ...defaultBudget(), ...(r?.budget ?? {}) };
   const units = { ...(r?.units === "imperial" ? { units: "imperial" as const } : {}), ...(r?.foundation ? { foundation: r.foundation } : {}) };
   if (Array.isArray(r?.levels) && r.levels.length) {

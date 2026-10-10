@@ -13,6 +13,7 @@ import { levelText, MARK_KINDS, markHit, markPts, nextDetailNum } from "../core/
 import type { CadImportResult } from "../core/cadImport";
 import { parseDxf } from "../core/dxfImport";
 import { parseProjectFile, projectFileName, readProjectImages, serializeProject } from "../core/projectFile";
+import { SITE_ZOOM, type Site } from "../core/site";
 import { FURNITURE, furnitureDef, furnitureOutline } from "../core/furniture";
 import { autoRoute, discOfSystem, isElectric, MEP, mepDef, mepOf, runLength, sanitaryPoints, systemDef, type Discipline } from "../core/mep";
 import { breakLinear, extend, offset, trim, type Linear } from "../core/modify";
@@ -267,6 +268,21 @@ export class Editor {
 
   /** Cambia los datos del cajetín. */
   setInfo(patch: Partial<ProjectInfo>) { this.edit(() => { this.project.info = { ...this.project.info, ...patch }; }); }
+  /** Ubicación del predio del croquis de localización; null la quita. */
+  setSite(patch: Partial<Site> | null) {
+    const cur = this.project.info.site;
+    if (patch === null) { this.setInfo({ site: undefined }); this.log("Ubicación del predio quitada."); return; }
+    const next = { lat: 0, lon: 0, zoom: SITE_ZOOM.def, ...cur, ...patch };
+    this.setInfo({ site: next });
+  }
+  /** Croquis propio: una imagen (captura del mapa, plano catastral) que sustituye al mapa. */
+  setSiteImage(url: string | null) {
+    if (!url) { this.setSite({ img: undefined }); this.log("Se vuelve a usar el mapa."); return; }
+    const key = `s${Date.now().toString(36)}`;
+    const kept = this.storeImage(key, url);
+    this.setSite({ img: key });
+    this.log(kept ? "Croquis de localización puesto en la portada." : "Croquis puesto; no cabe en el navegador, se guarda al guardar el proyecto en archivo.");
+  }
   /** Cambia moneda, porcentajes o precios del presupuesto. */
   setBudget(patch: Partial<Project["budget"]>) { this.edit(() => { this.project.budget = { ...this.project.budget, ...patch }; }); }
   /** Pone un precio unitario propio a una partida; sin valor vuelve al de referencia. */
@@ -960,15 +976,19 @@ export class Editor {
     try { this.storage?.setItem(`${STORAGE_KEY}:img:${key}`, url); return true; } catch { return false; }
   }
   private loadImages() {
-    for (const l of this.project.levels) for (const u of l.underlays) {
-      if (this.images.has(u.img)) continue;
-      try { const v = this.storage?.getItem(`${STORAGE_KEY}:img:${u.img}`); if (v) this.images.set(u.img, v); } catch { /* sin almacenamiento */ }
+    const keys = this.project.levels.flatMap((l) => l.underlays.map((u) => u.img));
+    if (this.project.info.site?.img) keys.push(this.project.info.site.img);
+    for (const k of keys) {
+      if (this.images.has(k)) continue;
+      try { const v = this.storage?.getItem(`${STORAGE_KEY}:img:${k}`); if (v) this.images.set(k, v); } catch { /* sin almacenamiento */ }
     }
   }
   /** Imágenes que usa el proyecto, para guardarlas con él. */
   usedImages(): Record<string, string> {
     const out: Record<string, string> = {};
     for (const l of this.project.levels) for (const u of l.underlays) { const v = this.images.get(u.img); if (v) out[u.img] = v; }
+    const si = this.project.info.site?.img, sv = si && this.images.get(si);
+    if (si && sv) out[si] = sv;
     return out;
   }
 

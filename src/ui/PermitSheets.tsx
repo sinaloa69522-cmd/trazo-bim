@@ -1,5 +1,6 @@
 // Láminas de texto y detalles del juego de permiso de EE.UU.: portada, notas generales y detalles típicos,
 // más la columna lateral (tablas y notas) de las láminas generadas desde el modelo.
+import { SiteMap } from "./SiteMap";
 import type { ReactNode } from "react";
 import { ROOFINGS, SIDINGS, usedFinishes } from "../core/finishes";
 import { foundationType } from "../core/foundation";
@@ -182,7 +183,7 @@ export function CoverBody({ ed, box }: { ed: Editor; box: { x: number; y: number
       </div>
       <div>
         <h4>Vicinity map</h4>
-        <div className="pc-map">PROJECT SITE · ATTACH VICINITY MAP</div>
+        <SiteMap ed={ed} h={60} en empty="PROJECT SITE · SET IT IN «Datos del proyecto»" />
       </div>
     </div>
   );
