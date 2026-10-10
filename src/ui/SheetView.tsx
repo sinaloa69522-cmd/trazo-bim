@@ -200,7 +200,7 @@ function Sheet({ ed, content, level, scale, zoom = 1, set }: { ed: Editor; conte
       const el = elevation(p, "S"), top = H * 0.48, ew = el.u1 - el.u0, eh = el.z1 - el.z0;
       if (!(ew > 0 && eh > 0)) return;
       const s = Math.min((W * 0.8) / ew, (top - 30) / eh);
-      drawElevation(ctx, el, (W - ew * s) / 2, (top + eh * s) / 2 + 4, s, "");
+      drawElevation(ctx, el, (W - ew * s) / 2, (top + eh * s) / 2 + 4, s, "", { entourage: p.entourage !== false });
       return;
     }
     if (!isPlan(content)) {
@@ -216,7 +216,7 @@ function Sheet({ ed, content, level, scale, zoom = 1, set }: { ed: Editor; conte
         const cx = (i % g.cols) * cw, cy = Math.floor(i / g.cols) * ch;
         const w = (e.el.u1 - e.el.u0) * s, h = (e.el.z1 - e.el.z0) * s;
         const m = ELEV_PAD(stacked), ox = cx + (cw - m.w * PX_MM - w) / 2 + m.left * PX_MM, oy = cy + (ch - m.h * PX_MM + h) / 2 + m.top * PX_MM;
-        drawElevation(ctx, e.el, ox, oy, s, e.label, { tags: stacked, dims: true });
+        drawElevation(ctx, e.el, ox, oy, s, e.label, { tags: stacked, dims: true, entourage: p.entourage !== false });
       });
       return;
     }
@@ -560,6 +560,9 @@ export function SheetView({ ed }: { ed: Editor }) {
         <button className={`btn${ed.project.info.site ? "" : " primary"}`} aria-expanded={siteOpen} onClick={() => setSiteOpen(!siteOpen)}
           title="Croquis de localización de la portada: busca la dirección, usa tu ubicación o sube una imagen">Ubicación del predio</button>
         {siteOpen && <SiteEditor ed={ed} onClose={() => setSiteOpen(false)} />}
+        <label className="chk" title="Personas, árboles y autos a escala en fachadas, cortes, alzados y portada">
+          <input type="checkbox" checked={ed.project.entourage !== false} onChange={(e) => ed.setEntourage(e.currentTarget.checked)} /> Personas, árboles y autos
+        </label>
         <label>Contenido
           <select value={content === "fach" ? `fach${part}` : content} onChange={(e) => {
             const v = e.target.value;

@@ -1086,6 +1086,10 @@ export class Editor {
 
   /** Cotas interiores (ancho y largo libres) de cada habitación, dentro del acotado automático. */
   get innerDims() { return this.project.innerDims !== false; }
+  setEntourage(on: boolean) {
+    this.edit(() => { this.project.entourage = on; });
+    this.message = on ? "Fachadas, cortes y alzados con personas, árboles y autos a escala." : "Ambientación quitada de fachadas, cortes y alzados.";
+  }
   setInnerDims(on: boolean) {
     this.edit(() => { this.project.innerDims = on; });
     this.message = on ? "Cada habitación lleva su ancho y su largo libres, a cara de muro." : "Cotas interiores quitadas; las de fachada se conservan.";

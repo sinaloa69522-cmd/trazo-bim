@@ -1,3 +1,4 @@
+import { drawEntourage, placeEntourage } from "./entourage";
 import { fmtDim, fmtElev, imperial } from "../core/units";
 import { elevationDims, type EFace, type Elevation, type FaceKind } from "../core/elevation";
 import { elevationLines } from "../core/openingStyles";
@@ -16,6 +17,8 @@ export interface ElevOpts {
   tags?: boolean;
   /** Cotas en cadena: horizontales bajo el terreno y verticales a la izquierda (elevationDims) */
   dims?: boolean;
+  /** Personas, árboles y autos (entourage.ts) */
+  entourage?: boolean;
 }
 
 export function drawElevation(ctx: CanvasRenderingContext2D, el: Elevation, ox: number, oy: number, s: number, title: string, opts: ElevOpts = {}) {
@@ -38,12 +41,17 @@ export function drawElevation(ctx: CanvasRenderingContext2D, el: Elevation, ox: 
     ctx.strokeStyle = f.kind === "cut" ? FILL.cut : "#1a1a1a"; ctx.lineWidth = f.cut ? 0.9 : f.kind === "glass" || f.kind === "door" || f.kind === "furn" ? 0.5 : 0.7; ctx.stroke();
     if (f.op && !f.cut) carpentry(ctx, f, X, Y);
   };
+  const ent = opts.entourage ? placeEntourage(el) : [];
+  // árboles detrás del edificio
+  if (ent.length) drawEntourage(ctx, ent, "back", X, Y, s);
   // primero lo que se ve más allá; lo cortado va encima del terreno
   for (const f of el.faces) if (!f.cut) paint(f);
   // terreno: tapa lo que queda bajo la rasante y se marca con línea gruesa
   const g0 = X(el.u0) - 0.8 * s, g1 = X(el.u1) + 0.8 * s, gy = Y(0);
   ctx.fillStyle = "#ffffff"; ctx.fillRect(g0, gy, g1 - g0, Math.max(0, Y(el.z0) - gy) + 2);
   for (const f of el.faces) if (f.cut) paint(f);
+  // personas y auto delante, de pie sobre el terreno o el piso
+  if (ent.length) drawEntourage(ctx, ent, "front", X, Y, s);
   ctx.beginPath(); ctx.moveTo(g0, gy); ctx.lineTo(g1, gy); ctx.strokeStyle = "#111"; ctx.lineWidth = 1.8; ctx.stroke();
   // niveles a la derecha: N.P.T. de cada planta y la coronación (azotea o cumbrera)
   ctx.font = `7px ${MONO}`; ctx.fillStyle = "#111"; ctx.strokeStyle = "#111";
