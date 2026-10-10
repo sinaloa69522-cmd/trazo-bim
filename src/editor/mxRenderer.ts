@@ -1,6 +1,6 @@
 // Capas de las láminas estructurales del juego en metros (México): ejes, zapatas corridas y aisladas,
 // castillos, columnas, trabes y tableros de losa, en tinta negra sobre la planta a medio tono.
-import { bounds, type Pt } from "../core/geometry";
+import { sheetBounds, type Pt } from "../core/geometry";
 import { fmtDim } from "../core/units";
 import { axes, beams, castillos, K1, padFootings, slabPanels, stripFootings } from "../core/mxStruct";
 import type { Editor } from "./Editor";
@@ -12,7 +12,7 @@ export type MxPlan = "mxcim" | "mxest";
 
 /** Ejes con su globo arriba y a la izquierda, línea de trazo y punto y cotas entre ejes. */
 export function drawAxes(ctx: CanvasRenderingContext2D, ed: Editor) {
-  const lv = ed.model, ax = axes(lv), b = bounds(lv), m = 1.1, R = 7;
+  const lv = ed.model, ax = axes(lv), b = sheetBounds(lv), m = 1.1, R = 7;
   const top = ed.toS(0, b.y0 - m).y, left = ed.toS(b.x0 - m, 0).x, bottom = ed.toS(0, b.y1 + 0.4).y, right = ed.toS(b.x1 + 0.4, 0).x;
   ctx.save();
   ctx.lineWidth = 0.45; ctx.strokeStyle = INK; ctx.setLineDash([12, 3, 2, 3]);

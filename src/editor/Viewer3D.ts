@@ -2,7 +2,7 @@ import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { furnitureSolids, furnitureToPlan } from "../core/furniture";
 import { discOfSystem, mepDef, systemDef } from "../core/mep";
-import { bounds, dir, loc, pieces, roofGeom, stairSteps, type P3, type Pt } from "../core/geometry";
+import { bounds, dir, loc, pieces, roofGeom, solidPts, stairSteps, type P3 } from "../core/geometry";
 import type { Opening, Wall } from "../core/model";
 import { openingStyle } from "../core/openingStyles";
 import { finish, gableWall, outward, roofFinish, type Finish } from "../core/finishes";
@@ -411,13 +411,7 @@ export class Viewer3D {
  * importado, que puede ser enorme o tener restos a kilómetros) no salen en 3D: solo cuentan si no hay nada más.
  */
 export function projectBounds(ed: Editor) {
-  const pts: Pt[] = [];
-  for (const l of ed.project.levels) {
-    for (const s of [...l.walls, ...l.roofs, ...l.stairs, ...l.decks]) pts.push({ x: s.x1, y: s.y1 }, { x: s.x2, y: s.y2 });
-    for (const sl of l.slabs) pts.push(...sl.pts);
-    for (const c of l.columns) pts.push(c);
-    for (const f of [...l.furniture, ...l.fixtures]) pts.push(f);
-  }
+  const pts = ed.project.levels.flatMap(solidPts);
   if (pts.length) {
     const xs = pts.map((p) => p.x), ys = pts.map((p) => p.y), mg = 1.5;
     return { x0: Math.min(...xs) - mg, y0: Math.min(...ys) - mg, x1: Math.max(...xs) + mg, y1: Math.max(...ys) + mg, solid: true };
