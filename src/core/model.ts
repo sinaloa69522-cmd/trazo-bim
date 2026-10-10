@@ -322,6 +322,8 @@ export interface Project {
   autoDims?: boolean;
   /** false: sin cotas interiores automáticas de las habitaciones */
   innerDims?: boolean;
+  /** false: fachadas, cortes y alzados sin personas, árboles ni autos */
+  entourage?: boolean;
 }
 
 export const defaultInfo = (): ProjectInfo => ({ name: "Vivienda unifamiliar", author: "", client: "", date: new Date().toISOString().slice(0, 10) });
