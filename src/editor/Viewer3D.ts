@@ -2,9 +2,9 @@ import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { furnitureSolids, furnitureToPlan } from "../core/furniture";
 import { discOfSystem, mepDef, systemDef } from "../core/mep";
-import { bounds, dir, loc, pieces, roofGeom, solidPts, type P3 } from "../core/geometry";
+import { bounds, dir, loc, pieces, roofGeom, solidPts, wallEnds, type P3 } from "../core/geometry";
 import { stairGeom } from "../core/stairs";
-import type { Opening, Wall } from "../core/model";
+import type { Level, Opening, Wall } from "../core/model";
 import { openingStyle } from "../core/openingStyles";
 import { finish, gableWall, outward, roofFinish, type Finish } from "../core/finishes";
 import { finishTile } from "./finishTextures";
@@ -42,7 +42,7 @@ export class Viewer3D {
     slab: new THREE.MeshStandardMaterial({ color: 0xb9b6ae, roughness: 0.95 }),
     roof: new THREE.MeshStandardMaterial({ color: 0xa4553a, roughness: 0.85, side: THREE.DoubleSide }),
     roofSel: new THREE.MeshStandardMaterial({ color: 0x6e9cff, roughness: 0.6, side: THREE.DoubleSide }),
-    gable: new THREE.MeshStandardMaterial({ color: 0xece9e2, roughness: 0.92, side: THREE.DoubleSide }),
+    gable: new THREE.MeshStandardMaterial({ color: 0xece9e2, roughness: 0.92, side: THREE.DoubleSide, shadowSide: THREE.FrontSide }),
     stair: new THREE.MeshStandardMaterial({ color: 0xd8d2c6, roughness: 0.9 }),
     furn: new THREE.MeshStandardMaterial({ color: 0xc7b299, roughness: 0.85 }),
     edge: new THREE.LineBasicMaterial({ color: 0x2b3330, transparent: true, opacity: 0.55 }),
@@ -260,7 +260,8 @@ export class Viewer3D {
     this.sun.color.set(r ? 0xfff0dc : 0xffffff);
     this.sun.intensity = r ? 3 : 0.7 * Math.PI;
     this.sun.shadow.radius = r ? 3 : 1;
-    m.edge.opacity = r ? 0.14 : 0.55;
+    // en la vista realista no se dibujan aristas: los muros se arman por piezas (junto a puertas y ventanas) y sus uniones se verían
+    m.edge.visible = !r;
     Object.assign(m.glass, r ? { opacity: 0.6, roughness: 0.04, metalness: 0.65, envMapIntensity: 1.4 } : { opacity: 0.35, roughness: 0.1, metalness: 0.1, envMapIntensity: 1 });
     m.glass.color.set(r ? 0x5f7f92 : 0x8fc5e8);
     m.frame.color.set(r ? 0x2e3236 : 0x40464a);
@@ -328,6 +329,51 @@ export class Viewer3D {
       this.group.add(mesh);
       const e = new THREE.LineSegments(new THREE.EdgesGeometry(g, 20), this.mat.edge);
       this.group.add(e);
+    };
+    /**
+     * Muro entero como un prisma: el alzado (con muescas para las puertas y huecos para las ventanas) extruido al grueso.
+     * Devuelve false si el hueco corta el muro de arriba abajo o toca sus extremos; entonces se arma por piezas.
+     */
+    const wallSolid = (lv: Level, w: Wall, solids: [number, number][], ops: { o: Opening; a: number; b: number }[], H: number, mat: THREE.Material, ext?: { mat: THREE.Material; side: 1 | -1 }) => {
+      if (!solids.length || w.thick < 1e-3 || H < 1e-3) return false;
+      const e = 1e-3, s0 = Math.min(solids[0][0], ...ops.map((p) => p.a)), s1 = Math.max(solids[solids.length - 1][1], ...ops.map((p) => p.b));
+      // en las esquinas los extremos van a inglete: si los dos muros se traslapan, las caras de uno asoman por la del otro como una línea
+      const [m0, m1] = wallEnds(lv, w);
+      if (ops.some((p) => p.a < Math.max(s0, ...(m0 ?? [])) + e || p.b > Math.min(s1, ...(m1 ?? [])) - e)) return false;
+      const cuts = ops.map(({ o, a, b: bb }) => ({ a, b: bb, lo: Math.max(0, o.sill), hi: Math.min(H, o.sill + o.height) }));
+      if (cuts.some((c) => c.a < s0 + e || c.b > s1 - e || (c.lo < e && c.hi > H - e) || c.hi - c.lo < e)) return false;
+      const outline: THREE.Vector2[] = [new THREE.Vector2(s0, 0)];
+      for (const c of cuts.filter((c) => c.lo < e)) outline.push(new THREE.Vector2(c.a, 0), new THREE.Vector2(c.a, c.hi), new THREE.Vector2(c.b, c.hi), new THREE.Vector2(c.b, 0));
+      outline.push(new THREE.Vector2(s1, 0), new THREE.Vector2(s1, H));
+      for (const c of cuts.filter((c) => c.hi > H - e).reverse()) outline.push(new THREE.Vector2(c.b, H), new THREE.Vector2(c.b, c.lo), new THREE.Vector2(c.a, c.lo), new THREE.Vector2(c.a, H));
+      outline.push(new THREE.Vector2(s0, H));
+      const shape = new THREE.Shape(outline);
+      for (const c of cuts.filter((c) => c.lo >= e && c.hi <= H - e))
+        shape.holes.push(new THREE.Path([new THREE.Vector2(c.a, c.lo), new THREE.Vector2(c.b, c.lo), new THREE.Vector2(c.b, c.hi), new THREE.Vector2(c.a, c.hi)]));
+      const g = new THREE.ExtrudeGeometry(shape, { depth: w.thick, bevelEnabled: false, curveSegments: 1 });
+      // grupos: cara de atrás (z = 0), cara de enfrente (z = grueso) y cantos
+      const lids = g.groups[0].count, half = lids / 2, rest = g.attributes.position.count - lids;
+      g.clearGroups();
+      g.addGroup(0, half, 0); g.addGroup(half, half, 1); g.addGroup(lids, rest, 2);
+      const pos = g.attributes.position as THREE.BufferAttribute, uv = g.attributes.uv as THREE.BufferAttribute;
+      for (let i = 0; i < pos.count; i++) {
+        const x = pos.getX(i), k = pos.getZ(i) / w.thick, me = Math.abs(x - s0) < 1e-6 ? m0 : Math.abs(x - s1) < 1e-6 ? m1 : null;
+        if (me) pos.setX(i, me[0] + (me[1] - me[0]) * k);
+      }
+      g.computeVertexNormals();
+      // UV en metros: s a lo largo del muro (al revés en la cara de atrás, que se ve desde el otro lado) y la cota
+      for (let i = 0; i < lids; i++) uv.setXY(i, i < half ? -pos.getX(i) : pos.getX(i), base + pos.getY(i));
+      const back = ext && ext.side < 0 ? ext.mat : mat, front = ext && ext.side > 0 ? ext.mat : mat;
+      const { ux, uy } = dir(w), o = loc(w, 0, -w.thick / 2);
+      const mesh = new THREE.Mesh(g, [back, front, mat]);
+      mesh.matrixAutoUpdate = false;
+      mesh.matrix.makeBasis(new THREE.Vector3(ux, 0, uy), new THREE.Vector3(0, 1, 0), new THREE.Vector3(-uy, 0, ux)).setPosition(o.x, base, o.y);
+      mesh.castShadow = mesh.receiveShadow = true;
+      this.group.add(mesh);
+      const ed = new THREE.LineSegments(new THREE.EdgesGeometry(g), this.mat.edge);
+      ed.matrixAutoUpdate = false; ed.matrix.copy(mesh.matrix);
+      this.group.add(ed);
+      return true;
     };
     const b = projectBounds(this.ed);
     const real = this.realistic && !this.ed.framing, gl = gradeLevel(project), cx = (b.x0 + b.x1) / 2, cz = (b.y0 + b.y1) / 2;
@@ -426,11 +472,15 @@ export class Viewer3D {
         const { solids, ops } = pieces(m, w), H = w.height;
         const mat = isSel("wall", w.id) ? this.mat.sel : this.mat.wall, fin = finish(w.finish);
         const ext = fin && !isSel("wall", w.id) ? { mat: this.finishMat(fin), side: outward(m.walls, w) } : undefined;
-        for (const [a, c] of solids) box(w, a, c, 0, H, w.thick, mat, true, ext);
+        // el muro sale de una sola pieza con sus huecos; por piezas (junto a puertas y ventanas) quedaban rendijas que se veían como líneas
+        const one = wallSolid(m, w, solids, ops, H, mat, ext);
+        for (const [a, c] of one ? [] : solids) box(w, a, c, 0, H, w.thick, mat, true, ext);
         for (const { o, a, b: bb } of ops) {
           const top = Math.min(H, o.sill + o.height), om = isSel("opening", o.id);
-          box(w, a, bb, top, H, w.thick, mat, true, ext);
-          if (o.sill > 0) box(w, a, bb, 0, o.sill, w.thick, mat, true, ext);
+          if (!one) {
+            box(w, a, bb, top, H, w.thick, mat, true, ext);
+            if (o.sill > 0) box(w, a, bb, 0, o.sill, w.thick, mat, true, ext);
+          }
           if (o.kind === "door" ? vis.puertas : vis.ventanas) this.carpentry(box, w, o, a, bb, top, om);
         }
       }

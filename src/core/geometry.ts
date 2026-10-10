@@ -36,6 +36,37 @@ export function endExt(m: Model, w: Wall, end: 0 | 1) {
   return 0;
 }
 
+/**
+ * Extremos a inglete de un muro en 3D: dónde acaba cada cara (s a lo largo del muro) en las esquinas en L,
+ * para que los dos muros se encuentren sin traslaparse. [derecha, izquierda] por extremo; null si se deja
+ * la prolongación de siempre (sin otro muro, o con más de uno en ese punto). Dos muros en línea acaban a tope en el punto.
+ */
+export function wallEnds(m: Model, w: Wall): [[number, number] | null, [number, number] | null] {
+  const { ux, uy, L } = dir(w), nL = { x: -uy, y: ux }, t = w.thick / 2;
+  const end = (e: 0 | 1): [number, number] | null => {
+    const J = e ? { x: w.x2, y: w.y2 } : { x: w.x1, y: w.y1 }, near = (x: number, y: number) => Math.hypot(x - J.x, y - J.y) < 0.01;
+    const others = m.walls.filter((o) => o !== w && (near(o.x1, o.y1) || near(o.x2, o.y2)));
+    if (others.length !== 1) return null;
+    const o = others[0], far = near(o.x1, o.y1) ? { x: o.x2, y: o.y2 } : { x: o.x1, y: o.y1 };
+    const bl = Math.hypot(far.x - J.x, far.y - J.y);
+    if (bl < 1e-6) return null;
+    const a = e ? { x: -ux, y: -uy } : { x: ux, y: uy }, b = { x: (far.x - J.x) / bl, y: (far.y - J.y) / bl }, nb = { x: -b.y, y: b.x };
+    const cross = a.x * b.y - a.y * b.x;
+    if (Math.abs(cross) < 0.1) return a.x * b.x + a.y * b.y < 0 ? [e ? L : 0, e ? L : 0] : null;
+    const sg = Math.sign(nL.x * b.x + nL.y * b.y), sg2 = Math.sign(nb.x * a.x + nb.y * a.y);
+    /** s donde la cara de este muro a n del eje corta la cara del otro a m' del suyo */
+    const at = (n: number, mo: number) => {
+      const rx = mo * nb.x - n * nL.x, ry = mo * nb.y - n * nL.y, det = -cross;
+      const lam = (rx * -b.y + ry * b.x) / det;
+      return e ? L - lam : lam;
+    };
+    // la cara del lado del otro muro (interior) corta su cara interior; la de fuera, su cara de fuera
+    const inner = at(sg * t, sg2 * (o.thick / 2)), outer = at(-sg * t, -sg2 * (o.thick / 2));
+    return sg > 0 ? [outer, inner] : [inner, outer];
+  };
+  return [end(0), end(1)];
+}
+
 export interface WallPieces {
   /** Tramos macizos [inicio, fin] a lo largo del muro */
   solids: [number, number][];
