@@ -2,7 +2,7 @@ import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { furnitureSolids, furnitureToPlan } from "../core/furniture";
 import { discOfSystem, mepDef, systemDef } from "../core/mep";
-import { bounds, dir, loc, pieces, roofGeom, stairSteps, type P3 } from "../core/geometry";
+import { bounds, dir, loc, pieces, roofGeom, stairSteps, type P3, type Pt } from "../core/geometry";
 import type { Opening, Wall } from "../core/model";
 import { openingStyle } from "../core/openingStyles";
 import { finish, gableWall, outward, roofFinish, type Finish } from "../core/finishes";
@@ -380,15 +380,25 @@ export class Viewer3D {
         }
       }
     });
+    // el primer muro (o losa, cubierta…) de un proyecto vacío o recién importado se encuadra solo
+    if (this.fitEmpty && projectBounds(this.ed).solid) this.fit();
     this.dirty = true;
   }
 
+  /** El último encuadre se hizo sin nada que ver en 3D: se vuelve a encuadrar con el primer muro. */
+  private fitEmpty = false;
+
   fit() {
-    const b = projectBounds(this.ed), cx = (b.x0 + b.x1) / 2, cz = (b.y0 + b.y1) / 2;
+    const b = projectBounds(this.ed);
+    this.fitEmpty = !b.solid;
+    const cx = (b.x0 + b.x1) / 2, cz = (b.y0 + b.y1) / 2;
     const top = Math.max(...this.ed.project.levels.map((l) => l.elev)) + 3;
     const r = Math.max(b.x1 - b.x0, b.y1 - b.y0, top * 1.5);
     this.ctl.target.set(cx, top / 3, cz);
     this.cam.position.set(cx + r * 1.0, top / 3 + r * 1.1, cz + r * 1.3);
+    // que no se corte el modelo en proyectos grandes
+    this.cam.far = Math.max(500, r * 12); this.cam.near = Math.max(0.05, r / 5000); this.cam.updateProjectionMatrix();
+    this.ctl.maxDistance = Math.max(this.ctl.maxDistance, r * 6);
     this.sun.position.set(cx + 12, 20, cz + 8);
     this.sun.target.position.set(cx, 0, cz);
     this.ctl.update();
@@ -396,12 +406,26 @@ export class Viewer3D {
   }
 }
 
-/** Extensión de todos los niveles juntos. */
-function projectBounds(ed: Editor) {
-  const bs = ed.project.levels.map((l) => bounds(l));
+/**
+ * Extensión de lo que se ve en 3D en todos los niveles. Las líneas, cotas y textos (por ejemplo un DWG
+ * importado, que puede ser enorme o tener restos a kilómetros) no salen en 3D: solo cuentan si no hay nada más.
+ */
+export function projectBounds(ed: Editor) {
+  const pts: Pt[] = [];
+  for (const l of ed.project.levels) {
+    for (const s of [...l.walls, ...l.roofs, ...l.stairs, ...l.decks]) pts.push({ x: s.x1, y: s.y1 }, { x: s.x2, y: s.y2 });
+    for (const sl of l.slabs) pts.push(...sl.pts);
+    for (const c of l.columns) pts.push(c);
+    for (const f of [...l.furniture, ...l.fixtures]) pts.push(f);
+  }
+  if (pts.length) {
+    const xs = pts.map((p) => p.x), ys = pts.map((p) => p.y), mg = 1.5;
+    return { x0: Math.min(...xs) - mg, y0: Math.min(...ys) - mg, x1: Math.max(...xs) + mg, y1: Math.max(...ys) + mg, solid: true };
+  }
+  const bs = ed.project.levels.map((l) => bounds(l, [], true));
   return {
     x0: Math.min(...bs.map((b) => b.x0)), y0: Math.min(...bs.map((b) => b.y0)),
-    x1: Math.max(...bs.map((b) => b.x1)), y1: Math.max(...bs.map((b) => b.y1)),
+    x1: Math.max(...bs.map((b) => b.x1)), y1: Math.max(...bs.map((b) => b.y1)), solid: false,
   };
 }
 
