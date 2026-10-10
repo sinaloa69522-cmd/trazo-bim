@@ -767,7 +767,7 @@ export class Editor {
     }
     if (this.tool === "furniture") {
       this.snapshot();
-      const f = { id: nextId(m), kind: this.defaults.furnKind, x: p.x, y: p.y, rot: this.defaults.furnRot };
+      const f = { id: nextId(m), kind: this.defaults.furnKind, ...this.furnitureCandidate(p) };
       m.furniture.push(f);
       this.message = `${furnitureDef(f.kind).label} colocado. Haz clic para otro, R para girar o Esc para terminar.`;
       this.changed();
@@ -1088,6 +1088,51 @@ export class Editor {
    * Dónde quedaría el punto bajo el cursor: los mecanismos de pared se pegan a la cara del muro
    * más cercano (a menos de 0,5 m) y se giran mirando a la habitación.
    */
+  /**
+   * Dónde queda la pieza que se va a colocar. Los gabinetes de cocina se pegan al muro más cercano con el
+   * frente hacia el local y, a lo largo del muro, se alinean con los gabinetes vecinos y con las caras de
+   * los muros que llegan a él; si no hay nada cerca, van de 5 en 5 cm.
+   */
+  furnitureCandidate(p: Pt): { x: number; y: number; rot: number } {
+    const d = furnitureDef(this.defaults.furnKind), free = { x: p.x, y: p.y, rot: this.defaults.furnRot };
+    if (!d.wall) return free;
+    let best: { w: Wall; t: number; d: number } | null = null;
+    for (const w of this.model.walls) { const r = distSeg(p.x, p.y, w.x1, w.y1, w.x2, w.y2); if (r.d < 0.9 + w.thick / 2 && (!best || r.d < best.d)) best = { w, t: r.t, d: r.d }; }
+    if (!best) return free;
+    const { w, t } = best, { L, ux, uy } = dir(w), nx = -uy, ny = ux;
+    const sd = (p.x - w.x1) * nx + (p.y - w.y1) * ny >= 0 ? 1 : -1;
+    // el +y local (frente), (-sen a, cos a), mira hacia fuera del muro
+    let rot = (Math.round((Math.atan2(-nx * sd, ny * sd) * 180) / Math.PI) + 360) % 360;
+    // los esquineros en L llevan el brazo hacia el extremo del muro más cercano (el rincón)
+    if (d.kind === "cab-bc" || d.kind === "cab-wc") {
+      const a = (rot * Math.PI) / 180, xToEnd2 = Math.cos(a) * ux + Math.sin(a) * uy > 0;
+      if (xToEnd2 === t > 0.5) rot = (rot + 90) % 360;
+    }
+    const off = sd * (w.thick / 2 + d.d / 2), along = (q: Pt) => (q.x - w.x1) * ux + (q.y - w.y1) * uy;
+    const across = (q: Pt) => (q.x - w.x1) * nx + (q.y - w.y1) * ny;
+    const s0 = t * L, half = d.w / 2, stops: number[] = [];
+    // vecinos del mismo muro y del mismo lado
+    for (const f of this.model.furniture) {
+      const fd = furnitureDef(f.kind);
+      if (!fd.wall || Math.abs(across(f) - sd * (w.thick / 2 + fd.d / 2)) > 0.05) continue;
+      const fa = (f.rot * Math.PI) / 180, fw = Math.abs(Math.cos(fa) * ux + Math.sin(fa) * uy) > 0.5 ? fd.w : fd.d;
+      stops.push(along(f) - fw / 2 - half, along(f) + fw / 2 + half);
+    }
+    // caras de los muros que acometen (rincones)
+    for (const o of this.model.walls) {
+      if (o === w) continue;
+      const od = dir(o);
+      if (Math.abs(od.ux * ux + od.uy * uy) > 0.1) continue;
+      const u = along({ x: o.x1, y: o.y1 }), ends = [across({ x: o.x1, y: o.y1 }), across({ x: o.x2, y: o.y2 })];
+      if (Math.min(...ends) > w.thick / 2 + 0.05 && sd > 0 || Math.max(...ends) < -w.thick / 2 - 0.05 && sd < 0) continue;
+      stops.push(u + o.thick / 2 + half, u - o.thick / 2 - half);
+    }
+    const near = stops.filter((s) => Math.abs(s - s0) < 0.2).sort((a, b) => Math.abs(a - s0) - Math.abs(b - s0))[0];
+    const s = near ?? Math.round(s0 * 20) / 20;
+    const q = loc(w, s, off);
+    return { x: Math.round(q.x * 1000) / 1000, y: Math.round(q.y * 1000) / 1000, rot };
+  }
+
   fixtureCandidate(p: Pt): { x: number; y: number; rot: number } {
     const d = mepDef(this.defaults.mepKind), free = { x: p.x, y: p.y, rot: this.defaults.mepRot };
     if (!d.wall) return free;

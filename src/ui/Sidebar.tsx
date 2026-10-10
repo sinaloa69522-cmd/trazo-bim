@@ -584,7 +584,7 @@ function FurnitureIcon({ kind, size = 34 }: { kind: string; size?: number }) {
     <svg width={size} height={size} viewBox={`${-m} ${-m} ${2 * m} ${2 * m}`} aria-hidden="true" className="sym">
       {d.draw().map((k, i) => {
         const pts = k.pts.map((q) => `${q.x},${q.y}`).join(" ");
-        const st = { stroke: "currentColor", strokeWidth: m / 22, fill: "none" };
+        const st = { stroke: "currentColor", strokeWidth: m / 22, fill: "none", strokeDasharray: k.dash ? `${m / 8} ${m / 14}` : undefined };
         return k.closed ? <polygon key={i} points={pts} {...st} /> : <polyline key={i} points={pts} {...st} />;
       })}
     </svg>

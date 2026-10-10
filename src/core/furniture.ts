@@ -1,9 +1,10 @@
 import type { Pt } from "./geometry";
 import type { Furniture } from "./model";
 import { MORE } from "./furnitureMore";
+import { KITCHEN } from "./kitchen";
 
 /** Polilínea de la representación en planta, en coordenadas locales (metros, origen en el centro). */
-export interface Stroke { pts: Pt[]; closed?: boolean }
+export interface Stroke { pts: Pt[]; closed?: boolean; /** a trazos: por encima del plano de corte */ dash?: boolean }
 
 export interface FurnitureDef {
   kind: string;
@@ -19,6 +20,8 @@ export interface FurnitureDef {
   draw: () => Stroke[];
   /** Volúmenes para el 3D y el IFC (por defecto, la caja envolvente) */
   solids?: () => Solid[];
+  /** Se coloca contra el muro más cercano, con el frente hacia el local, y se alinea con sus vecinos */
+  wall?: boolean;
 }
 
 /** Prisma en coordenadas locales: centro (x, y), lados w y d, desde z0 con altura h. */
@@ -111,6 +114,7 @@ export const FURNITURE: FurnitureDef[] = [
     draw: () => [box(1.7, 0.75), ellipse(0.05, 0, 0.72, 0.29, 28), ellipse(-0.6, 0, 0.03, 0.03, 8)],
   },
   ...MORE,
+  ...KITCHEN,
 ];
 
 /** Grupos del catálogo, en el orden en que se muestran. */

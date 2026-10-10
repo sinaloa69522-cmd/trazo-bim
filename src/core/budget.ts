@@ -1,6 +1,7 @@
 import { DOOR_STYLES, openingStyle } from "./openingStyles";
 import { deckTakeoff, deckType } from "./decks";
 import { furnitureDef } from "./furniture";
+import { CAB_CAT, isWallCabinet } from "./kitchen";
 import { dir, polygonArea, roofGeom, slabArea } from "./geometry";
 import { stairSteps } from "./stairs";
 import { MEP, runLength, SYSTEMS } from "./mep";
@@ -130,6 +131,14 @@ export function budget(p: Project, s: BudgetSettings = defaultBudget()): Budget 
   // muebles sanitarios y cocina
   for (const [k, price] of Object.entries(SANITARY_PRICE))
     add(`09.${k}`, `${furnitureDef(k).label}, colocado`, "pza", lv.reduce((t, l) => t + l.furniture.filter((f) => f.kind === k).length, 0), price);
+
+  // cocina integral: metros lineales de gabinetes bajos y altos, y piezas de torre y campana
+  const furn = lv.flatMap((l) => l.furniture).filter((f) => furnitureDef(f.kind).cat === CAB_CAT);
+  const ml = (pred: (k: string) => boolean) => furn.filter((f) => pred(f.kind)).reduce((t, f) => t + furnitureDef(f.kind).w, 0);
+  add("09.20", "Cocina integral: gabinetes bajos con cubierta de granito", "m", ml((k) => !isWallCabinet(k) && k !== "cab-oven"), 7800);
+  add("09.21", "Cocina integral: gabinetes altos (alacenas)", "m", ml((k) => k.startsWith("cab-w")), 4600);
+  add("09.22", "Torre para horno", "pza", furn.filter((f) => f.kind === "cab-oven").length, 9500);
+  add("09.23", "Campana extractora, instalada", "pza", furn.filter((f) => f.kind === "cab-hood").length, 6500);
 
   const priced: BudgetItem[] = items.map((it) => {
     const price = s.prices[it.code] ?? it.base;
