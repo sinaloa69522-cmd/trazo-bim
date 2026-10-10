@@ -53,8 +53,9 @@ const n2 = (v: number) => fmtDim(v);
 
 /** Rejilla de vistas: hasta cuatro, en 1×1, 2×1 o 2×2; las fachadas van una encima de otra. */
 export const grid = (n: number, stacked = false) => (stacked ? { cols: 1, rows: n } : { cols: n > 1 ? 2 : 1, rows: n > 2 ? 2 : 1 });
-/** Cada vista ocupa su celda; a la derecha quedan unos 22 mm para las cotas de nivel y a la izquierda sitio para las de altura. */
-const cell = (n: number, stacked = false) => { const g = grid(n, stacked); return { w: planBox().w / g.cols - (stacked ? 34 : 22), h: planBox().h / g.rows - 16 }; };
+/** Margen de cada dibujo en mm: a la derecha los niveles, a la izquierda y abajo las cotas en cadena y el título. */
+const ELEV_PAD = (stacked: boolean) => ({ w: stacked ? 36 : 28, h: 24, left: stacked ? 12 : 10, top: 5 });
+const cell = (n: number, stacked = false) => { const g = grid(n, stacked), m = ELEV_PAD(stacked); return { w: planBox().w / g.cols - m.w, h: planBox().h / g.rows - m.h }; };
 export function fitElevScale(els: Elevation[], stacked = false) {
   const c = cell(els.length, stacked);
   return scalesFor().find((d) => els.every((e) => ((e.u1 - e.u0) * 1000) / d <= c.w && ((e.z1 - e.z0) * 1000) / d <= c.h)) ?? 1000;
@@ -213,8 +214,8 @@ function Sheet({ ed, content, level, scale, zoom = 1, set }: { ed: Editor; conte
         // cada dibujo centrado en su celda
         const cx = (i % g.cols) * cw, cy = Math.floor(i / g.cols) * ch;
         const w = (e.el.u1 - e.el.u0) * s, h = (e.el.z1 - e.el.z0) * s;
-        const ox = cx + (cw - 22 * PX_MM - w) / 2 + (stacked ? 10 : 6) * PX_MM, oy = cy + (ch - 16 * PX_MM + h) / 2 + 4 * PX_MM;
-        drawElevation(ctx, e.el, ox, oy, s, e.label, { tags: stacked, heights: stacked });
+        const m = ELEV_PAD(stacked), ox = cx + (cw - m.w * PX_MM - w) / 2 + m.left * PX_MM, oy = cy + (ch - m.h * PX_MM + h) / 2 + m.top * PX_MM;
+        drawElevation(ctx, e.el, ox, oy, s, e.label, { tags: stacked, dims: true });
       });
       return;
     }

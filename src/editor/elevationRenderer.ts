@@ -1,5 +1,5 @@
 import { fmtDim, fmtElev, imperial } from "../core/units";
-import type { EFace, Elevation, FaceKind } from "../core/elevation";
+import { elevationDims, type EFace, type Elevation, type FaceKind } from "../core/elevation";
 import { elevationLines } from "../core/openingStyles";
 
 const FILL: Record<FaceKind, string> = {
@@ -14,8 +14,8 @@ const MONO = "'IBM Plex Mono', ui-monospace, monospace";
 export interface ElevOpts {
   /** Etiquetas de material con directriz sobre las caras vistas (láminas de fachada) */
   tags?: boolean;
-  /** Cotas de altura a la izquierda: entre niveles y total hasta la cumbrera */
-  heights?: boolean;
+  /** Cotas en cadena: horizontales bajo el terreno y verticales a la izquierda (elevationDims) */
+  dims?: boolean;
 }
 
 export function drawElevation(ctx: CanvasRenderingContext2D, el: Elevation, ox: number, oy: number, s: number, title: string, opts: ElevOpts = {}) {
@@ -61,11 +61,13 @@ export function drawElevation(ctx: CanvasRenderingContext2D, el: Elevation, ox: 
   };
   for (const l of el.levels) mark(l.elev, us ? fmtElev(l.elev) : `N.P.T. ${fmtElev(l.elev)}`, l.name);
   for (const t of el.tops ?? []) mark(t.elev, `${us ? (t.tag === "N.L.A." ? "T.O. ROOF" : "RIDGE") : t.tag} ${fmtElev(t.elev)}`, "");
-  if (opts.heights) heightDims(ctx, el, X, Y);
+  const below = Math.max(oy, gy);
+  let rows = 0;
+  if (opts.dims) rows = chainDims(ctx, el, X, Y, below);
   if (opts.tags) materialTags(ctx, el, X, Y);
-  // título de la vista
-  ctx.font = `600 10px 'IBM Plex Sans Condensed', 'Arial Narrow', sans-serif`;
-  ctx.fillText(title.toUpperCase(), X(el.u0), oy + 16);
+  // título de la vista, debajo de las cotas
+  ctx.font = `600 10px 'IBM Plex Sans Condensed', 'Arial Narrow', sans-serif`; ctx.fillStyle = "#111";
+  ctx.fillText(title.toUpperCase(), X(el.u0), (rows ? below + rows * 10 : oy) + 16);
   ctx.restore();
 }
 
@@ -173,22 +175,39 @@ function materialTags(ctx: CanvasRenderingContext2D, el: Elevation, X: Px, Y: Px
   });
 }
 
-/** Cotas verticales a la izquierda: tramos entre niveles hasta la coronación y la altura total. */
-function heightDims(ctx: CanvasRenderingContext2D, el: Elevation, X: Px, Y: Px) {
-  const zs = [...new Set([0, ...el.levels.map((l) => l.elev).filter((z) => z > 0 && z < el.z1 - 0.05), el.z1].map((z) => Math.round(z * 100) / 100))].sort((a, b) => a - b);
-  if (zs.length < 2) return;
-  const x1 = X(el.u0) - 12, x2 = x1 - 12;
-  const dim = (x: number, za: number, zb: number) => {
-    const ya = Y(za), yb = Y(zb);
-    ctx.beginPath(); ctx.moveTo(x, ya); ctx.lineTo(x, yb);
-    for (const y of [ya, yb]) { ctx.moveTo(x - 2.5, y + 2.5); ctx.lineTo(x + 2.5, y - 2.5); ctx.moveTo(x - 3, y); ctx.lineTo(x + 3, y); }
-    ctx.stroke();
-    ctx.save(); ctx.translate(x - 2, (ya + yb) / 2); ctx.rotate(-Math.PI / 2);
-    ctx.textAlign = "center"; ctx.fillText(fmtDim(zb - za), 0, 0); ctx.restore();
-  };
+/**
+ * Cadenas de cotas: las horizontales bajo el terreno (huecos o muros cortados, y total) y las verticales
+ * a la izquierda (antepechos y dinteles, niveles, total), de dentro hacia fuera. Devuelve las filas de abajo.
+ */
+function chainDims(ctx: CanvasRenderingContext2D, el: Elevation, X: Px, Y: Px, below: number) {
+  const { h, v } = elevationDims(el);
   ctx.save();
-  ctx.strokeStyle = "#111"; ctx.fillStyle = "#111"; ctx.lineWidth = 0.4; ctx.font = `6.5px ${MONO}`;
-  for (let i = 1; i < zs.length; i++) dim(x1, zs[i - 1], zs[i]);
-  if (zs.length > 2) dim(x2, zs[0], zs[zs.length - 1]);
+  ctx.strokeStyle = "#111"; ctx.fillStyle = "#111"; ctx.lineWidth = 0.4; ctx.font = `6.5px ${MONO}`; ctx.textAlign = "center";
+  const tick = (x: number, y: number) => { ctx.moveTo(x - 2.5, y + 2.5); ctx.lineTo(x + 2.5, y - 2.5); };
+  h.forEach((c, k) => {
+    const y = below + 9 + k * 10;
+    ctx.beginPath(); ctx.moveTo(X(c[0]), y); ctx.lineTo(X(c[c.length - 1]), y);
+    for (const u of c) { tick(X(u), y); ctx.moveTo(X(u), y + 2.5); ctx.lineTo(X(u), y - 3); }
+    ctx.stroke();
+    for (let i = 1; i < c.length; i++) {
+      const a = X(c[i - 1]), b = X(c[i]), t = fmtDim(c[i] - c[i - 1]), tw = ctx.measureText(t).width;
+      if (b - a < 8) continue;
+      // si no cabe, sube un poco para no pisar a la vecina
+      ctx.fillText(t, (a + b) / 2, y - 1.5 - (b - a < tw + 2 && i % 2 ? 6 : 0));
+    }
+  });
+  v.forEach((c, k) => {
+    const x = X(el.u0) - 12 - k * 11;
+    ctx.beginPath(); ctx.moveTo(x, Y(c[0])); ctx.lineTo(x, Y(c[c.length - 1]));
+    for (const z of c) { tick(x, Y(z)); ctx.moveTo(x - 3, Y(z)); ctx.lineTo(x + 3, Y(z)); }
+    ctx.stroke();
+    for (let i = 1; i < c.length; i++) {
+      const ya = Y(c[i - 1]), yb = Y(c[i]);
+      if (ya - yb < 8) continue;
+      ctx.save(); ctx.translate(x - 2, (ya + yb) / 2); ctx.rotate(-Math.PI / 2);
+      ctx.fillText(fmtDim(c[i] - c[i - 1]), 0, 0); ctx.restore();
+    }
+  });
   ctx.restore();
+  return h.length;
 }

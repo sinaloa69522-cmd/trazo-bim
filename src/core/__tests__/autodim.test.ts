@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { Editor } from "../../editor/Editor";
-import { autoDims } from "../autodim";
+import { allAutoDims, autoDims, interiorDims } from "../autodim";
 import { dimGeom } from "../geometry";
 import { sampleProject, type Dim } from "../model";
 
@@ -48,7 +48,7 @@ describe("acotado automático de fachadas", () => {
     const own = ed.model.dims.filter((d) => !d.auto).length;
     ed.autoDimension();
     const n = ed.model.dims.length;
-    expect(n).toBe(own + dims.length);
+    expect(n).toBe(own + allAutoDims(ed.model).length);
     ed.runCommand("AC");
     expect(ed.model.dims.length).toBe(n);
     ed.clearAutoDims();
@@ -69,5 +69,27 @@ describe("acotado automático de fachadas", () => {
     expect(ed.model.dims.filter((d) => d.auto).length).toBe(0);
     ed.setLiveDims(true);
     expect(ed.model.dims.filter((d) => d.auto).length).toBeGreaterThanOrEqual(4);
+  });
+
+  it("cada habitación lleva su ancho y su largo libres, a cara de muro y dentro de ella", () => {
+    const inner = interiorDims(m);
+    expect(inner.every((d) => d.auto && d.inner)).toBe(true);
+    const L = inner.map((d) => Math.round(Math.hypot(d.x2 - d.x1, d.y2 - d.y1) * 100) / 100).sort((a, b) => a - b);
+    // dormitorio 5,815 x 3,815; baño 5,815 x 2,815; estar 3,815 x 6,75 (muros de 0,25 y tabiques de 0,12)
+    expect(L).toEqual([2.82, 3.82, 3.82, 5.82, 5.82, 6.75]);
+    // junto al muro de arriba y al de la izquierda, sin pisar el centro de la habitación
+    const dorm = inner.filter((d) => d.x1 < 6 && d.y1 < 4 && d.y2 < 4);
+    expect(dorm.some((d) => d.y1 === 0.125 + 0.45 && d.y2 === 0.125 + 0.45)).toBe(true);
+    expect(dorm.some((d) => d.x1 === 0.125 + 0.45 && d.x2 === 0.125 + 0.45)).toBe(true);
+  });
+
+  it("las interiores se pueden quitar sin tocar las de fachada", () => {
+    const ed = new Editor();
+    const n = ed.model.dims.length;
+    ed.setInnerDims(false);
+    expect(ed.model.dims.length).toBe(n - 6);
+    expect(ed.model.dims.some((d) => d.inner)).toBe(false);
+    ed.setInnerDims(true);
+    expect(ed.model.dims.length).toBe(n);
   });
 });
