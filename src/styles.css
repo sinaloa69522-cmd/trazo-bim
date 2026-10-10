@@ -346,6 +346,8 @@ dialog .acts span{margin-right:auto;color:var(--muted);font-size:12px}
   html.print-set .printset .sheet:last-child{break-after:auto;page-break-after:auto}
 }
 .printset{display:none}
+.pdfset{position:fixed;left:-20000px;top:0;pointer-events:none}
+.pdfset .sheet{position:relative;margin-bottom:10mm}
 .group.exp{align-items:center}
 .group .glbl{padding:0 4px 0 8px;font-size:12px;color:var(--muted)}
 .catalog{display:grid;grid-template-columns:1fr 1fr;gap:4px}

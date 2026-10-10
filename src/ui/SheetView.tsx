@@ -1,5 +1,9 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { toCanvas } from "html-to-image";
+import { jpegPdf, type PdfPage } from "../core/pdf";
+import { projectFileName } from "../core/projectFile";
+import { saveFile } from "./saveFile";
 import { usedFinishes } from "../core/finishes";
 import { openingStyle, styleName } from "../core/openingStyles";
 import { allSections, elevation, FACADES, section, type Elevation, type Facade } from "../core/elevation";
@@ -31,6 +35,8 @@ const SIDE = 112;
 const planBox = () => { const S = sheetSize(); return { x: FRAME, y: FRAME, w: S.w - 2 * FRAME - SIDE, h: S.h - 2 * FRAME - 16 }; };
 const PX_MM = 96 / 25.4;
 const OVERSAMPLE = 3;
+/** Resolución de cada lámina al imprimir o sacar en PDF el juego completo: unos 150 ppp, sin agotar la memoria. */
+const SET_OVERSAMPLE = 1.6;
 
 /** El papel siempre es blanco, aunque la interfaz esté en modo oscuro. */
 const PAPER: PlanColors = {
@@ -175,7 +181,7 @@ function withLevel(ed: Editor, level: number, fn: () => void) {
 }
 
 /** Una lámina A3 completa: dibujo, tablas y cajetín. */
-function Sheet({ ed, content, level, scale, zoom = 1, set }: { ed: Editor; content: Content; level: number; scale: number; zoom?: number; set?: PermitEntry[] }) {
+function Sheet({ ed, content, level, scale, zoom = 1, set, os = OVERSAMPLE }: { ed: Editor; content: Content; level: number; scale: number; zoom?: number; set?: PermitEntry[]; os?: number }) {
   const canvas = useRef<HTMLCanvasElement>(null);
   const p = ed.project, info = p.info, lv = p.levels[level];
   const views = viewsOf(ed, content, level), secs = allSections(p), stacked = content === "fach";
@@ -190,9 +196,9 @@ function Sheet({ ed, content, level, scale, zoom = 1, set }: { ed: Editor; conte
     const cv = canvas.current;
     if (!cv) return;
     const W = planBox().w * PX_MM, H = planBox().h * PX_MM;
-    cv.width = Math.round(W * OVERSAMPLE); cv.height = Math.round(H * OVERSAMPLE);
+    cv.width = Math.round(W * os); cv.height = Math.round(H * os);
     const ctx = cv.getContext("2d")!;
-    ctx.setTransform(OVERSAMPLE, 0, 0, OVERSAMPLE, 0, 0);
+    ctx.setTransform(os, 0, 0, os, 0, 0);
     if (isText(content)) {
       ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, W, H);
       if (content !== "cover" && content !== "mxport") return;
@@ -426,6 +432,9 @@ export function SheetView({ ed }: { ed: Editor }) {
   const [info_, setInfo] = useState(false);
   const [siteOpen, setSiteOpen] = useState(false);
   const [printSet, setPrintSet] = useState(false);
+  /** PDF del juego completo en curso: láminas hechas de total */
+  const [pdf, setPdf] = useState<{ done: number; total: number } | null>(null);
+  const pdfHost = useRef<HTMLDivElement>(null);
   const secs = allSections(ed.project);
   const levelFor = (c: Content) => (c === "fach" ? part : TEXT_SHEETS.includes(c) || groundOnly(c) ? 0 : Math.min(lvl ?? ed.active, ed.project.levels.length - 1));
   const autoScale = autoScaleOf(ed, content, levelFor(content));
@@ -445,6 +454,35 @@ export function SheetView({ ed }: { ed: Editor }) {
     const t = window.setTimeout(() => window.print(), 50);
     return () => { window.clearTimeout(t); window.removeEventListener("afterprint", done); root.classList.remove("print-set"); };
   }, [printSet]);
+
+  // PDF del juego completo: cada lámina se pasa a imagen (unos 150 ppp) y se junta en un PDF que se descarga
+  const pdfRunning = !!pdf;
+  useEffect(() => {
+    if (!pdfRunning) return;
+    let alive = true;
+    (async () => {
+      try {
+        // que se dibujen los lienzos y carguen las imágenes
+        await new Promise((r) => setTimeout(r, 400));
+        const nodes = [...(pdfHost.current?.querySelectorAll<HTMLElement>(".sheet") ?? [])];
+        const pages: PdfPage[] = [];
+        for (const [i, node] of nodes.entries()) {
+          if (!alive) return;
+          setPdf({ done: i, total: nodes.length });
+          pages.push(await sheetJpeg(node));
+        }
+        const S = sheetSize(), pt = 72 / 25.4;
+        const bytes = jpegPdf(pages, S.w * pt, S.h * pt, ed.project.info.name);
+        const name = `${projectFileName(ed.project.info.name).replace(/\.[^.]+$/, "")}-juego-completo.pdf`;
+        const r = await saveFile(name, new Blob([bytes], { type: "application/pdf" }));
+        ed.log(r === "saved" ? `PDF del juego completo listo: ${name} (${pages.length} láminas). Ábrelo e imprímelo desde tu visor de PDF.`
+          : r === "declined" ? "Descarga del PDF cancelada." : "No se pudo descargar el PDF en este navegador.");
+      } catch (e) {
+        ed.log(`No se pudo crear el PDF: ${(e as Error).message}`);
+      } finally { if (alive) setPdf(null); }
+    })();
+    return () => { alive = false; };
+  }, [pdfRunning]);
 
   // la lámina se encaja en el hueco disponible
   useLayoutEffect(() => {
@@ -531,6 +569,7 @@ export function SheetView({ ed }: { ed: Editor }) {
   );
   const en = imperial(), permits = en ? permitSet(ed) : mxSet(ed);
   const set = printSet ? (permits ?? sheetSet(ed)) : [];
+  const pdfSheets = pdf ? (permits ?? sheetSet(ed)) : [];
   const nLv = ed.project.levels.length;
   // todas las láminas del juego, numeradas, para el navegador y la vista «Todas»
   const entries = (permits ?? sheetSet(ed)).map((x) => ({ ...x, no: sheetNumber(nLv, x.content, x.level, permits), label: en ? entryTitle(ed, x.content, x.level) : (x as PermitEntry).title ?? entryTitle(ed, x.content, x.level) }));
@@ -596,6 +635,9 @@ export function SheetView({ ed }: { ed: Editor }) {
           <button className="btn" onClick={() => zoomAt(zoom * 1.25)} title="Acercar (Ctrl + rueda)" aria-label="Acercar">+</button>
         </div>
         <button className="btn primary" onClick={() => (all ? setPrintSet(true) : window.print())} title={`En el diálogo de impresión elige ${imperial() ? "Tabloid (11 × 17)" : "A3"} horizontal o Guardar como PDF`}>{all ? "Imprimir todas" : "Imprimir / PDF"}</button>
+        <button className="btn primary" onClick={() => setPdf({ done: 0, total: 0 })} disabled={!!pdf || printSet}
+          title="Crea un PDF con todas las láminas del juego y lo descarga; ábrelo e imprímelo desde cualquier visor de PDF">
+          {pdf ? `Creando PDF… ${pdf.total ? `${pdf.done + 1}/${pdf.total}` : ""}` : "Descargar PDF"}</button>
         <button className="btn" onClick={() => setPrintSet(true)} disabled={printSet}
           title={en ? "Juego de permiso de EE.UU. completo (cover, notas, site, estructura, arquitectura, detalles, eléctrico, plomería y HVAC) en un solo PDF" : "Juego ejecutivo completo: arquitectónicos, estructurales con detalles, eléctrico, hidráulico y sanitario, en un solo PDF"}>{en ? "Juego para permiso" : "Juego completo"}</button>
       </div>
@@ -634,7 +676,11 @@ export function SheetView({ ed }: { ed: Editor }) {
         </div>
       </div>
       {printSet && createPortal(
-        <div className="printset">{set.map((s) => <Sheet key={`${s.content}-${s.level}`} ed={ed} content={s.content} level={s.level} scale={s.scale} set={permits} />)}</div>,
+        <div className="printset">{set.map((s) => <Sheet key={`${s.content}-${s.level}`} ed={ed} content={s.content} level={s.level} scale={s.scale} set={permits} os={SET_OVERSAMPLE} />)}</div>,
+        document.body,
+      )}
+      {pdf && createPortal(
+        <div className="pdfset" ref={pdfHost} aria-hidden>{pdfSheets.map((s) => <Sheet key={`${s.content}-${s.level}`} ed={ed} content={s.content} level={s.level} scale={s.scale} set={permits} os={SET_OVERSAMPLE} />)}</div>,
         document.body,
       )}
     </div>
@@ -704,3 +750,15 @@ function MepTables({ p, disc, level, notes }: { p: Editor["project"]; disc: Disc
     </div>
   );
 }
+
+/** Una lámina del DOM a JPEG a unos 150 ppp. Si las fuentes web no se pueden incrustar, se repite sin ellas. */
+async function sheetJpeg(node: HTMLElement): Promise<PdfPage> {
+  const opts = { pixelRatio: 150 / 96, backgroundColor: "#ffffff", cacheBust: false, imagePlaceholder: BLANK_PX };
+  let cv: HTMLCanvasElement;
+  try { cv = await toCanvas(node, opts); } catch { cv = await toCanvas(node, { ...opts, skipFonts: true }); }
+  const blob = await new Promise<Blob | null>((r) => cv.toBlob(r, "image/jpeg", 0.88));
+  const page = { jpeg: new Uint8Array(await blob!.arrayBuffer()), w: cv.width, h: cv.height };
+  cv.width = cv.height = 0;
+  return page;
+}
+const BLANK_PX = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+ip1sAAAAASUVORK5CYII=";

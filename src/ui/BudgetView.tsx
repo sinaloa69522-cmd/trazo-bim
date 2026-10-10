@@ -1,3 +1,4 @@
+import { saveFile } from "./saveFile";
 import { Fragment, useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { budget, budgetCsv, CURRENCIES } from "../core/budget";
@@ -52,11 +53,7 @@ export function BudgetView({ ed }: { ed: Editor }) {
 
   const download = () => {
     const blob = new Blob([budgetCsv(b, s, `Presupuesto · ${info.name}`)], { type: "text/csv;charset=utf-8" });
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(blob);
-    a.download = `presupuesto-${(info.name || "proyecto").toLowerCase().replace(/[^a-z0-9áéíóúñü]+/gi, "-")}.csv`;
-    a.click();
-    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+    void saveFile(`presupuesto-${(info.name || "proyecto").toLowerCase().replace(/[^a-z0-9áéíóúñü]+/gi, "-")}.csv`, blob);
     ed.log("Presupuesto exportado en CSV: ábrelo con Excel o Google Sheets.");
   };
 

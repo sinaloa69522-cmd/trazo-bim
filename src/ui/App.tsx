@@ -1,3 +1,4 @@
+import { saveFile } from "./saveFile";
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { Editor, type Tool } from "../editor/Editor";
 import { mepDef, type Discipline } from "../core/mep";
@@ -56,11 +57,7 @@ const EDIT_TOOLS: Tool[] = ["move", "copy", "rotate", "mirror", "scale", "array"
 
 /** Descarga un texto como archivo. */
 function download(name: string, text: string, type = "application/json") {
-  const a = document.createElement("a");
-  a.href = URL.createObjectURL(new Blob([text], { type }));
-  a.download = name;
-  a.click();
-  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  void saveFile(name, text, type);
 }
 
 function storage(): Storage | null {
