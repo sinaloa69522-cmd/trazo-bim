@@ -12,6 +12,7 @@ import { framing, MEMBER_COLOR, type Member } from "../core/framing";
 import { foundation, gradeLevel } from "../core/foundation";
 import { deckBoxes, type Box } from "../core/decks";
 import type { Editor } from "./Editor";
+import { grass, pavingMaterial, SKY, skyDome, skyEnvironment, tree, treeSpots } from "./scenery";
 
 /** Modelo 3D generado a partir de la planta. Se reconstruye en cada cambio. */
 export class Viewer3D {
@@ -20,7 +21,12 @@ export class Viewer3D {
   private ren: THREE.WebGLRenderer;
   private ctl: OrbitControls;
   private sun = new THREE.DirectionalLight(0xffffff, 0.7);
+  private hemi = new THREE.HemisphereLight(0xffffff, 0x8a8576, 0.75 * Math.PI);
   private group = new THREE.Group();
+  /** Vista realista: cielo, sol cálido, reflejos, pasto y árboles. Si no, la vista de modelo de siempre. */
+  private realistic = true;
+  private sky = skyDome();
+  private env?: THREE.Texture;
   private dirty = true;
   private raf = 0;
   private timer = 0;
@@ -194,12 +200,12 @@ export class Viewer3D {
     this.ctl.enableDamping = true;
     this.ctl.maxPolarAngle = Math.PI / 2.05;
     this.ctl.addEventListener("change", () => (this.dirty = true));
-    this.scene.add(new THREE.HemisphereLight(0xffffff, 0x8a8576, 0.75 * Math.PI));
-    this.sun.intensity = 0.7 * Math.PI;
     this.sun.castShadow = true;
     this.sun.shadow.mapSize.set(2048, 2048);
-    Object.assign(this.sun.shadow.camera, { left: -25, right: 25, top: 25, bottom: -25, far: 80 });
-    this.scene.add(this.sun, this.sun.target, this.group);
+    this.sun.shadow.bias = -0.0004;
+    this.sun.shadow.normalBias = 0.03;
+    this.scene.add(this.hemi, this.sun, this.sun.target, this.group, this.sky);
+    this.look();
     this.ro = new ResizeObserver(() => this.resize());
     this.ro.observe(host);
     this.unsub = ed.onModel(() => this.schedule());
@@ -208,7 +214,7 @@ export class Viewer3D {
     this.fit();
     const loop = () => {
       this.raf = requestAnimationFrame(loop);
-      if (this.ctl.update() || this.dirty) { this.dirty = false; this.ren.render(this.scene, this.cam); }
+      if (this.ctl.update() || this.dirty) { this.dirty = false; this.sky.position.copy(this.cam.position); this.ren.render(this.scene, this.cam); }
     };
     loop();
   }
@@ -232,14 +238,48 @@ export class Viewer3D {
     this.dirty = true;
   }
 
+  isRealistic() { return this.realistic; }
+  setRealistic(on: boolean) {
+    if (on === this.realistic) return;
+    this.realistic = on;
+    this.look();
+    this.build();
+  }
+
+  /** Luces, tono y materiales de cada modo. */
+  private look() {
+    const r = this.realistic, m = this.mat;
+    this.ren.toneMapping = r ? THREE.ACESFilmicToneMapping : THREE.NoToneMapping;
+    this.ren.toneMappingExposure = r ? 0.9 : 1;
+    if (r && !this.env) this.env = skyEnvironment(this.ren);
+    this.scene.environment = r ? this.env! : null;
+    this.sky.visible = r;
+    this.hemi.color.set(r ? 0xcfe0ff : 0xffffff);
+    this.hemi.groundColor.set(r ? 0x7a7560 : 0x8a8576);
+    this.hemi.intensity = r ? 0.9 : 0.75 * Math.PI;
+    this.sun.color.set(r ? 0xfff0dc : 0xffffff);
+    this.sun.intensity = r ? 3 : 0.7 * Math.PI;
+    this.sun.shadow.radius = r ? 3 : 1;
+    m.edge.opacity = r ? 0.14 : 0.55;
+    Object.assign(m.glass, r ? { opacity: 0.6, roughness: 0.04, metalness: 0.65, envMapIntensity: 1.4 } : { opacity: 0.35, roughness: 0.1, metalness: 0.1, envMapIntensity: 1 });
+    m.glass.color.set(r ? 0x5f7f92 : 0x8fc5e8);
+    m.frame.color.set(r ? 0x2e3236 : 0x40464a);
+    m.frame.metalness = r ? 0.5 : 0;
+    m.roof.envMapIntensity = r ? 0.5 : 1;
+    if (!r) this.scene.fog = null;
+    this.dirty = true;
+  }
+
   schedule() { clearTimeout(this.timer); this.timer = window.setTimeout(() => this.build(), 60); }
 
   build() {
     const { project, vis, active } = this.ed;
-    this.ren.setClearColor(new THREE.Color(this.background() || "#e4e8e6"));
+    this.ren.setClearColor(this.realistic ? SKY.horizon : new THREE.Color(this.background() || "#e4e8e6"));
     for (const c of [...this.group.children]) {
       this.group.remove(c);
       (c as THREE.Mesh).geometry?.dispose();
+      const mt = (c as THREE.Mesh).material as THREE.MeshStandardMaterial | undefined;
+      if (mt?.userData?.temp) { mt.map?.dispose(); mt.dispose(); }
     }
     let base = 0; // cota del nivel que se está construyendo
     /** ext: revestimiento en la cara exterior (+1 la de la normal izquierda, −1 la otra). */
@@ -290,10 +330,19 @@ export class Viewer3D {
       this.group.add(e);
     };
     const b = projectBounds(this.ed);
-    const floor = new THREE.Mesh(new THREE.BoxGeometry(b.x1 - b.x0, 0.1, b.y1 - b.y0), this.mat.floor);
-    floor.position.set((b.x0 + b.x1) / 2, gradeLevel(project) - 0.05, (b.y0 + b.y1) / 2);
+    const real = this.realistic && !this.ed.framing, gl = gradeLevel(project), cx = (b.x0 + b.x1) / 2, cz = (b.y0 + b.y1) / 2;
+    const floor = new THREE.Mesh(new THREE.BoxGeometry(b.x1 - b.x0, 0.1, b.y1 - b.y0), real ? pavingMaterial(this.ren, b.x1 - b.x0, b.y1 - b.y0) : this.mat.floor);
+    floor.position.set(cx, gl - 0.05, cz);
     floor.receiveShadow = true;
     this.group.add(floor);
+    const span = Math.max(b.x1 - b.x0, b.y1 - b.y0, 10);
+    if (real) {
+      this.group.add(grass(this.ren, cx, cz, gl - 0.03, Math.max(400, span * 20)));
+      const trees = project.entourage !== false ? treeSpots(b.x0, b.y0, b.x1, b.y1) : [];
+      trees.forEach((t, i) => this.group.add(tree(t.x, t.z, gl, t.h, i * 101 + 7)));
+      this.scene.fog = new THREE.Fog(SKY.horizon, span * 3, span * 14);
+    } else this.scene.fog = null;
+    this.placeSun(cx, cz, span / 2 + (real ? 10 : 4), floor.position.y);
     // en la vista de estructura el terreno baja para que se vean las zapatas
     if (this.ed.framing) {
       const zs = foundation(project).flatMap((m) => [m.a.z - m.h / 2, m.b.z - m.h / 2]);
@@ -391,6 +440,15 @@ export class Viewer3D {
     this.dirty = true;
   }
 
+  /** Sol alto desde un costado (la fachada de enfrente iluminada y la lateral en sombra), a media altura, con la cámara de sombras ajustada al proyecto (sombras más nítidas). */
+  private placeSun(cx: number, cz: number, half: number, y: number) {
+    const d = new THREE.Vector3(-0.5, 0.78, 0.55).normalize(), dist = half * 2 + 30;
+    this.sun.position.set(cx + d.x * dist, y + d.y * dist, cz + d.z * dist);
+    this.sun.target.position.set(cx, y, cz);
+    Object.assign(this.sun.shadow.camera, { left: -half, right: half, top: half, bottom: -half, near: 1, far: dist + half * 2 + 20 });
+    this.sun.shadow.camera.updateProjectionMatrix();
+  }
+
   /** El último encuadre se hizo sin nada que ver en 3D: se vuelve a encuadrar con el primer muro. */
   private fitEmpty = false;
 
@@ -401,12 +459,10 @@ export class Viewer3D {
     const top = Math.max(...this.ed.project.levels.map((l) => l.elev)) + 3;
     const r = Math.max(b.x1 - b.x0, b.y1 - b.y0, top * 1.5);
     this.ctl.target.set(cx, top / 3, cz);
-    this.cam.position.set(cx + r * 1.0, top / 3 + r * 1.1, cz + r * 1.3);
+    this.cam.position.set(cx + r * 1.0, top / 3 + r * (this.realistic ? 0.55 : 1.1), cz + r * 1.3);
     // que no se corte el modelo en proyectos grandes
     this.cam.far = Math.max(500, r * 12); this.cam.near = Math.max(0.05, r / 5000); this.cam.updateProjectionMatrix();
     this.ctl.maxDistance = Math.max(this.ctl.maxDistance, r * 6);
-    this.sun.position.set(cx + 12, 20, cz + 8);
-    this.sun.target.position.set(cx, 0, cz);
     this.ctl.update();
     this.dirty = true;
   }
