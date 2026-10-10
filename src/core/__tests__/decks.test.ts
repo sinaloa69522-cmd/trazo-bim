@@ -86,4 +86,16 @@ describe("decks y porches", () => {
     fitDecks(p);
     expect(d.height).toBe(1);
   });
+
+  it("el pasamanos de la escalera va a 36\" sobre las narices de los peldaños, desde el terreno", () => {
+    const d = make({ height: 30 * IN }), g = deckGeom(d, house().ws), s = g.steps!, gr = -0.27;
+    for (const [hi, lo] of g.handrails) {
+      expect(hi.z).toBeCloseTo(d.height + 36 * IN, 6);
+      const r = Math.hypot(lo.x - hi.x, lo.y - hi.y);
+      expect(lo.z).toBeCloseTo(d.height - (r * s.riser) / s.tread + 36 * IN, 6);
+    }
+    // el pasamanos (la pieza más alta junto a la escalera) no flota sobre el deck
+    const bs = deckBoxes(d, house().ws, gr), capTop = gr + d.height + 36 * IN;
+    expect(Math.max(...bs.map((b) => Math.max(b.a.z, b.b.z)))).toBeLessThan(capTop + 2 * IN);
+  });
 });
