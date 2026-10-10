@@ -1,9 +1,10 @@
 import type { MemberKind } from "../core/framing";
 import { deckGeom, deckType, fitDecks } from "../core/decks";
-import { bounds, dimOffset, dir, distSeg, dimGeom, fits, loc, onSlab, pointInPolygon, polygonArea, roofGeom, stairSteps, textBox, type Pt } from "../core/geometry";
+import { bounds, dimOffset, dir, distSeg, dimGeom, fits, loc, onSlab, pointInPolygon, polygonArea, roofGeom, textBox, type Pt } from "../core/geometry";
+import { IDEAL_TREAD, POST_R, shortTread, sizedByTread, stairGeom, stairLabel, stairLenFor, stairSteps, stairTypeName } from "../core/stairs";
 import {
   attachWalls, liftBuriedRoofs, cloneModel, emptyProject, newLevel, nextId, nextSectionName, normalizeProject, sampleProject, type Level, type Project, type ProjectInfo,
-  type Deck, type DeckKind, type LayerId, type Model, type RoofKind, type RunSystem, type Wall,
+  type Deck, type DeckKind, type LayerId, type Model, type RoofKind, type RunSystem, type Stair, type StairKind, type Wall,
 } from "../core/model";
 import { autoDims } from "../core/autodim";
 import { fmtArea, fmtLen, fmtSmall, imperial, parseLen, setUnitSystem, FT, IN, type UnitSystem } from "../core/units";
@@ -99,7 +100,7 @@ export class Editor {
   set model(m: Model) { this.project.levels[this.active] = { ...this.model, ...m }; }
   rooms: RoomGrid | null = null;
   vis: Record<LayerId, boolean> = { muros: true, puertas: true, ventanas: true, cotas: true, anot: true, hab: true, losas: true, cubiertas: true, escaleras: true, decks: true, columnas: true, mobiliario: true, secciones: true, electricidad: true, plomeria: true, calcos: true, sombreados: true };
-  defaults = { ...METRIC_DEFAULTS, roofKind: "gable" as RoofKind, furnKind: "bed2", furnRot: 0, mepKind: "enchufe", mepRot: 0, runSys: "af" as RunSystem, hatchPattern: "diagonal", hatchScale: 1, hatchAngle: 0, hatchMode: "room" as "room" | "poly", doorStyle: "single", winStyle: "fixed", deckKind: "wood" as DeckKind, colW: 0.3 };
+  defaults = { ...METRIC_DEFAULTS, roofKind: "gable" as RoofKind, furnKind: "bed2", furnRot: 0, mepKind: "enchufe", mepRot: 0, runSys: "af" as RunSystem, hatchPattern: "diagonal", hatchScale: 1, hatchAngle: 0, hatchMode: "room" as "room" | "poly", doorStyle: "single", winStyle: "fixed", deckKind: "wood" as DeckKind, colW: 0.3, stairKind: "recta" as StairKind, stairTurn: 1 as 1 | -1 };
   tool: Tool = "select";
   /** Elementos seleccionados. */
   sels: Selection[] = [];
@@ -352,7 +353,7 @@ export class Editor {
       case "roof": return n ? "CUBIERTA  Esquina opuesta del perímetro:" : `CUBIERTA  Primera esquina del perímetro (${ROOF_LABEL[d.roofKind].toLowerCase()}, ${d.pitch}°):`;
       case "column": return `COLUMNA  Punto del centro (${fmtLen(d.colW)} × ${fmtLen(d.colW)}):`;
       case "deck": return n ? "DECK  Esquina opuesta:" : `DECK  Primera esquina (${deckType(d.deckKind).name.toLowerCase()}):`;
-      case "stair": return n ? "ESCALERA  Punto de llegada (o longitud):" : `ESCALERA  Punto de arranque (ancho ${fmtLen(d.stairW)}):`;
+      case "stair": return d.stairKind === "caracol" ? (n ? "ESCALERA  Radio exterior:" : "ESCALERA  Centro del caracol:") : n ? (sizedByTread(d.stairKind) ? "ESCALERA  Dirección de subida:" : "ESCALERA  Punto de llegada (o longitud):") : `ESCALERA  ${stairTypeName(d.stairKind)}: punto de arranque (ancho ${fmtLen(d.stairW)}):`;
       case "text": return this.textAt ? "TEXTO  Escribe el texto y pulsa Intro [Esc cancela]:" : `TEXTO  Punto de inserción (altura ${fmtLen(d.textSize)}):`;
       case "hole": return n ? "HUECO  Esquina opuesta del hueco:" : "HUECO EN LOSA  Primera esquina del hueco (dentro de una losa):";
       case "section": return n ? "SECCIÓN  Punto final de la línea de corte (se mira a su izquierda):" : "SECCIÓN  Primer punto de la línea de corte:";
@@ -567,7 +568,7 @@ export class Editor {
     if (this.vis.anot) for (const l of m.lines) { const r = distSeg(wx, wy, l.x1, l.y1, l.x2, l.y2); if (r.d < tol) take(r.d, { type: "line", id: l.id }); }
     if (this.vis.cotas) for (const d of m.dims) { const g = dimGeom(d), r = distSeg(wx, wy, g.a.x, g.a.y, g.b.x, g.b.y); if (r.d < tol * 2) take(r.d, { type: "dim", id: d.id }); }
     if (this.vis.secciones) for (const se of m.sections) { const r = distSeg(wx, wy, se.x1, se.y1, se.x2, se.y2); if (r.d < tol) take(r.d, { type: "section", id: se.id }); }
-    if (this.vis.escaleras) for (const st of m.stairs) { const r = distSeg(wx, wy, st.x1, st.y1, st.x2, st.y2); if (r.d < st.width / 2) take(r.d + 0.2, { type: "stair", id: st.id }); }
+    if (this.vis.escaleras) for (const st of m.stairs) { const r = distSeg(wx, wy, st.x1, st.y1, st.x2, st.y2); if (r.d < st.width / 2 || pointInPolygon({ x: wx, y: wy }, stairGeom(st).outline)) take(Math.min(r.d, st.width / 2) + 0.2, { type: "stair", id: st.id }); }
     if (this.vis.columnas) for (const c of m.columns) if (Math.abs(wx - c.x) <= c.w / 2 + tol && Math.abs(wy - c.y) <= c.d / 2 + tol) take(0.01, { type: "column", id: c.id });
     // el deck se elige por dentro (detrás de muros y muebles) o por sus escalones
     if (this.vis.decks) for (const dk of m.decks) {
@@ -698,12 +699,12 @@ export class Editor {
         this.sels = [{ type: "roof", id }];
         this.message = `Cubierta ${ROOF_LABEL[d.roofKind].toLowerCase()} creada. Cambia el tipo y la pendiente en Propiedades.`;
       } else {
-        const st = { id, x1: a.x, y1: a.y, x2: p.x, y2: p.y, width: d.stairW, height: this.floorToFloor() };
+        const st = this.newStair(a, p, id);
         m.stairs.push(st);
         const k = stairSteps(st);
         this.sels = [{ type: "stair", id }];
-        this.message = `Escalera de ${k.n} peldaños: huella ${fmtSmall(k.tread)}, contrahuella ${fmtSmall(k.riser)}.` +
-          (k.tread < 0.25 ? " La huella es corta: alarga el tramo." : "");
+        this.message = `Escalera ${stairLabel(st.kind)} de ${k.n} peldaños: huella ${fmtSmall(k.tread)}, contrahuella ${fmtSmall(k.riser)}.` +
+          (shortTread(st, k.tread) ? (st.kind === "caracol" ? " La huella es corta: agranda el radio." : " La huella es corta: alarga el tramo.") : "");
       }
       this.draft = null;
       this.changed();
@@ -1443,13 +1444,25 @@ export class Editor {
     this.defaults.deckKind = k;
   }
 
+  /** Escalera nueva con el tipo, el giro y el ancho por defecto; en la de caracol, b marca el radio exterior. */
+  newStair(a: Pt, b: Pt, id: number): Stair {
+    const d = this.defaults, kind = d.stairKind;
+    const L = Math.hypot(b.x - a.x, b.y - a.y), width = kind === "caracol" ? Math.max(0.6, L - POST_R) : d.stairW;
+    const st: Stair = { id, x1: a.x, y1: a.y, x2: b.x, y2: b.y, width, height: this.floorToFloor(), kind, turn: d.stairTurn };
+    // con descanso, en L y en U: el segundo clic da la dirección y el largo sale de una huella cómoda
+    if (sizedByTread(kind) && L > 1e-6) {
+      const len = stairLenFor(st, IDEAL_TREAD());
+      st.x2 = a.x + ((b.x - a.x) / L) * len; st.y2 = a.y + ((b.y - a.y) / L) * len;
+    }
+    return st;
+  }
+
   /** Abre en la losa del nivel de arriba un hueco con la huella de la escalera. */
   openAboveStair(id: number) {
     const st = this.model.stairs.find((x) => x.id === id), up = this.levelAbove();
     if (!st) return;
     if (!up) { this.log("No hay ningún nivel por encima. Crea uno con Nuevo nivel."); return; }
-    const { L } = dir(st), h = st.width / 2;
-    const ring = [loc(st, 0, -h), loc(st, L, -h), loc(st, L, h), loc(st, 0, h)];
+    const ring = stairGeom(st).outline;
     if (!this.addHole(up, ring)) { this.log(`${up.name} no tiene ninguna losa sobre la escalera.`); return; }
     this.changed();
   }

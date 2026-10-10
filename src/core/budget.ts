@@ -1,7 +1,8 @@
 import { DOOR_STYLES, openingStyle } from "./openingStyles";
 import { deckTakeoff, deckType } from "./decks";
 import { furnitureDef } from "./furniture";
-import { dir, polygonArea, roofGeom, slabArea, stairSteps } from "./geometry";
+import { dir, polygonArea, roofGeom, slabArea } from "./geometry";
+import { stairSteps } from "./stairs";
 import { MEP, runLength, SYSTEMS } from "./mep";
 import type { Project } from "./model";
 import { roomSchedule } from "./schedules";

@@ -93,7 +93,13 @@ export interface Roof {
   finish?: string;
 }
 
-/** Escalera recta: (x1,y1) arranque y (x2,y2) llegada, sobre el eje del tramo. */
+/** Forma de la escalera (ver core/stairs.ts). */
+export type StairKind = "recta" | "descanso" | "L" | "U" | "caracol";
+
+/**
+ * Escalera: (x1,y1) arranque y (x2,y2) final del primer tramo con su descanso, sobre el eje.
+ * En la de caracol, (x1,y1) es el centro y (x2,y2) marca dónde arranca.
+ */
 export interface Stair {
   id: number;
   x1: number;
@@ -103,6 +109,10 @@ export interface Stair {
   width: number;
   /** Desnivel que salva */
   height: number;
+  /** Sin él, recta */
+  kind?: StairKind;
+  /** Hacia dónde gira (L, U y caracol) visto en planta: 1 a la derecha del sentido de subida, -1 a la izquierda */
+  turn?: 1 | -1;
 }
 
 /** Columna de concreto armado (C-1) en planta: centro y sección. */

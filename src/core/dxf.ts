@@ -3,7 +3,8 @@ import { outward } from "./finishes";
 import { fmtArea, fmtDim, IN, unitSystem, type UnitSystem } from "./units";
 import { furnitureStrokes } from "./furniture";
 import { fixtureStrokes, fixtureTextAt, mepDef } from "./mep";
-import { dimGeom, dir, loc, pieces, roofGeom, stairSteps, type Pt } from "./geometry";
+import { dimGeom, dir, loc, pieces, roofGeom, type Pt } from "./geometry";
+import { stairGeom } from "./stairs";
 import { deckGeom } from "./decks";
 import { hatchSegments, isSolid, patternLines, solidTrapezoids } from "./hatch";
 import type { Model } from "./model";
@@ -55,10 +56,10 @@ export function toDxf(m: Model, rooms: RoomGrid | null, u: UnitSystem = unitSyst
     for (const [a, b] of g.ridges) line("A-CUBIERTAS", a, b);
   }
   for (const st of m.stairs ?? []) {
-    const k = stairSteps(st), h = st.width / 2;
-    rect("A-ESCALERAS", [loc(st, 0, -h), loc(st, k.L, -h), loc(st, k.L, h), loc(st, 0, h)]);
-    for (let i = 1; i < k.n; i++) line("A-ESCALERAS", loc(st, i * k.tread, -h), loc(st, i * k.tread, h));
-    line("A-ESCALERAS", loc(st, 0, 0), loc(st, k.L, 0));
+    const g = stairGeom(st);
+    rect("A-ESCALERAS", g.outline);
+    for (const pc of g.pieces) rect("A-ESCALERAS", pc.pts);
+    for (let i = 1; i < g.path.length; i++) line("A-ESCALERAS", g.path[i - 1], g.path[i]);
   }
   for (const dk of m.decks ?? []) {
     const g = deckGeom(dk, m.walls);

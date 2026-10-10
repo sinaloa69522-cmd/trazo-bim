@@ -1,10 +1,11 @@
 import { Fragment, useState } from "react";
-import { dimGeom, dir, fits, polygonArea, roofGeom, slabArea, stairSteps } from "../core/geometry";
+import { dimGeom, dir, fits, polygonArea, roofGeom, slabArea } from "../core/geometry";
+import { IDEAL_TREAD, POST_R, shortTread, sizedByTread, STAIR_TYPES, stairLabel, stairLenFor, stairSteps } from "../core/stairs";
 import { FURNITURE, FURNITURE_CATS, furnitureDef } from "../core/furniture";
 import { CIRCUITS, mepDef, mepOf, runLength, SYSTEMS, systemDef, type Discipline } from "../core/mep";
 import { SymbolIcon, SystemIcon } from "./MepIcons";
 import { GENERIC, WALL_TYPES, wallType, wallTypeLabel } from "../core/wallTypes";
-import { LAYERS, type Model, type RoofKind, type RunSystem } from "../core/model";
+import { LAYERS, type Model, type RoofKind, type RunSystem, type StairKind } from "../core/model";
 import { ROOF_LABEL, type Editor } from "../editor/Editor";
 import { fmtArea, fmtDim, fmtElev, fmtField, fmtLen, fmtSmall, imperial, lenUnit, parseLen } from "../core/units";
 import { finish, ROOFINGS, SIDINGS, type Finish } from "../core/finishes";
@@ -226,11 +227,32 @@ function Properties({ ed, onFocusCommand }: { ed: Editor; onFocusCommand: () => 
     </>;
   } else if (sel && o && sel.type === "stair") {
     const st = o as Model["stairs"][number], k = stairSteps(st);
-    title = "Escalera recta";
+    title = `Escalera ${stairLabel(st.kind)}`;
     ro.push(["Peldaños", String(k.n)], ["Huella", fmtSmall(k.tread)], ["Contrahuella", fmtSmall(k.riser)],
-      ["Longitud", `${fmtLen(k.L)}`]);
-    if (k.tread < 0.25) ro.push(["Aviso", "huella corta"]);
+      [st.kind === "caracol" ? "Línea de huella" : "Longitud", `${fmtLen(k.L)}`]);
+    if (shortTread(st, k.tread)) ro.push(["Aviso", "huella corta"]);
     body = <>
+      <label htmlFor={`${key}-k`}>Tipo</label>
+      <select id={`${key}-k`} value={st.kind ?? "recta"} onChange={(e) => ed.edit(() => {
+        const to = e.target.value as StairKind, was = st.kind ?? "recta";
+        // al pasar a caracol o desde él, el punto final vuelve a tener sentido: radio o llegada
+        if ((to === "caracol") !== (was === "caracol")) {
+          const L = Math.hypot(st.x2 - st.x1, st.y2 - st.y1) || 1, len = to === "caracol" ? POST_R + st.width : Math.max(st.width * 3, 3);
+          st.x2 = st.x1 + ((st.x2 - st.x1) / L) * len; st.y2 = st.y1 + ((st.y2 - st.y1) / L) * len;
+        }
+        st.kind = to;
+        if (sizedByTread(to)) {
+          const L = Math.hypot(st.x2 - st.x1, st.y2 - st.y1) || 1, len = stairLenFor(st, IDEAL_TREAD());
+          st.x2 = st.x1 + ((st.x2 - st.x1) / L) * len; st.y2 = st.y1 + ((st.y2 - st.y1) / L) * len;
+        }
+      })}>
+        {STAIR_TYPES.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+      </select>
+      {st.kind && st.kind !== "recta" && st.kind !== "descanso" && <TurnField value={st.turn ?? 1} onChange={(v) => ed.edit(() => { st.turn = v; })} />}
+      {sizedByTread(st.kind) && <NumberField id={`${key}-tr`} label="Huella (m)" value={k.tread} min={0.2} onCommit={(v) => ed.edit(() => {
+        const L = Math.hypot(st.x2 - st.x1, st.y2 - st.y1) || 1, len = stairLenFor(st, v);
+        st.x2 = st.x1 + ((st.x2 - st.x1) / L) * len; st.y2 = st.y1 + ((st.y2 - st.y1) / L) * len;
+      })} />}
       <NumberField id={`${key}-w`} label="Ancho (m)" value={st.width} onCommit={(v) => ed.edit(() => { st.width = v; })} />
       <NumberField id={`${key}-h`} label="Desnivel (m)" value={st.height} onCommit={(v) => ed.edit(() => { st.height = v; })} />
       <button className="btn full" onClick={() => ed.openAboveStair(st.id)} title="Hueco con la huella de la escalera en la losa del nivel de arriba">Abrir hueco en la losa de arriba</button>
@@ -477,6 +499,46 @@ function Levels({ ed }: { ed: Editor }) {
   );
 }
 
+function TurnField({ value, onChange }: { value: 1 | -1; onChange: (v: 1 | -1) => void }) {
+  return <>
+    <label>Gira hacia</label>
+    <div className="seg" role="radiogroup" aria-label="Hacia dónde gira">
+      {([[-1, "Izquierda"], [1, "Derecha"]] as const).map(([v, l]) => <button key={v} className={value === v ? "on" : ""} aria-pressed={value === v} onClick={() => onChange(v)}>{l}</button>)}
+    </div>
+  </>;
+}
+
+function StairTools({ ed }: { ed: Editor }) {
+  const d = ed.defaults, t = STAIR_TYPES.find((x) => x.id === d.stairKind)!;
+  return (
+    <section>
+      <h2>Escaleras</h2>
+      <div className="catalog" role="radiogroup" aria-label="Tipo de escalera">
+        {STAIR_TYPES.map((x) => (
+          <button key={x.id} role="radio" aria-checked={d.stairKind === x.id} className="cat"
+            onClick={() => { d.stairKind = x.id; ed.emit(); }}>
+            <svg className="stairchip" viewBox="0 0 24 24" aria-hidden="true"><path d={STAIR_ICON[x.id]} /></svg>{x.name}
+          </button>
+        ))}
+      </div>
+      <div className="props">
+        {d.stairKind !== "recta" && d.stairKind !== "descanso" && <TurnField value={d.stairTurn} onChange={(v) => { d.stairTurn = v; ed.emit(); }} />}
+        {d.stairKind !== "caracol" && <NumberField id="st-w" label="Ancho" len value={d.stairW} min={0.6} onCommit={(v) => { d.stairW = v; ed.emit(); }} />}
+      </div>
+      <p className="hint">{t.hint}</p>
+    </section>
+  );
+}
+
+/** Iconos de planta de cada tipo de escalera. */
+const STAIR_ICON: Record<StairKind, string> = {
+  recta: "M8 2h8v20H8zM8 6h8M8 10h8M8 14h8M8 18h8",
+  descanso: "M8 1h8v22H8zM8 4h8M8 7h8M8 10h8M8 14h8M8 17h8M8 20h8",
+  L: "M3 15h12v6H3zM15 3h6v18h-6zM6 15v6M9 15v6M12 15v6M15 6h6M15 9h6M15 12h6",
+  U: "M3 3h8v18H3zM13 3h8v18h-8zM3 15h8M3 11h8M3 7h8M13 15h8M13 11h8M13 7h8",
+  caracol: "M12 2a10 10 0 1 1 0 20a10 10 0 1 1 0-20M12 12L12 2M12 12l7 -7M12 12h10M12 12l7 7M12 12v10M12 12l-7 7",
+};
+
 function DeckTools({ ed }: { ed: Editor }) {
   return (
     <section>
@@ -619,6 +681,7 @@ export function Sidebar({ ed, onFocusCommand, onClose }: { ed: Editor; onFocusCo
     <aside className="side" aria-label="Capas y propiedades">
       {onClose && <button className="btn sideclose" onClick={onClose}>Cerrar</button>}
       {ed.tool === "deck" && <DeckTools ed={ed} />}
+      {ed.tool === "stair" && <StairTools ed={ed} />}
       {ed.tool === "column" && <section>
         <h2>Columnas</h2>
         <NumberField id="col-w" label="Sección (m)" value={ed.defaults.colW} min={0.15} onCommit={(v) => { ed.defaults.colW = v; ed.emit(); }} />

@@ -1,6 +1,7 @@
 import { openingStyle } from "./openingStyles";
 import { furnitureDef, furnitureSolids } from "./furniture";
-import { dir, endExt, roofGeom, stairSteps, type P3 } from "./geometry";
+import { dir, endExt, roofGeom, type P3 } from "./geometry";
+import { stairGeom, stairLabel } from "./stairs";
 import type { Opening, Project } from "./model";
 import { computeRooms } from "./rooms";
 import { mepDef, systemDef } from "./mep";
@@ -134,10 +135,11 @@ export function toIfc(p: Project, opts: { now?: Date; random?: () => number } = 
 
     // escaleras: un prisma por peldaño
     for (const st of lv.stairs) {
-      const k = stairSteps(st), { ux, uy } = dir(st);
-      const items = Array.from({ length: k.n }, (_, i) => box((i + 0.5) * k.tread, 0, k.tread, st.width, 0, (i + 1) * k.riser));
+      const g = stairGeom(st);
+      const items = g.pieces.map((pc) => prism(pc.pts.map((q) => ({ x: q.x, y: -q.y })), pc.z0, pc.z - pc.z0));
       const rep = shape("SweptSolid", items);
-      contained.push(add(`IFCSTAIR('${id()}',$,${str(`Escalera ${k.n} peldaños`)},$,$,${place(stPl, st.x1, -st.y1, 0, ux, -uy)},${rep},$,.STRAIGHT_RUN_STAIR.)`));
+      const type = { recta: "STRAIGHT_RUN_STAIR", descanso: "TWO_STRAIGHT_RUN_STAIR", L: "QUARTER_TURN_STAIR", U: "HALF_TURN_STAIR", caracol: "SPIRAL_STAIR" }[st.kind ?? "recta"];
+      contained.push(add(`IFCSTAIR('${id()}',$,${str(`Escalera ${stairLabel(st.kind)} ${g.n} peldaños`)},$,$,${place(stPl)},${rep},$,.${type}.)`));
     }
 
     // mobiliario y aparatos sanitarios

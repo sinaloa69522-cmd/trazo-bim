@@ -1,6 +1,7 @@
 import { fmtArea, fmtDim, fmtLen, imperial, FT, IN } from "../core/units";
 import { deckGeom, deckType } from "../core/decks";
-import { dimGeom, dimOffset, dir, loc, pieces, roofGeom, stairSteps, textBox, type Pt } from "../core/geometry";
+import { dimGeom, dimOffset, dir, loc, pieces, roofGeom, textBox, type Pt } from "../core/geometry";
+import { stairGeom } from "../core/stairs";
 import { furnitureStrokes, type Stroke } from "../core/furniture";
 import { discOfSystem, fixtureStrokes, fixtureTextAt, mepDef, systemDef, type SymStroke } from "../core/mep";
 import type { Column, Deck, Dim, Fixture, HatchRegion, Model, Roof, Run, Section, Stair, Wall } from "../core/model";
@@ -412,7 +413,7 @@ export function drawPlan(ctx: CanvasRenderingContext2D, ed: Editor, C: PlanColor
       drawDeck(ctx, ed, { id: 0, x1: last.x, y1: last.y, x2: p.x, y2: p.y, kind: t.id, height: t.height, rail: t.rail }, ed.model.walls, C.accent, 1.5, false);
       lengthTag(ctx, ed, C, last, { x: p.x, y: last.y }); lengthTag(ctx, ed, C, { x: p.x, y: last.y }, p);
     } else if (ed.tool === "stair") {
-      drawStair(ctx, ed, { id: 0, x1: last.x, y1: last.y, x2: p.x, y2: p.y, width: ed.defaults.stairW, height: ed.floorToFloor() }, C.accent, 1.5);
+      drawStair(ctx, ed, ed.newStair(last, p, 0), C.accent, 1.5);
       lengthTag(ctx, ed, C, last, p);
     } else if (ed.tool === "hole") {
       const r = [last, { x: p.x, y: last.y }, p, { x: last.x, y: p.y }];
@@ -606,27 +607,30 @@ function drawRoof(ctx: CanvasRenderingContext2D, ed: Editor, r: Roof, col: strin
   for (const [a, b] of g.ridges) path(ctx, ed, [a, b]);
 }
 
-/** Escalera en planta: contorno, peldaños y flecha de subida. */
+/** Escalera en planta: peldaños y descansos, poste del caracol y línea de huella con la flecha de subida. */
 function drawStair(ctx: CanvasRenderingContext2D, ed: Editor, st: Stair, col: string, lw: number) {
-  const k = stairSteps(st);
-  if (k.L < 1e-6) return;
-  const h = st.width / 2;
+  const g = stairGeom(st);
+  if (g.L < 1e-6) return;
   ctx.strokeStyle = col; ctx.lineWidth = lw;
-  path(ctx, ed, [loc(st, 0, -h), loc(st, k.L, -h), loc(st, k.L, h), loc(st, 0, h)], true);
+  path(ctx, ed, g.outline, true);
   ctx.lineWidth = 1;
-  for (let i = 1; i < k.n; i++) path(ctx, ed, [loc(st, i * k.tread, -h), loc(st, i * k.tread, h)]);
-  // flecha por el eje: de arranque a llegada
-  const a = loc(st, k.tread / 2, 0), b = loc(st, k.L - 0.05, 0), ah = Math.min(0.25, h * 0.6);
-  path(ctx, ed, [a, b]);
-  path(ctx, ed, [loc(st, k.L - 0.05 - ah, -ah * 0.6), b, loc(st, k.L - 0.05 - ah, ah * 0.6)]);
+  for (const pc of g.pieces) path(ctx, ed, pc.pts, true);
+  // línea de huella: de arranque a llegada, con punto al inicio y flecha al final
+  const ps = g.path, a = ps[0], b = ps[ps.length - 1], c = ps[ps.length - 2];
+  path(ctx, ed, ps);
+  const L = Math.hypot(b.x - c.x, b.y - c.y) || 1, ux = (b.x - c.x) / L, uy = (b.y - c.y) / L, ah = Math.min(0.25, st.width * 0.3);
+  path(ctx, ed, [{ x: b.x - ux * ah - uy * ah * 0.6, y: b.y - uy * ah + ux * ah * 0.6 }, b, { x: b.x - ux * ah + uy * ah * 0.6, y: b.y - uy * ah - ux * ah * 0.6 }]);
   const s = ed.toS(a.x, a.y);
   ctx.fillStyle = col; ctx.beginPath(); ctx.arc(s.x, s.y, 3, 0, Math.PI * 2); ctx.fill();
   if (st.width * ed.view.scale > 40) {
-    const t = ed.toS(loc(st, k.L / 2, 0).x, loc(st, k.L / 2, 0).y), { ux, uy } = dir(st);
-    let ang = Math.atan2(uy, ux);
+    // el rótulo en el tramo más largo de la línea de huella
+    let k = 0;
+    for (let i = 1; i + 1 < ps.length; i++) if (Math.hypot(ps[i + 1].x - ps[i].x, ps[i + 1].y - ps[i].y) > Math.hypot(ps[k + 1].x - ps[k].x, ps[k + 1].y - ps[k].y)) k = i;
+    const p = ps[k], q = ps[k + 1], t = ed.toS((p.x + q.x) / 2, (p.y + q.y) / 2);
+    let ang = Math.atan2(q.y - p.y, q.x - p.x);
     if (ang > Math.PI / 2 || ang <= -Math.PI / 2) ang += Math.PI;
     ctx.save(); ctx.translate(t.x, t.y); ctx.rotate(ang);
-    ctx.font = MONO; ctx.textAlign = "center"; ctx.fillText(`SUBE ${k.n}`, 0, -6);
+    ctx.font = MONO; ctx.textAlign = "center"; ctx.fillText(`SUBE ${g.n}`, 0, -6);
     ctx.restore();
   }
 }

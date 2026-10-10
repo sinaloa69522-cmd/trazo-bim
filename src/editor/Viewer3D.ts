@@ -2,7 +2,8 @@ import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { furnitureSolids, furnitureToPlan } from "../core/furniture";
 import { discOfSystem, mepDef, systemDef } from "../core/mep";
-import { bounds, dir, loc, pieces, roofGeom, solidPts, stairSteps, type P3 } from "../core/geometry";
+import { bounds, dir, loc, pieces, roofGeom, solidPts, type P3 } from "../core/geometry";
+import { stairGeom } from "../core/stairs";
 import type { Opening, Wall } from "../core/model";
 import { openingStyle } from "../core/openingStyles";
 import { finish, gableWall, outward, roofFinish, type Finish } from "../core/finishes";
@@ -328,8 +329,13 @@ export class Viewer3D {
         for (const f of g.gables) { const fin = finish(gableWall(m.walls, f)?.finish); polys([f], fin ? this.finishMat(fin) : this.mat.gable); }
       }
       if (vis.escaleras) for (const st of m.stairs) {
-        const k = stairSteps(st), mat = isSel("stair", st.id) ? this.mat.sel : this.mat.stair;
-        for (let i = 0; i < k.n; i++) box(st as unknown as Wall, i * k.tread, (i + 1) * k.tread, 0, (i + 1) * k.riser, st.width, mat);
+        const mat = isSel("stair", st.id) ? this.mat.sel : this.mat.stair;
+        // cada pieza como prisma: tapa, fondo y costados, con las caras hacia fuera
+        for (const pc of stairGeom(st).pieces) {
+          const q = pc.pts, top = q.map((p) => ({ ...p, z: pc.z })), bot = q.map((p) => ({ ...p, z: pc.z0 }));
+          const sides = q.map((a, i) => { const b = q[(i + 1) % q.length]; return [{ ...b, z: pc.z0 }, { ...a, z: pc.z0 }, { ...a, z: pc.z }, { ...b, z: pc.z }]; });
+          polys([[...top].reverse(), bot, ...sides], mat);
+        }
       }
       if (vis.columnas) for (const c of m.columns) {
         // hasta la losa: la altura del muro más alto del nivel
