@@ -112,6 +112,44 @@ export function bounds(m: Model, extra: Pt[] = [], robust = false): Bounds {
   return { x0: b.x0 - mg, y0: b.y0 - mg, x1: b.x1 + mg, y1: b.y1 + mg };
 }
 
+/** Puntos de lo que se construye (muros, losas, cubiertas, escaleras, columnas, muebles…), sin líneas, cotas ni textos. */
+export function solidPts(m: Model): Pt[] {
+  const pts: Pt[] = [];
+  for (const s of [...m.walls, ...(m.roofs ?? []), ...(m.stairs ?? []), ...(m.decks ?? [])]) pts.push({ x: s.x1, y: s.y1 }, { x: s.x2, y: s.y2 });
+  for (const sl of m.slabs ?? []) pts.push(...sl.pts);
+  for (const c of m.columns ?? []) pts.push(c);
+  for (const f of [...(m.furniture ?? []), ...(m.fixtures ?? [])]) pts.push(f);
+  return pts;
+}
+
+/**
+ * Extensión de una planta para las láminas: si ya hay algo construido, eso y lo que quede a menos de 5 m
+ * (cotas, textos, líneas), para que un DWG o PDF importado de fondo, con su marco y sus restos lejanos,
+ * no deje el edificio diminuto o fuera de la hoja.
+ */
+export function sheetBounds(m: Model): Bounds {
+  const pts = solidPts(m);
+  if (!pts.length) return bounds(m, [], true);
+  const xs = pts.map((p) => p.x), ys = pts.map((p) => p.y), near = 5;
+  const s = { x0: Math.min(...xs), y0: Math.min(...ys), x1: Math.max(...xs), y1: Math.max(...ys) };
+  const all = annoPts(m);
+  const b = { ...s };
+  for (const p of all) if (p.x > s.x0 - near && p.x < s.x1 + near && p.y > s.y0 - near && p.y < s.y1 + near) {
+    b.x0 = Math.min(b.x0, p.x); b.y0 = Math.min(b.y0, p.y); b.x1 = Math.max(b.x1, p.x); b.y1 = Math.max(b.y1, p.y);
+  }
+  const mg = 1.5;
+  return { x0: b.x0 - mg, y0: b.y0 - mg, x1: b.x1 + mg, y1: b.y1 + mg };
+}
+
+/** Puntos de las anotaciones: líneas, cotas, sombreados y textos. */
+function annoPts(m: Model): Pt[] {
+  const pts: Pt[] = [];
+  for (const s of [...m.lines, ...m.dims]) pts.push({ x: s.x1, y: s.y1 }, { x: s.x2, y: s.y2 });
+  for (const h of m.hatches ?? []) for (const q of h.loops) pts.push(...q);
+  for (const t of m.texts ?? []) pts.push(...textBox(t));
+  return pts;
+}
+
 /**
  * Extensión del dibujo sin los puntos sueltos que quedan lejos (el 2 % de cada lado):
  * en muchos DWG hay restos olvidados a kilómetros que harían ver el plano diminuto.

@@ -3,7 +3,7 @@ import { createPortal } from "react-dom";
 import { usedFinishes } from "../core/finishes";
 import { openingStyle, styleName } from "../core/openingStyles";
 import { allSections, elevation, FACADES, section, type Elevation, type Facade } from "../core/elevation";
-import { bounds } from "../core/geometry";
+import { sheetBounds } from "../core/geometry";
 import { mepDef, type Discipline } from "../core/mep";
 import type { LayerId, Model } from "../core/model";
 import { computeRooms } from "../core/rooms";
@@ -45,7 +45,7 @@ const HALF: PlanColors = { ...PAPER, wall: "#8f8f8f", door: "#a3a3a3", window: "
 
 /** Escala normalizada más grande en la que cabe la planta. */
 export function fitScale(m: Model) {
-  const b = bounds(m), wm = b.x1 - b.x0, hm = b.y1 - b.y0;
+  const b = sheetBounds(m), wm = b.x1 - b.x0, hm = b.y1 - b.y0;
   return scalesFor().find((d) => (wm * 1000) / d <= planBox().w - 8 && (hm * 1000) / d <= planBox().h - 8) ?? 1000;
 }
 
@@ -111,7 +111,7 @@ function autoScaleOf(ed: Editor, content: Content, level: number) {
   }
   // las láminas estructurales dejan sitio alrededor para los ejes
   if (MX_PLANS.includes(content) || content === "plan" && !imperial()) {
-    const b = bounds(ed.project.levels[level]), pb = planBox(), m = 2.4;
+    const b = sheetBounds(ed.project.levels[level]), pb = planBox(), m = 2.4;
     return scalesFor().find((den) => ((b.x1 - b.x0 + m) * 1000) / den <= pb.w - 8 && ((b.y1 - b.y0 + m) * 1000) / den <= pb.h - 8) ?? 1000;
   }
   if (isPlan(content)) return fitScale(ed.project.levels[level]);
@@ -219,7 +219,7 @@ function Sheet({ ed, content, level, scale, zoom = 1, set }: { ed: Editor; conte
       return;
     }
     withLevel(ed, level, () => withVis(ed, PLAN_LAYERS[content], () => {
-      const b = content === "site" ? (() => { const l = site(lv).lot; return { x0: l[0].x, y0: l[0].y - 2 * FT, x1: l[2].x, y1: l[2].y + 6 * FT }; })() : bounds(lv);
+      const b = content === "site" ? (() => { const l = site(lv).lot; return { x0: l[0].x, y0: l[0].y - 2 * FT, x1: l[2].x, y1: l[2].y + 6 * FT }; })() : sheetBounds(lv);
       const s = (1000 / scale) * PX_MM;
       ed.view.scale = s;
       ed.view.ox = W / 2 - ((b.x0 + b.x1) / 2) * s;
