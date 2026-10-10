@@ -1,3 +1,4 @@
+import type { SnapKind } from "./snaps";
 import { fmtArea, fmtDim, fmtLen, imperial, FT, IN } from "../core/units";
 import { deckGeom, deckType } from "../core/decks";
 import { dimGeom, dimOffset, dir, loc, pieces, roofGeom, textBox, type Pt } from "../core/geometry";
@@ -104,8 +105,10 @@ export function drawPlan(ctx: CanvasRenderingContext2D, ed: Editor, C: PlanColor
   };
   if (!P) {
     // métrico: 10 cm y 1 m; pies: 1' y 10'
-    if (imperial()) { grid(FT, C.grid); grid(10 * FT, C["grid-major"]); }
-    else { grid(0.1, C.grid); grid(1, C["grid-major"]); }
+    if (ed.showGrid) {
+      if (imperial()) { grid(FT, C.grid); grid(10 * FT, C["grid-major"]); }
+      else { grid(0.1, C.grid); grid(1, C["grid-major"]); }
+    }
     // origen
     const o = toS(0, 0);
     ctx.strokeStyle = C.muted; ctx.lineWidth = 1; ctx.beginPath();
@@ -521,12 +524,31 @@ export function drawPlan(ctx: CanvasRenderingContext2D, ed: Editor, C: PlanColor
     ctx.strokeRect(a.x + 0.5, a.y + 0.5, b.x - a.x, b.y - a.y); ctx.setLineDash([]);
   }
 
-  // marcador de referencia a objetos y cursor en cruz
-  if (ed.snap?.kind && ed.mouse.in && (ed.tool !== "select" || ed.grip)) {
+  // líneas de rastreo, puntos adquiridos, marcador de referencia a objetos y su rótulo
+  const aiding = ed.mouse.in && (ed.tool !== "select" || ed.grip);
+  if (aiding && !PICK_LIKE.includes(ed.tool)) {
+    ctx.strokeStyle = C.accent; ctx.lineWidth = 1;
+    for (const t of ed.tracked) { const s = toS(t.x, t.y); ctx.beginPath(); ctx.moveTo(s.x - 3, s.y); ctx.lineTo(s.x + 3, s.y); ctx.moveTo(s.x, s.y - 3); ctx.lineTo(s.x, s.y + 3); ctx.stroke(); }
+  }
+  if (aiding && ed.snap?.guides) {
+    const R = (W + H) * 2 / ed.view.scale;
+    ctx.strokeStyle = C.accent; ctx.lineWidth = 1; ctx.setLineDash([3, 4]); ctx.globalAlpha = 0.85; ctx.beginPath();
+    for (const g of ed.snap.guides) {
+      const ux = Math.cos(g.ang), uy = Math.sin(g.ang), a = toS(g.o.x - ux * R, g.o.y - uy * R), b = toS(g.o.x + ux * R, g.o.y + uy * R);
+      ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y);
+    }
+    ctx.stroke(); ctx.setLineDash([]); ctx.globalAlpha = 1;
     const s = toS(ed.snap.x, ed.snap.y);
-    ctx.strokeStyle = C.accent; ctx.lineWidth = 1.5;
-    if (ed.snap.kind === "end") ctx.strokeRect(s.x - 5, s.y - 5, 10, 10);
-    else { ctx.beginPath(); ctx.moveTo(s.x, s.y - 6); ctx.lineTo(s.x + 6, s.y + 5); ctx.lineTo(s.x - 6, s.y + 5); ctx.closePath(); ctx.stroke(); }
+    ctx.beginPath(); ctx.moveTo(s.x - 5, s.y - 5); ctx.lineTo(s.x + 5, s.y + 5); ctx.moveTo(s.x + 5, s.y - 5); ctx.lineTo(s.x - 5, s.y + 5); ctx.stroke();
+  }
+  if (aiding && ed.snap?.kind) snapMarker(ctx, ed.snap.kind, toS(ed.snap.x, ed.snap.y), C.accent);
+  if (aiding && ed.snap?.tip) {
+    const s = toS(ed.snap.x, ed.snap.y);
+    ctx.font = MONO;
+    const tw = ctx.measureText(ed.snap.tip).width;
+    ctx.fillStyle = C.panel; ctx.globalAlpha = 0.92; ctx.fillRect(s.x + 12, s.y - 30, tw + 10, 17); ctx.globalAlpha = 1;
+    ctx.strokeStyle = C.accent; ctx.lineWidth = 1; ctx.strokeRect(s.x + 12.5, s.y - 29.5, tw + 9, 16);
+    ctx.fillStyle = C.fg; ctx.textBaseline = "middle"; ctx.textAlign = "left"; ctx.fillText(ed.snap.tip, s.x + 17, s.y - 21.5); ctx.textBaseline = "alphabetic";
   }
   if (ed.mouse.in && !["select", "door", "window", "room"].includes(ed.tool)) {
     const s = toS(p.x, p.y);
@@ -814,4 +836,22 @@ function drawFixture(ctx: CanvasRenderingContext2D, ed: Editor, f: Pick<Fixture,
     ctx.fillText(def.text, s.x, s.y);
   }
   ctx.restore();
+}
+
+const PICK_LIKE = ["trim", "extend", "offset"];
+
+/** Marcadores de referencia a objetos con la forma de AutoCAD. */
+export function snapMarker(ctx: CanvasRenderingContext2D, kind: SnapKind, s: Pt, col: string) {
+  const r = 6;
+  ctx.strokeStyle = col; ctx.lineWidth = 1.8; ctx.beginPath();
+  switch (kind) {
+    case "end": ctx.rect(s.x - r, s.y - r, 2 * r, 2 * r); break;
+    case "mid": ctx.moveTo(s.x, s.y - r); ctx.lineTo(s.x + r, s.y + r * 0.8); ctx.lineTo(s.x - r, s.y + r * 0.8); ctx.closePath(); break;
+    case "int": ctx.moveTo(s.x - r, s.y - r); ctx.lineTo(s.x + r, s.y + r); ctx.moveTo(s.x + r, s.y - r); ctx.lineTo(s.x - r, s.y + r); break;
+    case "cen": ctx.arc(s.x, s.y, r, 0, Math.PI * 2); break;
+    case "ins": ctx.rect(s.x - r, s.y - r, 2 * r, 2 * r); ctx.moveTo(s.x - r, s.y); ctx.lineTo(s.x + r, s.y); ctx.moveTo(s.x, s.y - r); ctx.lineTo(s.x, s.y + r); break;
+    case "perp": ctx.moveTo(s.x - r, s.y - r); ctx.lineTo(s.x - r, s.y + r); ctx.lineTo(s.x + r, s.y + r); ctx.moveTo(s.x - r, s.y); ctx.lineTo(s.x, s.y); ctx.lineTo(s.x, s.y + r); break;
+    case "near": ctx.moveTo(s.x - r, s.y - r); ctx.lineTo(s.x + r, s.y - r); ctx.lineTo(s.x - r, s.y + r); ctx.lineTo(s.x + r, s.y + r); ctx.closePath(); break;
+  }
+  ctx.stroke();
 }

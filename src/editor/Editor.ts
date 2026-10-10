@@ -22,6 +22,7 @@ import { openingStyle } from "../core/openingStyles";
 import { foundationType, type FoundationKind } from "../core/foundation";
 import { computeRooms, RC, roomAt, type RoomGrid } from "../core/rooms";
 import { hatchArea, hatchPattern, inHatch, maskLoops, IMPORTED } from "../core/hatch";
+import { DEFAULT_SNAPS, resolveSnap, snapGeometry, SNAP_MODES, SNAP_NAME, type SnapKind, type SnapPt } from "./snaps";
 import { deleteElements, reflection, rotation, scaling, screenAngle, transformElements, translation, type Xform } from "../core/transform";
 
 export type Tool = "select" | "wall" | "door" | "window" | "line" | "dim" | "room" | "move" | "copy" | "mirror" | "rotate" | "scale" | "array" | "trim" | "extend" | "break" | "offset" | "slab" | "roof" | "stair" | "deck" | "column" | "furniture" | "section" | "hole" | "text" | "mark" | "fixture" | "run" | "calibrate" | "hatch";
@@ -33,7 +34,7 @@ const MODIFY_NAME: Partial<Record<Tool, string>> = { move: "Mover", copy: "Copia
 const fmtNum = (v: number) => String(Math.round(v * 1000) / 1000);
 export type SelType = "wall" | "opening" | "line" | "dim" | "room" | "slab" | "roof" | "stair" | "deck" | "column" | "furniture" | "section" | "text" | "mark" | "fixture" | "run" | "underlay" | "hatch";
 export interface Selection { type: SelType; id: number }
-export interface SnapPt extends Pt { kind: "end" | "mid" | null }
+export type { SnapPt } from "./snaps";
 export interface OpeningCandidate { w: Wall; t: number; ok: boolean }
 
 type Seg = { x1: number; y1: number; x2: number; y2: number };
@@ -126,6 +127,17 @@ export class Editor {
   box: { a: Pt; b: Pt } | null = null;
   ortho = true;
   osnap = true;
+  /** Ayudas de dibujo: rastreo polar, rastreo de referencias, forzcursor y rejilla visible */
+  polar = false;
+  polarInc = 45;
+  otrack = true;
+  gridSnap = true;
+  showGrid = true;
+  snapModes = new Set<SnapKind>(DEFAULT_SNAPS);
+  /** Referencia de un solo uso escrita en la línea de comandos (FIN, MED, INT...) */
+  oneShot: SnapKind | null = null;
+  /** Puntos adquiridos para el rastreo (se toman al pasar el cursor por una referencia) */
+  tracked: Pt[] = [];
   view = { scale: 55, ox: 120, oy: 90 };
   draft: { pts: Pt[] } | null = null;
   mouse = { x: 0, y: 0, in: false };
@@ -448,7 +460,7 @@ export class Editor {
     if (MODIFY_TOOLS.includes(t) && this.sels.every((s) => s.type === "opening")) {
       this.message = "Las puertas y ventanas se mueven con su muro. Selecciona el muro."; t = "select";
     }
-    this.tool = t; this.draft = null; this.openCand = null; this.box = null; this.offsetTarget = null; this.breakFrom = null; this.textAt = null; this.noteAt = null;
+    this.tool = t; this.draft = null; this.openCand = null; this.oneShot = null; this.tracked = []; this.box = null; this.offsetTarget = null; this.breakFrom = null; this.textAt = null; this.noteAt = null;
     if (t === "calibrate") {
       // sin selección, se calibra el único calco del nivel
       if (!this.sels.length && this.model.underlays.length === 1) this.sels = [{ type: "underlay", id: this.model.underlays[0].id }];
@@ -457,8 +469,28 @@ export class Editor {
     if (t !== "select" && t !== "calibrate" && !MODIFY_TOOLS.includes(t)) this.sels = [];
     this.refresh3d();
   }
-  toggleOrtho() { this.ortho = !this.ortho; this.log(`ORTO ${this.ortho ? "activado" : "desactivado"}.`); }
-  toggleOsnap() { this.osnap = !this.osnap; this.log(`REFENT ${this.osnap ? "activado" : "desactivado"}.`); }
+  toggleOrtho() { this.ortho = !this.ortho; if (this.ortho) this.polar = false; this.saveAids(); this.log(`ORTO ${this.ortho ? "activado" : "desactivado"}.`); }
+  toggleOsnap() { this.osnap = !this.osnap; this.saveAids(); this.log(`REFENT ${this.osnap ? "activado" : "desactivado"}.`); }
+  /** POLAR y ORTO se excluyen, como en AutoCAD. */
+  togglePolar() { this.polar = !this.polar; if (this.polar) this.ortho = false; this.saveAids(); this.log(`POLAR ${this.polar ? `activado (cada ${this.polarInc}°)` : "desactivado"}.`); }
+  toggleOtrack() { this.otrack = !this.otrack; this.tracked = []; this.saveAids(); this.log(`RASTREO ${this.otrack ? "activado: pasa el cursor por un punto para alinearte con él" : "desactivado"}.`); }
+  toggleGridSnap() { this.gridSnap = !this.gridSnap; this.saveAids(); this.log(`FORZCURSOR ${this.gridSnap ? `activado (${imperial() ? "1\"" : "10 cm"})` : "desactivado"}.`); }
+  toggleGrid() { this.showGrid = !this.showGrid; this.saveAids(); this.log(`REJILLA ${this.showGrid ? "visible" : "oculta"}.`); }
+  setPolarInc(a: number) { if (a > 0 && a <= 180) { this.polarInc = a; this.polar = true; this.ortho = false; this.saveAids(); this.log(`POLAR cada ${a}°.`); } }
+  setSnapMode(k: SnapKind, on: boolean) { if (on) this.snapModes.add(k); else this.snapModes.delete(k); if (on) this.osnap = true; this.saveAids(); this.emit(); }
+  /** Las ayudas de dibujo se recuerdan en este navegador. */
+  saveAids() {
+    try { localStorage.setItem("trazo-aids", JSON.stringify({ ortho: this.ortho, osnap: this.osnap, polar: this.polar, polarInc: this.polarInc, otrack: this.otrack, gridSnap: this.gridSnap, showGrid: this.showGrid, modes: [...this.snapModes] })); } catch { /* sin almacenamiento */ }
+  }
+  loadAids() {
+    try {
+      const a = JSON.parse(localStorage.getItem("trazo-aids") ?? "null");
+      if (!a) return;
+      for (const k of ["ortho", "osnap", "polar", "otrack", "gridSnap", "showGrid"] as const) if (typeof a[k] === "boolean") this[k] = a[k];
+      if (typeof a.polarInc === "number" && a.polarInc > 0) this.polarInc = a.polarInc;
+      if (Array.isArray(a.modes)) this.snapModes = new Set(a.modes.filter((k: string) => k in SNAP_NAME));
+    } catch { /* sin almacenamiento */ }
+  }
   setLayer(id: LayerId, on: boolean) { this.vis[id] = on; this.sel = null; this.refresh3d(); }
   select(s: Selection | null) { this.sel = s; this.refresh3d(); }
   /** Añade o quita un elemento de la selección (Ctrl o Mayús + clic). */
@@ -546,33 +578,28 @@ export class Editor {
   // ---------- referencias y selección ----------
   snapPoint(wx: number, wy: number, fromOv?: Pt | null, skip?: Set<object>): SnapPt {
     const from = fromOv !== undefined ? fromOv : this.draft?.pts.length ? this.draft.pts[this.draft.pts.length - 1] : null;
-    if (this.osnap) {
-      let best = 12 / this.view.scale, r: SnapPt | null = null;
-      const test = (x: number, y: number, kind: "end" | "mid") => {
-        const d = Math.hypot(x - wx, y - wy);
-        if (d < best) { best = d; r = { x, y, kind }; }
-      };
-      for (const s of [...this.model.walls, ...this.model.lines]) {
-        if (skip?.has(s)) continue;
-        test(s.x1, s.y1, "end"); test(s.x2, s.y2, "end"); test((s.x1 + s.x2) / 2, (s.y1 + s.y2) / 2, "mid");
-      }
-      if (this.draft && !MODIFY_TOOLS.includes(this.tool)) for (const q of this.draft.pts) test(q.x, q.y, "end");
-      // las tuberías se enganchan a los puntos de las instalaciones y a los vértices de otros recorridos
-      if (this.tool === "run") {
-        for (const f of this.model.fixtures) test(f.x, f.y, "end");
-        for (const r of this.model.runs) for (const q of r.pts) test(q.x, q.y, "end");
-      }
-      if (r) return r;
-    }
-    let x = wx, y = wy;
-    const orth = from && this.ortho && this.tool !== "roof" && this.tool !== "hole" && this.tool !== "mark" && (this.tool !== "dim" || this.draft?.pts.length === 1);
-    if (orth) { if (Math.abs(x - from!.x) > Math.abs(y - from!.y)) y = from!.y; else x = from!.x; }
+    const constrain = this.tool !== "roof" && this.tool !== "hole" && this.tool !== "mark" && (this.tool !== "dim" || this.draft?.pts.length === 1);
     // en métrico se redondea a 10 cm; en pies y pulgadas, a la pulgada
-    const g = imperial() ? (v: number) => Math.round(v / IN) * IN : (v: number) => Math.round(v * 10) / 10;
-    if (orth && y === from!.y) x = g(x);
-    else if (orth && x === from!.x) y = g(y);
-    else { x = g(x); y = g(y); }
-    return { x, y, kind: null };
+    const round = this.gridSnap ? (imperial() ? (v: number) => Math.round(v / IN) * IN : (v: number) => Math.round(v * 10) / 10) : null;
+    const extra: Pt[] = [];
+    if (this.draft && !MODIFY_TOOLS.includes(this.tool)) extra.push(...this.draft.pts);
+    // las tuberías se enganchan a los puntos de las instalaciones y a los vértices de otros recorridos
+    if (this.tool === "run") {
+      for (const f of this.model.fixtures) extra.push(f);
+      for (const r of this.model.runs) extra.push(...r.pts);
+    }
+    const one = this.oneShot;
+    return resolveSnap(snapGeometry(this.model), wx, wy, {
+      tol: 12 / this.view.scale, osnap: this.osnap || !!one, modes: one ? new Set([one]) : this.snapModes,
+      from, ortho: this.ortho, polar: this.polar, polarInc: this.polarInc, constrain,
+      otrack: this.otrack && this.tool !== "select", tracked: this.tracked, round, skip, extra,
+    });
+  }
+  /** Al pasar por una referencia se adquiere su punto para el rastreo (hasta 5). */
+  private acquire(p: SnapPt | null) {
+    if (!this.otrack || !p?.kind || p.kind === "near") return;
+    if (this.tracked.some((t) => Math.hypot(t.x - p.x, t.y - p.y) < 1e-6)) return;
+    this.tracked = [...this.tracked, { x: p.x, y: p.y }].slice(-5);
   }
 
   pick(wx: number, wy: number): Selection | null {
@@ -637,6 +664,7 @@ export class Editor {
   // ---------- acciones ----------
   commitPoint(p: Pt) {
     const m = this.model;
+    this.oneShot = null;
     if (MODIFY_TOOLS.includes(this.tool)) return this.modify(p);
     if (this.tool === "calibrate") {
       const pts = this.draft?.pts ?? [];
@@ -1269,7 +1297,7 @@ export class Editor {
   finishDraft() {
     if (this.draft && this.tool === "run") { this.finishRun(); return; }
     if (this.draft && this.tool === "calibrate") { this.draft = null; this.setTool("select"); this.log("Calibración cancelada."); return; }
-    if (this.draft) { this.draft = null; this.log("Comando terminado."); }
+    if (this.draft) { this.draft = null; this.tracked = []; this.log("Comando terminado."); }
   }
 
   /** Muro o línea bajo el cursor. */
@@ -1391,6 +1419,20 @@ export class Editor {
       if (this.lastCmd) this.runCommand(this.lastCmd);
       return;
     }
+    // ayudas de dibujo
+    const pol = s.match(/^POLAR(\d+(?:\.\d+)?)$/);
+    if (pol) { this.setPolarInc(parseFloat(pol[1])); return; }
+    if (s === "POLAR") return this.togglePolar();
+    if (s === "ORTO" || s === "ORTHO") return this.toggleOrtho();
+    if (s === "REFENT" || s === "OSNAP") return this.toggleOsnap();
+    if (s === "RASTREO" || s === "OTRACK") return this.toggleOtrack();
+    if (s === "FORZCURSOR" || s === "FORZC" || s === "SNAP") return this.toggleGridSnap();
+    if (s === "REJILLA" || s === "GRID") return this.toggleGrid();
+    const once = SNAP_MODES.find((m) => m.cmd.includes(s));
+    if (once) {
+      if (this.tool === "select") { this.log(`${once.name}: úsalo mientras marcas un punto.`); return; }
+      this.oneShot = once.id; this.log(`Referencia de un solo uso: ${once.name.toLowerCase()}. Marca el punto.`); return;
+    }
     if (s === "CAL" || s === "CALIBRAR") { this.lastCmd = s; this.setTool("calibrate"); if (this.tool === "calibrate") this.log("Calibrar: marca dos puntos de una medida conocida."); return; }
     if (s === "AC" || s === "ACOTAR") { this.lastCmd = s; this.autoDimension(); return; }
     if (MARK_COMMANDS[s]) { this.lastCmd = s; this.pickMark(MARK_COMMANDS[s]); return; }
@@ -1429,6 +1471,14 @@ export class Editor {
       this.commitPoint({ x: from.x + (dx / n) * L, y: from.y + (dy / n) * L });
       return;
     }
+    // coordenadas polares d<ángulo o @d<ángulo (ángulo antihorario desde el eje X)
+    const pc = raw.trim().match(/^(@?)\s*([^<]+)<\s*(-?\d*\.?\d+)\s*$/);
+    const pd = pc ? parseLen(pc[2]) : NaN;
+    if (pc && Number.isFinite(pd) && !["select", "door", "window", "room"].includes(this.tool)) {
+      const a = (parseFloat(pc[3]) * Math.PI) / 180, f = pc[1] && this.draft?.pts.length ? this.draft.pts[this.draft.pts.length - 1] : { x: 0, y: 0 };
+      this.commitPoint({ x: f.x + Math.cos(a) * pd, y: f.y - Math.sin(a) * pd });
+      return;
+    }
     // coordenadas x;y o @dx;dy (en métrico también x,y)
     const mm = raw.trim().match(/^(@?)\s*([^;]+);([^;]+)$/) ?? (imperial() ? null : s.match(/^(@?)(-?\d*\.?\d+),(-?\d*\.?\d+)$/));
     const cx = mm ? parseLen(mm[2]) : NaN, cy = mm ? parseLen(mm[3]) : NaN;
@@ -1456,7 +1506,7 @@ export class Editor {
       if (this.tool === "break" && this.hover) this.snap = this.snapPoint(w.x, w.y);
     }
     else if (this.tool === "door" || this.tool === "window") this.openCand = this.openingCandidate(w.x, w.y);
-    else this.snap = this.snapPoint(w.x, w.y);
+    else { this.snap = this.snapPoint(w.x, w.y); this.acquire(this.snap); }
     this.emit();
   }
   pointerLeave() { this.mouse.in = false; this.hover = null; this.emit(); }
