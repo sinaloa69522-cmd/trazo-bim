@@ -14,22 +14,60 @@ export const CHAIN_OFFSETS = [0.6, 1.1, 1.6];
 const dot = (p: Pt, q: Pt) => p.x * q.x + p.y * q.y;
 const r3 = (v: number) => Math.round(v * 1000) / 1000;
 
+/** ¿Sale de p en dirección d sin chocar con ningún muro (salvo skip)? */
+function escapes(walls: Model["walls"], p: Pt, d: Pt, skip: object) {
+  for (const w of walls) {
+    if (w === skip) continue;
+    // intersección del rayo p + t·d con el segmento del eje del muro, ensanchado medio espesor por los extremos
+    const { ux, uy, L } = dir(w), h = w.thick / 2;
+    const ax = w.x1 - ux * h, ay = w.y1 - uy * h, ex = ux * (L + 2 * h), ey = uy * (L + 2 * h);
+    const den = d.x * ey - d.y * ex;
+    if (Math.abs(den) < 1e-12) continue;
+    const qx = ax - p.x, qy = ay - p.y;
+    const t = (qx * ey - qy * ex) / den, s = (qx * d.y - qy * d.x) / den;
+    if (t > 1e-6 && s >= 0 && s <= 1) return false;
+  }
+  return true;
+}
+
 /**
- * Cadenas de cotas exteriores de cada fachada, como el acotado automático de Revit:
- * la primera mide los huecos, la segunda los muros que acometen y la tercera el total,
- * todas a cara exterior. Solo tiene en cuenta muros paralelos a los ejes.
+ * Lado exterior de un muro: +1 o −1 (el de la normal de loc) si por ese lado se sale del edificio
+ * sin cruzar otro muro, 0 si es un muro interior. Se prueba en tres puntos a lo largo del muro.
+ */
+export function exteriorSide(walls: Model["walls"], w: Model["walls"][number]): 1 | -1 | 0 {
+  const { ux, uy, L } = dir(w);
+  const score = (n: 1 | -1) => [0.2, 0.5, 0.8].filter((t) => escapes(walls, loc(w, t * L, n * (w.thick / 2 + 0.01)), { x: -uy * n, y: ux * n }, w)).length;
+  const a = score(1), b = score(-1);
+  if (a < 2 && b < 2) return 0;
+  return a >= b ? 1 : -1;
+}
+
+/**
+ * Cadenas de cotas exteriores, como el acotado automático de Revit. En cada fachada (norte, sur, este, oeste)
+ * se proyectan sobre la línea más exterior todos los muros exteriores que miran a ese lado, también los remetidos:
+ * la primera cadena mide los huecos, la segunda los quiebres de la fachada y los muros que acometen, y la tercera
+ * el total, todo a cara exterior. Los muros exteriores inclinados llevan su propia cota, alineada con ellos.
  */
 export function autoDims(m: Model): Omit<Dim, "id">[] {
   const out: Omit<Dim, "id">[] = [];
+  const ext = new Map(m.walls.map((w) => [w, dir(w).L > 0.05 ? exteriorSide(m.walls, w) : 0] as const));
+  /** Normal exterior del muro (unitaria), o null si es interior. */
+  const nrm = (w: Model["walls"][number]): Pt | null => { const s = ext.get(w); if (!s) return null; const d = dir(w); return { x: -d.uy * s, y: d.ux * s }; };
   for (const { o, t } of SIDES) {
     const P = (u: number, v: number): Pt => ({ x: r3(u * t.x + v * o.x), y: r3(u * t.y + v * o.y) });
-    const along = m.walls.filter((w) => { const d = dir(w); return d.L > 0.05 && Math.abs(d.ux * o.x + d.uy * o.y) < 0.01; });
-    if (!along.length) continue;
-    const vmax = Math.max(...along.map((w) => dot({ x: w.x1, y: w.y1 }, o)));
-    const side = along.filter((w) => dot({ x: w.x1, y: w.y1 }, o) > vmax - 0.05);
-    const th = Math.max(...side.map((w) => w.thick)), face = vmax + th / 2;
-    const us = side.flatMap((w) => [dot({ x: w.x1, y: w.y1 }, t), dot({ x: w.x2, y: w.y2 }, t)]);
-    const u0 = Math.min(...us) - th / 2, u1 = Math.max(...us) + th / 2;
+    // muros exteriores paralelos a esta fachada que miran hacia fuera por ella
+    const side = m.walls.filter((w) => { const n = nrm(w); return n && Math.abs(dir(w).ux * o.x + dir(w).uy * o.y) < 0.01 && dot(n, o) > 0.99; });
+    if (!side.length) continue;
+    const face = Math.max(...side.map((w) => dot({ x: w.x1, y: w.y1 }, o) + w.thick / 2));
+    // los inclinados que también miran a este lado (un chaflán) cuentan para el total y marcan quiebres
+    const slant = m.walls.filter((w) => { const n = nrm(w), d = dir(w); return n && Math.abs(d.ux) > 0.01 && Math.abs(d.uy) > 0.01 && dot(n, o) > 0.1; });
+    const corners = slant.flatMap((w) => [dot({ x: w.x1, y: w.y1 }, t), dot({ x: w.x2, y: w.y2 }, t)]);
+    const us = [...side.flatMap((w) => [dot({ x: w.x1, y: w.y1 }, t), dot({ x: w.x2, y: w.y2 }, t)]), ...corners];
+    const th = Math.max(...side.map((w) => w.thick));
+    // los extremos: las caras exteriores de los muros que cierran la fachada por los lados
+    const ends = m.walls.filter((w) => { const n = nrm(w); return n && Math.abs(dot(n, t)) > 0.99; }).map((w) => dot({ x: w.x1, y: w.y1 }, t) + dot(nrm(w)!, t) * w.thick / 2);
+    const lo = Math.min(...us), hi = Math.max(...us);
+    const u0 = Math.min(lo - th / 2, ...ends.filter((u) => u < lo + 0.01 && u > lo - th)), u1 = Math.max(hi + th / 2, ...ends.filter((u) => u > hi - 0.01 && u < hi + th));
     const clamp = (u: number) => Math.max(u0, Math.min(u1, u));
 
     const holes: number[] = [];
@@ -38,16 +76,22 @@ export function autoDims(m: Model): Omit<Dim, "id">[] {
       holes.push(dot(loc(w, s - op.width / 2, 0), t), dot(loc(w, s + op.width / 2, 0), t));
     }
     const cross: number[] = [];
+    /** ¿Llega p a un extremo de un muro de esta fachada? */
+    const touches = (p: Pt) => [...side, ...slant].some((sw) => [{ x: sw.x1, y: sw.y1 }, { x: sw.x2, y: sw.y2 }].some((q) => Math.hypot(p.x - q.x, p.y - q.y) < sw.thick + 0.05));
     for (const w of m.walls) {
       const d = dir(w);
       if (d.L < 0.05 || Math.abs(d.ux * t.x + d.uy * t.y) > 0.01) continue;
-      // acomete a la fachada si uno de sus extremos llega a la línea de los muros de fachada
-      const near = [{ x: w.x1, y: w.y1 }, { x: w.x2, y: w.y2 }].some((p) => Math.abs(dot(p, o) - vmax) < th / 2 + 0.05);
-      if (!near) continue;
       const u = dot({ x: w.x1, y: w.y1 }, t);
       if (u < u0 - 0.01 || u > u1 + 0.01) continue;
-      cross.push(u - w.thick / 2, u + w.thick / 2);
+      const n = nrm(w);
+      // quiebre de la fachada: un muro exterior que la cierra o la remete marca su cara exterior
+      if (n) { if (touches({ x: w.x1, y: w.y1 }) || touches({ x: w.x2, y: w.y2 })) cross.push(u + dot(n, t) * w.thick / 2); continue; }
+      // un muro interior acomete si uno de sus extremos llega a un muro de la fachada
+      const near = [{ x: w.x1, y: w.y1 }, { x: w.x2, y: w.y2 }].some((p) => side.some((sw) => Math.abs(dot(p, o) - dot({ x: sw.x1, y: sw.y1 }, o)) < sw.thick / 2 + 0.05));
+      if (near) cross.push(u - w.thick / 2, u + w.thick / 2);
     }
+    // los vértices de un chaflán, salvo que caigan junto a otro quiebre ya marcado
+    for (const c of corners) if (![u0, u1, ...cross].some((u) => Math.abs(u - c) < 0.1)) cross.push(c);
     const chain = (inner: number[]) => {
       const pts = [u0, ...inner.map(clamp), u1].sort((a, b) => a - b).filter((u, i, a) => i === 0 || u - a[i - 1] > 0.005);
       return pts.map(r3);
@@ -63,6 +107,21 @@ export function autoDims(m: Model): Omit<Dim, "id">[] {
       for (let i = 0; i + 1 < pts.length; i++) {
         const a = P(pts[i], face), b = P(pts[i + 1], face);
         out.push({ x1: a.x, y1: a.y, x2: b.x, y2: b.y, off: r3(dimOffset(a, b, P(pts[i], off))), auto: true });
+      }
+    });
+  }
+  // muros exteriores inclinados: huecos y largo a cara exterior, paralelos al muro
+  for (const w of m.walls) {
+    const n = nrm(w), d = dir(w);
+    if (!n || Math.abs(d.ux) < 0.01 || Math.abs(d.uy) < 0.01) continue;
+    const s = ext.get(w)!, h = (w.thick / 2) * s;
+    const holes = m.openings.filter((x) => x.wallId === w.id).flatMap((op) => [op.t * d.L - op.width / 2, op.t * d.L + op.width / 2]);
+    const pts = [0, ...holes, d.L].map((v) => Math.max(0, Math.min(d.L, v))).sort((a, b) => a - b).filter((v, i, a) => i === 0 || v - a[i - 1] > 0.005);
+    const chains = pts.length > 2 ? [pts, [0, d.L]] : [[0, d.L]];
+    chains.forEach((c, k) => {
+      for (let i = 0; i + 1 < c.length; i++) {
+        const a = loc(w, c[i], h), b = loc(w, c[i + 1], h), q = loc(w, c[i], h + CHAIN_OFFSETS[k] * s);
+        out.push({ x1: r3(a.x), y1: r3(a.y), x2: r3(b.x), y2: r3(b.y), off: r3(dimOffset(a, b, q)), auto: true });
       }
     });
   }

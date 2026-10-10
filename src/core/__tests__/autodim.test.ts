@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { Editor } from "../../editor/Editor";
-import { allAutoDims, autoDims, interiorDims } from "../autodim";
+import { allAutoDims, autoDims, exteriorSide, interiorDims } from "../autodim";
 import { dimGeom } from "../geometry";
-import { sampleProject, type Dim } from "../model";
+import { emptyModel, sampleProject, type Dim, type Model } from "../model";
 
 /** Cotas agrupadas por su línea (fachada + separación), cada una como lista de longitudes. */
 function chains(dims: Omit<Dim, "id">[]) {
@@ -91,5 +91,34 @@ describe("acotado automático de fachadas", () => {
     expect(ed.model.dims.some((d) => d.inner)).toBe(false);
     ed.setInnerDims(true);
     expect(ed.model.dims.length).toBe(n);
+  });
+
+  /** Planta con muros de 0,25 por la lista de vértices cerrada. */
+  const outline = (pts: [number, number][]): Model => {
+    const mm = emptyModel();
+    pts.forEach(([x1, y1], i) => { const [x2, y2] = pts[(i + 1) % pts.length]; mm.walls.push({ id: mm.nid++, type: "generico", x1, y1, x2, y2, thick: 0.25, height: 2.7, attach: true }); });
+    return mm;
+  };
+
+  it("en una planta en L acota también los muros remetidos, con sus quiebres y el total", () => {
+    const L = outline([[0, 0], [10, 0], [10, 4], [6, 4], [6, 8], [0, 8]]);
+    expect(L.walls.every((w) => exteriorSide(L.walls, w) !== 0)).toBe(true);
+    const g = chains(autoDims(L));
+    // fachada sur (abajo en planta): el quiebre en x = 6,125 y el total de 10,25
+    const sur = [...g.entries()].filter(([k]) => k.startsWith("y") && Number(k.slice(1)) > 8).map(([, c]) => c.map((v) => Math.round(v * 1000) / 1000));
+    expect(sur).toContainEqual([6.25, 4]);
+    expect(sur).toContainEqual([10.25]);
+    // fachada este: el quiebre en y = 4,125 y el total de 8,25
+    const este = [...g.entries()].filter(([k]) => k.startsWith("x") && Number(k.slice(1)) > 10).map(([, c]) => c.map((v) => Math.round(v * 1000) / 1000));
+    expect(este).toContainEqual([4.25, 4]);
+    expect(este).toContainEqual([8.25]);
+  });
+
+  it("los muros exteriores inclinados llevan su cota alineada y los interiores no se acotan por fuera", () => {
+    const ch = outline([[0, 0], [8, 0], [10, 2], [10, 6], [0, 6]]);
+    const d = autoDims(ch).map((x) => Math.round(Math.hypot(x.x2 - x.x1, x.y2 - x.y1) * 1000) / 1000);
+    expect(d).toContain(Math.round(Math.hypot(2, 2) * 1000) / 1000);
+    ch.walls.push({ id: 99, type: "generico", x1: 5, y1: 0, x2: 5, y2: 6, thick: 0.12, height: 2.7, attach: true });
+    expect(exteriorSide(ch.walls, ch.walls[ch.walls.length - 1])).toBe(0);
   });
 });
