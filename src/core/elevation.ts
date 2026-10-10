@@ -1,5 +1,5 @@
 import { furnitureSolids, furnitureToPlan } from "./furniture";
-import { dir, endExt, loc, roofGeom, type Pt } from "./geometry";
+import { dir, endExt, loc, parapet, roofGeom, type Pt } from "./geometry";
 import { stairGeom } from "./stairs";
 import { wallType, type Hatch } from "./wallTypes";
 import { finishName, gableWall, outward, roofFinish, finish as finishById, type Finish } from "./finishes";
@@ -32,7 +32,7 @@ export interface Elevation {
   /** Cotas de los niveles para las líneas de referencia */
   levels: { name: string; elev: number }[];
   /** Coronación: lecho alto de las azoteas y cumbreras, con su propio símbolo de nivel */
-  tops: { tag: "N.L.A." | "Cumbrera"; elev: number }[];
+  tops: { tag: "N.L.A." | "Cumbrera" | "Pretil"; elev: number }[];
 }
 
 type P3 = { x: number; y: number; z: number };
@@ -169,6 +169,9 @@ function project(p: Project, fr: Frame): Elevation {
       const zt = e + g.faces[0][0].z;
       tops.push(r.kind === "flat" ? { tag: "N.L.A.", elev: zt } : { tag: "Cumbrera", elev: e + Math.max(...g.faces.flatMap((f) => f.map((q) => q.z))) });
       prism(g.outline, zt - r.thick, zt, "roof", false);
+      // pretil de la azotea: anillo de muro sobre el borde de la losa, cortado en los cortes
+      const pp = parapet(r);
+      if (pp) { prism(pp.outer, e + pp.z, e + pp.z + pp.h, "wall", true, [pp.inner]); tops.push({ tag: "Pretil", elev: e + pp.z + pp.h }); }
       if (!fr.cut) continue;
       // faldones cortados: la línea de corte sobre la cara superior, con el espesor medido en vertical
       const lift = r.kind === "flat" ? r.thick : r.thick / Math.cos((Math.max(0, Math.min(75, r.pitch)) * Math.PI) / 180);

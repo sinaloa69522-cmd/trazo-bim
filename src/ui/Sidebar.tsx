@@ -1,5 +1,5 @@
 import { Fragment, useState } from "react";
-import { dimGeom, dir, fits, polygonArea, roofGeom, slabArea } from "../core/geometry";
+import { dimGeom, dir, fits, polygonArea, PARAPET, roofGeom, slabArea } from "../core/geometry";
 import { IDEAL_TREAD, POST_R, shortTread, sizedByTread, STAIR_TYPES, stairLabel, stairLenFor, stairSteps } from "../core/stairs";
 import { FURNITURE, FURNITURE_CATS, furnitureDef } from "../core/furniture";
 import { CIRCUITS, mepDef, mepOf, runLength, SYSTEMS, systemDef, type Discipline } from "../core/mep";
@@ -220,6 +220,7 @@ function Properties({ ed, onFocusCommand }: { ed: Editor; onFocusCommand: () => 
     body = <>
       <RoofKindField id={`${key}-k`} value={r.kind} onChange={(k) => ed.edit(() => { r.kind = k; })} />
       {r.kind !== "flat" && <NumberField id={`${key}-p`} label="Pendiente (°)" value={r.pitch} min={1} step={1} digits={0} onCommit={(v) => ed.edit(() => { r.pitch = Math.min(75, v); })} />}
+      {r.kind === "flat" && <NumberField id={`${key}-pp`} label="Pretil (m, 0 sin pretil)" value={r.parapet ?? PARAPET.h} min={0} onCommit={(v) => ed.edit(() => { r.parapet = v; })} />}
       <NumberField id={`${key}-o`} label="Vuelo (m)" value={r.overhang} min={0} onCommit={(v) => ed.edit(() => { r.overhang = v; })} />
       <NumberField id={`${key}-b`} label="Arranque (m)" value={r.base} min={0} onCommit={(v) => ed.edit(() => { r.base = v; })} />
       <FinishPicker label="Material de cubierta" list={ROOFINGS} value={r.finish} none={r.kind === "flat" ? "Sin definir" : "Teja cerámica (por defecto)"}
