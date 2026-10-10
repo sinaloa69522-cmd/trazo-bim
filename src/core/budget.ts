@@ -56,7 +56,7 @@ export const CHAPTERS: [string, string][] = [
  * Son un punto de partida: cada despacho debe poner los suyos.
  */
 const WALL_PRICE: Record<string, number> = {
-  "fachada-ladrillo": 950, "fachada-bloque": 620, "muro-hormigon": 2400, "tabique-ladrillo": 520, "tabique-yeso": 580, generico: 700,
+  "fachada-ladrillo": 950, "fachada-bloque": 620, "muro-hormigon": 2400, "tabique-ladrillo": 520, "tabique-yeso": 580, "block-15": 540, generico: 700,
 };
 const MEP_PRICE: Record<string, number> = {
   luz: 450, aplique: 550, interruptor: 380, conmutador: 480, enchufe: 420, "enchufe-fuerza": 650, cuadro: 6500,

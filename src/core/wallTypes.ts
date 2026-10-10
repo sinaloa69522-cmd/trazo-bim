@@ -25,6 +25,7 @@ export const WALL_TYPES: WallType[] = [
   { id: "us-2x6", name: "Bastidor de madera 2x6 (exterior, EE.UU.)", thick: 0.1651, hatch: "drywall", material: "Madera (wood frame 2x6)" },
   { id: "us-2x4", name: "Bastidor de madera 2x4 (interior, EE.UU.)", thick: 0.1143, hatch: "drywall", material: "Madera (wood frame 2x4)" },
   { id: "us-cmu8", name: "Block CMU 8\" (EE.UU.)", thick: 0.2032, hatch: "block", material: "Block de concreto (CMU)" },
+  { id: "block-15", name: "Muro de block 15", thick: 0.15, hatch: "block", material: "Block de concreto" },
   { id: GENERIC, name: "Muro genérico", thick: 0.15, hatch: "solid", material: "Genérico" },
 ];
 
@@ -34,6 +35,8 @@ export function wallType(id: string): WallType {
 
 /** Tipo para un muro guardado sin tipo: el del catálogo con su espesor, o el genérico. */
 export function typeForThick(thick: number): string {
+  // los genéricos de 15 de proyectos antiguos siguen siendo genéricos, no block
+  if (Math.abs(thick - wallType(GENERIC).thick) < 1e-6) return GENERIC;
   return WALL_TYPES.find((t) => t.id !== GENERIC && Math.abs(t.thick - thick) < 1e-6)?.id ?? GENERIC;
 }
 
