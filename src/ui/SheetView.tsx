@@ -17,6 +17,8 @@ import { site } from "../core/permit";
 import { FoundationDetails, StairDetails } from "./PermitDetails";
 import { CoverBody, DetailsBody, isDetails, NotesBody, PERMIT_KINDS, PermitSide, SheetNotes, SHEET_TITLES, TEXT_SHEETS, type PermitKind } from "./PermitSheets";
 import { SymbolIcon, SystemIcon } from "./MepIcons";
+import { MX_KINDS, MX_TITLES, MxFoundationDetails, MxNotes, MxSide, MxStructDetails, type MxKind } from "./MxSheets";
+import { drawMxOverlay } from "../editor/mxRenderer";
 import { FinishSym, mepEn, NorthArrow, SheetLegend } from "./SheetLegend";
 
 /** Lámina apaisada, en milímetros: A3, o en EE.UU. Tabloid (ANSI B, 11" × 17"). */
@@ -58,9 +60,12 @@ export function fitElevScale(els: Elevation[], stacked = false) {
 }
 
 /** plan, elec y plum son plantas de un nivel; fach son dos fachadas (part 0: sur y norte, 1: este y oeste). */
-export type Content = "plan" | "elec" | "plum" | "elev" | "fach" | "sec" | PermitKind;
+export type Content = "plan" | "elec" | "plum" | "elev" | "fach" | "sec" | PermitKind | MxKind;
 const PERMIT_PLANS: Content[] = ["site", "found", "floorfr", "wallfr", "rooffr", "hvac"];
-const isPlan = (c: Content) => c === "plan" || c === "elec" || c === "plum" || PERMIT_PLANS.includes(c);
+const MX_PLANS: Content[] = ["mxcim", "mxest", "hid", "san"];
+const isPlan = (c: Content) => c === "plan" || c === "elec" || c === "plum" || PERMIT_PLANS.includes(c) || MX_PLANS.includes(c);
+/** Láminas que van siempre con la planta baja. */
+const groundOnly = (c: Content) => c === "site" || c === "found" || c === "mxcim";
 const isText = (c: Content) => TEXT_SHEETS.includes(c);
 const FACH_PARTS: Facade[][] = [["S", "N"], ["E", "O"]];
 const FACADE_EN: Record<Facade, string> = { S: "South", E: "East", N: "North", O: "West" };
@@ -103,6 +108,11 @@ function autoScaleOf(ed: Editor, content: Content, level: number) {
     const st = site(ed.project.levels[0]), b = planBox(), w = st.w + 12 * FT, d = st.d + 16 * FT;
     return scalesFor().find((den) => (w * 1000) / den <= b.w - 8 && (d * 1000) / den <= b.h - 8) ?? 1000;
   }
+  // las láminas estructurales dejan sitio alrededor para los ejes
+  if (MX_PLANS.includes(content) || content === "plan" && !imperial()) {
+    const b = bounds(ed.project.levels[level]), pb = planBox(), m = 2.4;
+    return scalesFor().find((den) => ((b.x1 - b.x0 + m) * 1000) / den <= pb.w - 8 && ((b.y1 - b.y0 + m) * 1000) / den <= pb.h - 8) ?? 1000;
+  }
   if (isPlan(content)) return fitScale(ed.project.levels[level]);
   // las dos láminas de fachadas van a la misma escala
   if (content === "fach") return Math.max(...FACH_PARTS.map((_, i) => fitElevScale(viewsOf(ed, "fach", i).map((v) => v.el), true)));
@@ -126,6 +136,10 @@ const PLAN_LAYERS: Partial<Record<Content, Partial<Record<LayerId, boolean>>>> =
   wallfr: { ...ONLY_WALLS, puertas: true, ventanas: true },
   rooffr: ONLY_WALLS,
   hvac: { ...ONLY_WALLS, puertas: true, ventanas: true, hab: true },
+  mxcim: ONLY_WALLS,
+  mxest: { ...ONLY_WALLS, escaleras: true },
+  hid: { electricidad: false, plomeria: true, cotas: false, losas: false, cubiertas: false, secciones: false },
+  san: { electricidad: false, plomeria: true, cotas: false, losas: false, cubiertas: false, secciones: false },
 };
 
 function withVis(ed: Editor, patch: Partial<Record<LayerId, boolean>> | undefined, fn: () => void) {
@@ -165,7 +179,7 @@ function Sheet({ ed, content, level, scale, zoom = 1, set }: { ed: Editor; conte
   const doors = openingSchedule(p, "door").types, windows = openingSchedule(p, "window").types, rooms = roomSchedule(p), walls = wallSchedule(p);
   const sheetNo = sheetNumber(p.levels.length, content, level, set);
   const en = imperial(), permit = (PERMIT_KINDS as string[]).includes(content);
-  const planName = en || permit ? (SHEET_TITLES[content]?.en ?? "") : content === "elec" ? "Instalación eléctrica" : content === "plum" ? "Fontanería y saneamiento" : "";
+  const planName = en || permit ? (SHEET_TITLES[content]?.en ?? "") : content === "plum" ? "Fontanería y saneamiento" : (MX_TITLES[content] ?? "");
   const finishes = content === "fach" ? [...new Map(views.flatMap((v) => v.el.faces.filter((f) => f.mat && !f.cut).map((f) => [f.mat!.name, f.mat!.finish] as const))).entries()] : [];
 
   // dibujo a escala; la planta usa la vista del editor cambiada solo mientras se dibuja
@@ -210,6 +224,16 @@ function Sheet({ ed, content, level, scale, zoom = 1, set }: { ed: Editor; conte
       ed.view.ox = W / 2 - ((b.x0 + b.x1) / 2) * s;
       ed.view.oy = H / 2 - ((b.y0 + b.y1) / 2) * s;
       if (content === "plan") drawPlan(ctx, ed, PAPER, W, H, { print: true, marks: levelMarks(p, level) });
+      else if (content === "mxcim" || content === "mxest") {
+        drawPlan(ctx, ed, LIGHT, W, H, { print: true, roomLabelDy: 0.9 });
+        drawMxOverlay(ctx, ed, content);
+      } else if (content === "hid" || content === "san") {
+        // solo la red de la lámina: agua fría y caliente, o drenaje
+        const m = ed.model, keep = content === "hid" ? ["af", "ac"] : ["san"], saved = { runs: m.runs, fx: m.fixtures };
+        m.runs = m.runs.filter((r) => keep.includes(r.system));
+        m.fixtures = m.fixtures.filter((f) => keep.includes(mepDef(f.kind).sys));
+        try { drawPlan(ctx, ed, HALF, W, H, { print: true, roomLabelDy: 0.55 }); } finally { m.runs = saved.runs; m.fixtures = saved.fx; }
+      }
       else if (content === "elec" || content === "plum") drawPlan(ctx, ed, HALF, W, H, { print: true, circuits: content === "elec", roomLabelDy: 0.55 });
       else {
         drawPlan(ctx, ed, content === "hvac" ? HALF : LIGHT, W, H, { print: true, roomLabelDy: 0.9 });
@@ -226,6 +250,8 @@ function Sheet({ ed, content, level, scale, zoom = 1, set }: { ed: Editor; conte
       {content === "details" && <DetailsBody box={planBox()} />}
       {content === "details2" && <FoundationDetails box={planBox()} />}
       {content === "details3" && <StairDetails box={planBox()} />}
+      {content === "mxdet1" && <MxFoundationDetails box={planBox()} p={p} sheet={sheetNo} />}
+      {content === "mxdet2" && <MxStructDetails box={planBox()} p={p} sheet={sheetNo} />}
       <div className="viewtitle" style={{ left: `${planBox().x + 6}mm`, top: `${planBox().y + planBox().h + 1}mm` }}>
         <span className="vt-n">{isText(content) ? planName.toUpperCase() : content === "elev" ? t("ALZADOS", "EXTERIOR ELEVATIONS") : content === "fach" ? views.map((v) => v.label).join(t(" y ", " & ")).toUpperCase() : content === "sec" ? t("SECCIONES", "BUILDING SECTIONS") : content === "site" ? planName.toUpperCase() : planName ? `${lv.name} · ${planName}`.toUpperCase() : lv.name.toUpperCase()}</span>
         {!isText(content) && <>
@@ -235,7 +261,7 @@ function Sheet({ ed, content, level, scale, zoom = 1, set }: { ed: Editor; conte
       </div>
       <div className="sheetnorth" style={{ left: `${planBox().x + planBox().w - 26}mm`, top: `${planBox().y + planBox().h - 9}mm` }}><NorthArrow /></div>
       <aside className="sheetside" style={{ left: `${sheetSize().w - FRAME - SIDE}mm`, top: `${FRAME}mm`, width: `${SIDE}mm`, height: `${sheetSize().h - 2 * FRAME}mm` }}>
-        {permit ? <PermitSide ed={ed} content={content} level={level} set={set} /> : content === "elec" || content === "plum" ? <MepTables p={p} disc={content} level={level} notes={en} /> : <div className="tables">
+        {permit ? <PermitSide ed={ed} content={content} level={level} set={set} /> : !en && ((MX_KINDS as string[]).includes(content) || content === "elec") ? <MxSide ed={ed} content={content} level={level} /> : content === "elec" || content === "plum" ? <MepTables p={p} disc={content} level={level} notes={en} /> : <div className="tables">
           {content === "fach" && <>
             <h4>{t("Acabados de fachada", "Exterior finishes")}</h4>
             {finishes.length ? <table><tbody>{finishes.map(([name, f]) => <tr key={name}>{f ? <><td className="sw"><FinishSym f={f} /></td><td>{name}</td></> : <td colSpan={2}>{name}</td>}</tr>)}</tbody></table> : <p className="empty">{t("Muros sin tipo asignado.", "No wall types assigned.")}</p>}
@@ -262,7 +288,7 @@ function Sheet({ ed, content, level, scale, zoom = 1, set }: { ed: Editor; conte
             </table>
           ) : <p className="empty">{t("Sin habitaciones definidas.", "No rooms defined.")}</p>}
           <SheetLegend content={content} finishes={content === "fach" ? [] : usedFinishes(p.levels)} />
-          {en && <SheetNotes content={content} levels={p.levels} />}
+          {en ? <SheetNotes content={content} levels={p.levels} /> : <MxNotes content={content} />}
         </div>}
         <div className="cajetin">
           <div className="c-proj"><small>{t("Proyecto", "Project")}</small>{info.name || "—"}</div>
@@ -319,6 +345,33 @@ export function permitSet(ed: Editor): PermitEntry[] {
 }
 
 /**
+ * Juego ejecutivo en metros (México), numerado por disciplina: ARQ arquitectónicos, EST estructurales,
+ * IE instalación eléctrica, IH hidráulica (plomería) e IS sanitaria (hidrosanitario).
+ */
+export function mxSet(ed: Editor): PermitEntry[] {
+  const lvs = ed.project.levels, out: PermitEntry[] = [], count: Record<string, number> = {};
+  const planScale = Math.max(...lvs.map((_, i) => autoScaleOf(ed, "mxest", i)));
+  const many = lvs.length > 1;
+  const add = (content: Content, level: number, prefix: string, scale = planScale, title = MX_TITLES[content]) => {
+    const n = (count[prefix] = (count[prefix] ?? 0) + 1);
+    out.push({ content, level, scale, no: `${prefix}-${String(n).padStart(2, "0")}`, title });
+  };
+  const lvTitle = (c: Content, i: number) => (many ? `${MX_TITLES[c]} · ${lvs[i].name}` : MX_TITLES[c]);
+  lvs.forEach((_, i) => add("plan", i, "ARQ", planScale, lvTitle("plan", i)));
+  const fs = autoScaleOf(ed, "fach", 0);
+  add("fach", 0, "ARQ", fs, "Fachadas sur y norte"); add("fach", 1, "ARQ", fs, "Fachadas este y oeste");
+  if (allSections(ed.project).length) add("sec", 0, "ARQ", autoScaleOf(ed, "sec", 0));
+  add("elev", 0, "ARQ", autoScaleOf(ed, "elev", 0));
+  add("mxcim", 0, "EST");
+  lvs.forEach((_, i) => add("mxest", i, "EST", planScale, lvTitle("mxest", i)));
+  add("mxdet1", 0, "EST", 25); add("mxdet2", 0, "EST", 25);
+  lvs.forEach((_, i) => add("elec", i, "IE", planScale, lvTitle("elec", i)));
+  lvs.forEach((_, i) => add("hid", i, "IH", planScale, lvTitle("hid", i)));
+  lvs.forEach((_, i) => add("san", i, "IS", planScale, lvTitle("san", i)));
+  return out;
+}
+
+/**
  * Láminas del juego completo: la planta de cada nivel (todas a la misma escala), las dos de fachadas,
  * las secciones y, por cada nivel que las tenga, la de electricidad y la de plomería.
  */
@@ -337,12 +390,12 @@ function entryTitle(ed: Editor, c: Content, level: number) {
   const lvs = ed.project.levels, lv = lvs.length > 1 ? ` · ${lvs[level]?.name ?? ""}` : "";
   switch (c) {
     case "plan": return `Planta${lv}`;
-    case "elec": return `Electricidad${lv}`;
+    case "elec": return `${imperial() ? "Electricidad" : "Instalación eléctrica"}${lv}`;
     case "plum": return `Plomería${lv}`;
     case "fach": return level ? "Fachadas este y oeste" : "Fachadas sur y norte";
     case "elev": return "Alzados";
     case "sec": return "Secciones";
-    default: return SHEET_TITLES[c].es;
+    default: return MX_TITLES[c] ? `${MX_TITLES[c]}${groundOnly(c) || TEXT_SHEETS.includes(c) ? "" : lv}` : SHEET_TITLES[c].es;
   }
 }
 
@@ -362,7 +415,7 @@ export function SheetView({ ed }: { ed: Editor }) {
   const [info_, setInfo] = useState(false);
   const [printSet, setPrintSet] = useState(false);
   const secs = allSections(ed.project);
-  const levelFor = (c: Content) => (c === "fach" ? part : TEXT_SHEETS.includes(c) || c === "site" || c === "found" ? 0 : Math.min(lvl ?? ed.active, ed.project.levels.length - 1));
+  const levelFor = (c: Content) => (c === "fach" ? part : TEXT_SHEETS.includes(c) || groundOnly(c) ? 0 : Math.min(lvl ?? ed.active, ed.project.levels.length - 1));
   const autoScale = autoScaleOf(ed, content, levelFor(content));
   const scale = den ?? autoScale;
   const info = ed.project.info;
@@ -464,11 +517,11 @@ export function SheetView({ ed }: { ed: Editor }) {
         onBlur={(e) => { const v = e.target.value.trim(); if (v !== info[k]) ed.setInfo({ [k]: v }); }} />
     </label>
   );
-  const en = imperial(), permits = en ? permitSet(ed) : undefined;
+  const en = imperial(), permits = en ? permitSet(ed) : mxSet(ed);
   const set = printSet ? (permits ?? sheetSet(ed)) : [];
   const nLv = ed.project.levels.length;
   // todas las láminas del juego, numeradas, para el navegador y la vista «Todas»
-  const entries = (permits ?? sheetSet(ed)).map((x) => ({ ...x, no: sheetNumber(nLv, x.content, x.level, permits), label: entryTitle(ed, x.content, x.level) }));
+  const entries = (permits ?? sheetSet(ed)).map((x) => ({ ...x, no: sheetNumber(nLv, x.content, x.level, permits), label: en ? entryTitle(ed, x.content, x.level) : (x as PermitEntry).title ?? entryTitle(ed, x.content, x.level) }));
   const curLevel = levelFor(content);
   const cur = entries.findIndex((x) => x.content === content && x.level === curLevel);
   const go = (i: number) => {
@@ -476,7 +529,7 @@ export function SheetView({ ed }: { ed: Editor }) {
     if (!x) return;
     if (all) { host.current?.querySelector(`[data-sheet="${i}"]`)?.scrollIntoView({ block: "start" }); return; }
     setContent(x.content);
-    if (x.content === "fach") setPart(x.level); else if (!TEXT_SHEETS.includes(x.content) && x.content !== "site" && x.content !== "found") setLvl(x.level);
+    if (x.content === "fach") setPart(x.level); else if (!TEXT_SHEETS.includes(x.content) && !groundOnly(x.content)) setLvl(x.level);
     setDen(null);
     if (host.current) host.current.scrollTop = 0;
   };
@@ -505,6 +558,9 @@ export function SheetView({ ed }: { ed: Editor }) {
             <option value="fach1">Fachadas este y oeste</option>
             <option value="elev">Alzados (4 en una lámina)</option>
             <option value="sec">Secciones ({secs.length > 4 ? "las 4 primeras" : secs.length})</option>
+            <optgroup label="Juego ejecutivo en metros (México)">
+              {MX_KINDS.map((k) => <option key={k} value={k}>{MX_TITLES[k]}</option>)}
+            </optgroup>
             <optgroup label="Juego de permiso EE.UU. (en inglés)">
               {PERMIT_KINDS.map((k) => <option key={k} value={k}>{SHEET_TITLES[k].es}</option>)}
             </optgroup>
@@ -523,7 +579,7 @@ export function SheetView({ ed }: { ed: Editor }) {
         </div>
         <button className="btn primary" onClick={() => (all ? setPrintSet(true) : window.print())} title={`En el diálogo de impresión elige ${imperial() ? "Tabloid (11 × 17)" : "A3"} horizontal o Guardar como PDF`}>{all ? "Imprimir todas" : "Imprimir / PDF"}</button>
         <button className="btn" onClick={() => setPrintSet(true)} disabled={printSet}
-          title={en ? "Juego de permiso de EE.UU. completo (cover, notas, site, estructura, arquitectura, detalles, eléctrico, plomería y HVAC) en un solo PDF" : "Plantas, fachadas, secciones, electricidad y plomería en un solo PDF, una lámina por página"}>{en ? "Juego para permiso" : "Juego completo"}</button>
+          title={en ? "Juego de permiso de EE.UU. completo (cover, notas, site, estructura, arquitectura, detalles, eléctrico, plomería y HVAC) en un solo PDF" : "Juego ejecutivo completo: arquitectónicos, estructurales con detalles, eléctrico, hidráulico y sanitario, en un solo PDF"}>{en ? "Juego para permiso" : "Juego completo"}</button>
       </div>
       {/* papel Tabloid en EE.UU.; el CSS fijo es para A3 */}
       {imperial() && <style>{"@page{size:17in 11in;margin:0}@media print{html,body{width:431.8mm!important;height:279.4mm!important}}"}</style>}

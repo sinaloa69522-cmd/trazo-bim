@@ -157,7 +157,7 @@ function Properties({ ed, onFocusCommand }: { ed: Editor; onFocusCommand: () => 
   let title = "Valores por defecto", body: JSX.Element | null = null;
   const n = ed.sels.length;
   const key = sel ? `${sel.type}-${sel.id}` : n > 1 ? "multi" : "def";
-  const TYPE_LABEL = { wall: "Muros", opening: "Puertas y ventanas", line: "Líneas", dim: "Cotas", room: "Habitaciones", slab: "Losas", roof: "Cubiertas", stair: "Escaleras", deck: "Decks y porches", furniture: "Mobiliario", section: "Secciones", text: "Textos", fixture: "Instalaciones", run: "Tuberías", underlay: "Calcos", hatch: "Sombreados" } as const;
+  const TYPE_LABEL = { wall: "Muros", opening: "Puertas y ventanas", line: "Líneas", dim: "Cotas", room: "Habitaciones", slab: "Losas", roof: "Cubiertas", stair: "Escaleras", deck: "Decks y porches", column: "Columnas", furniture: "Mobiliario", section: "Secciones", text: "Textos", fixture: "Instalaciones", run: "Tuberías", underlay: "Calcos", hatch: "Sombreados" } as const;
 
   if (sel && o && sel.type === "wall") {
     const w = o as Model["walls"][number], up = ed.levelAbove();
@@ -234,6 +234,14 @@ function Properties({ ed, onFocusCommand }: { ed: Editor; onFocusCommand: () => 
       <NumberField id={`${key}-w`} label="Ancho (m)" value={st.width} onCommit={(v) => ed.edit(() => { st.width = v; })} />
       <NumberField id={`${key}-h`} label="Desnivel (m)" value={st.height} onCommit={(v) => ed.edit(() => { st.height = v; })} />
       <button className="btn full" onClick={() => ed.openAboveStair(st.id)} title="Hueco con la huella de la escalera en la losa del nivel de arriba">Abrir hueco en la losa de arriba</button>
+    </>;
+  } else if (sel && o && sel.type === "column") {
+    const c = o as Model["columns"][number];
+    title = "Columna de concreto armado";
+    ro.push(["Sección", `${fmtDim(c.w)} × ${fmtDim(c.d)}`], ["Zapata", "aislada, en la planta de cimentación"]);
+    body = <>
+      <NumberField id={`${key}-w`} label="Lado x (m)" value={c.w} min={0.15} onCommit={(v) => ed.edit(() => { c.w = v; })} />
+      <NumberField id={`${key}-d`} label="Lado y (m)" value={c.d} min={0.15} onCommit={(v) => ed.edit(() => { c.d = v; })} />
     </>;
   } else if (sel && o && sel.type === "deck") {
     const dk = o as Model["decks"][number], t = deckType(dk.kind), g = deckGeom(dk, ed.model.walls), q = deckTakeoff(dk, ed.model.walls);
@@ -611,6 +619,11 @@ export function Sidebar({ ed, onFocusCommand, onClose }: { ed: Editor; onFocusCo
     <aside className="side" aria-label="Capas y propiedades">
       {onClose && <button className="btn sideclose" onClick={onClose}>Cerrar</button>}
       {ed.tool === "deck" && <DeckTools ed={ed} />}
+      {ed.tool === "column" && <section>
+        <h2>Columnas</h2>
+        <NumberField id="col-w" label="Sección (m)" value={ed.defaults.colW} min={0.15} onCommit={(v) => { ed.defaults.colW = v; ed.emit(); }} />
+        <p className="hint">Clic en el centro de cada columna. Cada una lleva su zapata aislada y sus trabes en las láminas estructurales.</p>
+      </section>}
       {ed.tool === "furniture" && <Catalog ed={ed} />}
       {ed.tool === "fixture" && <MepCatalog ed={ed} />}
       {ed.tool === "run" && <RunCatalog ed={ed} />}

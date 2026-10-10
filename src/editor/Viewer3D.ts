@@ -331,6 +331,11 @@ export class Viewer3D {
         const k = stairSteps(st), mat = isSel("stair", st.id) ? this.mat.sel : this.mat.stair;
         for (let i = 0; i < k.n; i++) box(st as unknown as Wall, i * k.tread, (i + 1) * k.tread, 0, (i + 1) * k.riser, st.width, mat);
       }
+      if (vis.columnas) for (const c of m.columns) {
+        // hasta la losa: la altura del muro más alto del nivel
+        const H = Math.max(2.4, ...m.walls.map((w) => w.height));
+        box({ x1: c.x - c.w / 2, y1: c.y, x2: c.x + c.w / 2, y2: c.y } as Wall, 0, c.w, 0, H, c.d, li === active && this.ed.isSelected("column", c.id) ? this.mat.sel : this.mat.wall);
+      }
       if (vis.decks) for (const dk of m.decks) this.boxes(deckBoxes(dk, m.walls, gradeLevel(project)), li === active && this.ed.isSelected("deck", dk.id));
       if (vis.mobiliario) for (const f of m.furniture) {
         const sel = isSel("furniture", f.id);

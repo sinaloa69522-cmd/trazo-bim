@@ -105,6 +105,16 @@ export interface Stair {
   height: number;
 }
 
+/** Columna de concreto armado (C-1) en planta: centro y sección. */
+export interface Column {
+  id: number;
+  x: number;
+  y: number;
+  /** Lado en x y lado en y de la sección */
+  w: number;
+  d: number;
+}
+
 export type DeckKind = "wood" | "composite" | "ground" | "covered" | "screened" | "stoop";
 export type RailKind = "none" | "wood" | "metal" | "cable" | "glass" | "vinyl";
 
@@ -232,6 +242,7 @@ export interface Model {
   roofs: Roof[];
   stairs: Stair[];
   decks: Deck[];
+  columns: Column[];
   furniture: Furniture[];
   sections: Section[];
   texts: Text[];
@@ -269,7 +280,7 @@ export interface Project {
 
 export const defaultInfo = (): ProjectInfo => ({ name: "Vivienda unifamiliar", author: "", client: "", date: new Date().toISOString().slice(0, 10) });
 
-export type LayerId = "muros" | "puertas" | "ventanas" | "cotas" | "anot" | "hab" | "losas" | "cubiertas" | "escaleras" | "decks" | "mobiliario" | "secciones" | "electricidad" | "plomeria" | "calcos" | "sombreados";
+export type LayerId = "muros" | "puertas" | "ventanas" | "cotas" | "anot" | "hab" | "losas" | "cubiertas" | "escaleras" | "decks" | "columnas" | "mobiliario" | "secciones" | "electricidad" | "plomeria" | "calcos" | "sombreados";
 
 export interface Layer {
   id: LayerId;
@@ -292,6 +303,7 @@ export const LAYERS: Layer[] = [
   { id: "cubiertas", name: "A-CUBIERTAS", label: "Cubiertas", tok: "--door" },
   { id: "escaleras", name: "A-ESCALERAS", label: "Escaleras", tok: "--fg" },
   { id: "decks", name: "A-DECKS", label: "Decks y porches", tok: "--door" },
+  { id: "columnas", name: "S-COLUMNAS", label: "Columnas", tok: "--wall" },
   { id: "mobiliario", name: "A-MOBILIARIO", label: "Mobiliario", tok: "--anno" },
   { id: "secciones", name: "A-SECCIONES", label: "Secciones", tok: "--fg" },
   { id: "electricidad", name: "E-ELECTRICIDAD", label: "Electricidad", tok: "--elec" },
@@ -299,7 +311,7 @@ export const LAYERS: Layer[] = [
   { id: "calcos", name: "A-CALCOS", label: "Calcos", tok: "--muted" },
 ];
 
-export const emptyModel = (): Model => ({ walls: [], openings: [], lines: [], dims: [], rooms: [], slabs: [], roofs: [], stairs: [], decks: [], furniture: [], sections: [], texts: [], fixtures: [], runs: [], underlays: [], hatches: [], nid: 1 });
+export const emptyModel = (): Model => ({ walls: [], openings: [], lines: [], dims: [], rooms: [], slabs: [], roofs: [], stairs: [], decks: [], columns: [], furniture: [], sections: [], texts: [], fixtures: [], runs: [], underlays: [], hatches: [], nid: 1 });
 
 export const newLevel = (name: string, elev: number, content: Model = emptyModel()): Level => ({ ...content, name, elev });
 
@@ -320,6 +332,7 @@ export function normalizeModel(raw: unknown): Model {
   m.roofs = m.roofs ?? [];
   m.stairs = m.stairs ?? [];
   m.decks = m.decks ?? [];
+  m.columns = m.columns ?? [];
   m.furniture = m.furniture ?? [];
   m.sections = m.sections ?? [];
   m.texts = m.texts ?? [];

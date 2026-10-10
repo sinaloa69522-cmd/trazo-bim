@@ -13,7 +13,7 @@ const INK = "#111111";
 const SANS = (px: number, w = 600) => `${w} ${px}px 'IBM Plex Sans Condensed', 'Arial Narrow', sans-serif`;
 
 /** Texto con un halo blanco para que se lea sobre las líneas. */
-function label(ctx: CanvasRenderingContext2D, s: string, x: number, y: number, px = 8, align: CanvasTextAlign = "center", rot = 0) {
+export function label(ctx: CanvasRenderingContext2D, s: string, x: number, y: number, px = 8, align: CanvasTextAlign = "center", rot = 0) {
   ctx.save();
   ctx.translate(x, y); ctx.rotate(rot);
   ctx.font = SANS(px); ctx.textAlign = align; ctx.textBaseline = "middle";
@@ -22,7 +22,7 @@ function label(ctx: CanvasRenderingContext2D, s: string, x: number, y: number, p
   ctx.restore();
 }
 
-function poly(ctx: CanvasRenderingContext2D, ed: Editor, pts: Pt[], close = true) {
+export function poly(ctx: CanvasRenderingContext2D, ed: Editor, pts: Pt[], close = true) {
   ctx.beginPath();
   pts.forEach((p, i) => { const s = ed.toS(p.x, p.y); if (i) ctx.lineTo(s.x, s.y); else ctx.moveTo(s.x, s.y); });
   if (close) ctx.closePath();
@@ -35,7 +35,7 @@ function segs(ctx: CanvasRenderingContext2D, ed: Editor, ss: Seg2[], width: numb
 }
 
 /** Cota con su texto, desplazada off píxeles a la izquierda de a→b. */
-function dimension(ctx: CanvasRenderingContext2D, ed: Editor, a: Pt, b: Pt, off: number, text: string) {
+export function dimension(ctx: CanvasRenderingContext2D, ed: Editor, a: Pt, b: Pt, off: number, text: string) {
   const p = ed.toS(a.x, a.y), q = ed.toS(b.x, b.y), L = Math.hypot(q.x - p.x, q.y - p.y) || 1;
   const nx = (q.y - p.y) / L * off, ny = -(q.x - p.x) / L * off;
   const P = { x: p.x + nx, y: p.y + ny }, Q = { x: q.x + nx, y: q.y + ny };
@@ -49,7 +49,7 @@ function dimension(ctx: CanvasRenderingContext2D, ed: Editor, a: Pt, b: Pt, off:
 }
 
 /** Etiqueta con línea de llamada desde el punto del elemento. */
-function callout(ctx: CanvasRenderingContext2D, ed: Editor, at: Pt, dx: number, dy: number, text: string) {
+export function callout(ctx: CanvasRenderingContext2D, ed: Editor, at: Pt, dx: number, dy: number, text: string) {
   const s = ed.toS(at.x, at.y);
   ctx.beginPath(); ctx.moveTo(s.x, s.y); ctx.lineTo(s.x + dx, s.y + dy); ctx.lineTo(s.x + dx + Math.sign(dx || 1) * 6, s.y + dy);
   ctx.lineWidth = 0.5; ctx.strokeStyle = INK; ctx.stroke();
