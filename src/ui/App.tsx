@@ -99,7 +99,7 @@ function FramingLegend({ ed }: { ed: Editor }) {
 }
 
 export function App() {
-  const ed = useMemo(() => new Editor(storage()), []);
+  const ed = useMemo(() => { const e = new Editor(storage()); e.loadAids(); return e; }, []);
   useEditorVersion(ed);
   const [view, setView] = useState<ViewMode>(() => {
     try { return (localStorage.getItem("trazo-view") as ViewMode) || (innerWidth < 760 ? "plan" : "split"); } catch { return "split"; }
@@ -150,6 +150,10 @@ export function App() {
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "o") { e.preventDefault(); openRef.current?.click(); return; }
       if (e.key === "F8") { e.preventDefault(); ed.toggleOrtho(); }
       else if (e.key === "F3") { e.preventDefault(); ed.toggleOsnap(); }
+      else if (e.key === "F7") { e.preventDefault(); ed.toggleGrid(); }
+      else if (e.key === "F9") { e.preventDefault(); ed.toggleGridSnap(); }
+      else if (e.key === "F10") { e.preventDefault(); ed.togglePolar(); }
+      else if (e.key === "F11") { e.preventDefault(); ed.toggleOtrack(); }
       else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "z" && !inField) { e.preventDefault(); ed.undo(); }
       else if (inField) return;
       else if (e.key === "Escape") ed.escape();
