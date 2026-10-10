@@ -12,12 +12,14 @@ import type { Editor } from "../editor/Editor";
 import { SymbolIcon, SystemIcon } from "./MepIcons";
 import { box, Ln, map, Note, Shape, type Frame, type XY } from "./PermitSheets";
 
-export type MxKind = "mxcim" | "mxest" | "mxdet1" | "mxdet2" | "hid" | "san";
-export const MX_KINDS: MxKind[] = ["mxcim", "mxest", "mxdet1", "mxdet2", "hid", "san"];
-export const MX_TEXT = ["mxdet1", "mxdet2"];
+export type MxKind = "mxport" | "mxnotas" | "mxcim" | "mxest" | "mxdet1" | "mxdet2" | "mxdet3" | "mxarq" | "hid" | "san" | "mxinst";
+export const MX_KINDS: MxKind[] = ["mxport", "mxnotas", "mxcim", "mxest", "mxdet1", "mxdet2", "mxdet3", "mxarq", "hid", "san", "mxinst"];
+export const MX_TEXT = ["mxport", "mxnotas", "mxdet1", "mxdet2", "mxdet3", "mxarq", "mxinst"];
 
 /** Título de cada lámina del juego en metros (también las de arquitectura e instalación eléctrica). */
 export const MX_TITLES: Record<string, string> = {
+  mxport: "Portada e índice de planos",
+  mxnotas: "Notas generales y abreviaturas",
   plan: "Planta arquitectónica",
   fach: "Fachadas",
   sec: "Cortes arquitectónicos",
@@ -26,6 +28,9 @@ export const MX_TITLES: Record<string, string> = {
   mxest: "Planta estructural de losa",
   mxdet1: "Detalles de cimentación, castillos y columnas",
   mxdet2: "Detalles de trabes, losas y escaleras",
+  mxdet3: "Detalles estructurales complementarios",
+  mxarq: "Detalles arquitectónicos",
+  mxinst: "Detalles de instalaciones",
   elec: "Instalación eléctrica",
   hid: "Instalación hidráulica (plomería)",
   san: "Instalación sanitaria (hidrosanitario)",
@@ -33,7 +38,7 @@ export const MX_TITLES: Record<string, string> = {
 
 // ---------- notas ----------
 
-const NOTES: Record<string, string[]> = {
+export const NOTES: Record<string, string[]> = {
   plan: [
     "Cotas en metros; niveles en metros referidos al nivel de piso terminado (N.P.T. ±0.00).",
     "Las cotas rigen sobre el dibujo. Verificar medidas y niveles en obra antes de construir.",
@@ -119,7 +124,7 @@ const NOTES: Record<string, string[]> = {
   ],
 };
 
-const Notes = ({ items }: { items: string[] }) => <ol className="pnotes">{items.map((n, i) => <li key={i}>{n}</li>)}</ol>;
+export const Notes = ({ items, start }: { items: string[]; start?: number }) => <ol className="pnotes" start={start}>{items.map((n, i) => <li key={i}>{n}</li>)}</ol>;
 
 export function MxNotes({ content }: { content: string }) {
   const n = NOTES[content];
@@ -139,7 +144,7 @@ const STRUCT_SYMS: [string, ReactNode][] = [
   ["Trabe", <Sym><rect x={1} y={1.5} width={12} height={2} fill="#eee" stroke="#111" strokeWidth={0.25} strokeDasharray="1.6 .6" /></Sym>],
   ["Losa armada en dos direcciones", <Sym><path d="M3 2.5h8M7 .4v4.2M3 2.5l1-.6M3 2.5l1 .6M11 2.5l-1-.6M11 2.5l-1 .6" stroke="#111" strokeWidth={0.25} fill="none" /></Sym>],
 ];
-function StructLegend({ only }: { only?: string[] }) {
+export function StructLegend({ only }: { only?: string[] }) {
   return <table className="symleg"><tbody>{STRUCT_SYMS.filter(([n]) => !only || only.some((o) => n.startsWith(o))).map(([n, s]) => <tr key={n}><td>{s}</td><td>{n}</td></tr>)}</tbody></table>;
 }
 
@@ -257,7 +262,7 @@ export function MxSide({ ed, content, level }: { ed: Editor; content: string; le
       <MxNotes content="mxest" />
     </div>;
   }
-  if (content === "mxdet1" || content === "mxdet2") return <div className="tables"><h4>Especificaciones</h4><Notes items={NOTES.mxdet} /><h4>Cuadro de castillos y cadenas</h4><VerticalTable ed={ed} level={0} desplante /></div>;
+  if (content === "mxdet1" || content === "mxdet2" || content === "mxdet3") return <div className="tables"><h4>Especificaciones</h4><Notes items={NOTES.mxdet} /><h4>Cuadro de castillos y cadenas</h4><VerticalTable ed={ed} level={0} desplante /></div>;
   if (content === "elec") {
     const legend = mepSchedule(p, "elec", level), rows = loadSchedule(p, level), runs = runSchedule(p, "elec", level);
     const W = rows.reduce((t, r) => t + r.watts, 0);
@@ -299,7 +304,7 @@ export function MxSide({ ed, content, level }: { ed: Editor; content: string; le
   return null;
 }
 
-function VerticalTable({ ed, level, desplante }: { ed: Editor; level: number; desplante?: boolean }) {
+export function VerticalTable({ ed, level, desplante }: { ed: Editor; level: number; desplante?: boolean }) {
   const cols = ed.project.levels[level]?.columns ?? [], cs = [...new Map(cols.map((c) => { const s = columnSpec(c); return [s.size, s]; })).values()];
   return <table><thead><tr><th>Marca</th><th>Sección</th><th>Armado</th><th>Estribos</th></tr></thead><tbody>
     <tr><td><b>{K1.mark}</b></td><td>{K1.size}</td><td>{K1.bars}</td><td>{K1.ties}</td></tr>
@@ -310,11 +315,11 @@ function VerticalTable({ ed, level, desplante }: { ed: Editor; level: number; de
 
 // ---------- láminas de detalles (SVG en mm; dibujos en cm) ----------
 
-type Box = { x: number; y: number; w: number; h: number };
-const CONC = "#e3e3e3";
-const FONT = "'IBM Plex Sans Condensed', 'Arial Narrow', sans-serif";
+export type Box = { x: number; y: number; w: number; h: number };
+export const CONC = "#e3e3e3";
+export const FONT = "'IBM Plex Sans Condensed', 'Arial Narrow', sans-serif";
 
-function Title({ x, y, n, title, scale, sheet }: { x: number; y: number; n: number; title: string; scale: string; sheet: string }) {
+export function Title({ x, y, n, title, scale, sheet }: { x: number; y: number; n: number; title: string; scale: string; sheet: string }) {
   return (
     <g fontFamily={FONT}>
       <circle cx={x + 4} cy={y} r={3.6} fill="none" stroke="#111" strokeWidth={0.3} />
@@ -328,12 +333,12 @@ function Title({ x, y, n, title, scale, sheet }: { x: number; y: number; n: numb
   );
 }
 
-const T = ({ f, at, s, size = 1.9, anchor = "middle", rot = 0 }: { f: Frame; at: XY; s: string; size?: number; anchor?: "start" | "middle" | "end"; rot?: number }) => {
+export const T = ({ f, at, s, size = 1.9, anchor = "middle", rot = 0 }: { f: Frame; at: XY; s: string; size?: number; anchor?: "start" | "middle" | "end"; rot?: number }) => {
   const [x, y] = map(f, at);
   return <text x={x} y={y} fontSize={size} textAnchor={anchor} fontFamily={FONT} transform={rot ? `rotate(${rot} ${x} ${y})` : undefined}>{s}</text>;
 };
 /** Cota en cm entre a y b (horizontal o vertical), desplazada off unidades. */
-function Dim({ f, a, b, off, s }: { f: Frame; a: XY; b: XY; off: number; s?: string }) {
+export function Dim({ f, a, b, off, s }: { f: Frame; a: XY; b: XY; off: number; s?: string }) {
   const horiz = Math.abs(b[1] - a[1]) < 1e-6, n: XY = horiz ? [0, off] : [off, 0];
   const A: XY = [a[0] + n[0], a[1] + n[1]], B: XY = [b[0] + n[0], b[1] + n[1]], L = horiz ? Math.abs(b[0] - a[0]) : Math.abs(b[1] - a[1]);
   const tick = (p: XY) => <Ln f={f} p={[[p[0] - 1, p[1] - 1], [p[0] + 1, p[1] + 1]]} w={0.2} />;
@@ -343,9 +348,9 @@ function Dim({ f, a, b, off, s }: { f: Frame; a: XY; b: XY; off: number; s?: str
     <T f={f} at={mid} s={s ?? String(Math.round(L))} size={1.8} rot={horiz ? 0 : -90} />
   </g>;
 }
-const Bar = ({ f, at, r = 0.5 }: { f: Frame; at: XY; r?: number }) => { const [x, y] = map(f, at); return <circle cx={x} cy={y} r={r} fill="#111" />; };
+export const Bar = ({ f, at, r = 0.5 }: { f: Frame; at: XY; r?: number }) => { const [x, y] = map(f, at); return <circle cx={x} cy={y} r={r} fill="#111" />; };
 /** Sección de concreto rectangular con estribo y varillas en las esquinas (y n extra por cara). */
-function Section({ f, x0, y0, w, h, rec = 3, bars = 4, label }: { f: Frame; x0: number; y0: number; w: number; h: number; rec?: number; bars?: number; label?: string }) {
+export function Section({ f, x0, y0, w, h, rec = 3, bars = 4, label }: { f: Frame; x0: number; y0: number; w: number; h: number; rec?: number; bars?: number; label?: string }) {
   const r = rec + 1, pts: XY[] = [[x0 + r, y0 + r], [x0 + w - r, y0 + r], [x0 + w - r, y0 + h - r], [x0 + r, y0 + h - r]];
   if (bars === 6) pts.push([x0 + w / 2, y0 + r], [x0 + w / 2, y0 + h - r]);
   if (bars === 8) pts.push([x0 + w / 2, y0 + r], [x0 + w / 2, y0 + h - r], [x0 + r, y0 + h / 2], [x0 + w - r, y0 + h / 2]);
@@ -357,23 +362,23 @@ function Section({ f, x0, y0, w, h, rec = 3, bars = 4, label }: { f: Frame; x0: 
     {label && <T f={f} at={[x0 + w / 2, y0 + h + 2.5]} s={label} />}
   </g>;
 }
-const Earth = ({ f, x0, x1, y0, y1 }: { f: Frame; x0: number; x1: number; y0: number; y1: number }) => <Shape f={f} p={box(x0, y0, x1, y1)} fill="url(#mxearth)" w={0} />;
-const Block = ({ f, x0, x1, y0, y1 }: { f: Frame; x0: number; x1: number; y0: number; y1: number }) => {
+export const Earth = ({ f, x0, x1, y0, y1 }: { f: Frame; x0: number; x1: number; y0: number; y1: number }) => <Shape f={f} p={box(x0, y0, x1, y1)} fill="url(#mxearth)" w={0} />;
+export const Block = ({ f, x0, x1, y0, y1 }: { f: Frame; x0: number; x1: number; y0: number; y1: number }) => {
   const ls: ReactNode[] = [];
   for (let y = y0 + 20; y < y1 - 0.5; y += 20) ls.push(<Ln key={y} f={f} p={[[x0, y], [x1, y]]} w={0.12} />);
   return <><Shape f={f} p={box(x0, y0, x1, y1)} fill="url(#mxblock)" w={0.3} />{ls}</>;
 };
-const Break = ({ f, x0, x1, y }: { f: Frame; x0: number; x1: number; y: number }) => {
+export const Break = ({ f, x0, x1, y }: { f: Frame; x0: number; x1: number; y: number }) => {
   const m = (x0 + x1) / 2, d = (x1 - x0) * 0.12;
   return <Ln f={f} p={[[x0 - 3, y], [m - d, y], [m - d / 2, y + 3], [m + d / 2, y - 3], [m + d, y], [x1 + 3, y]]} w={0.15} />;
 };
 /** Notas en columna a la derecha del dibujo. */
-function NoteCol({ f, x, y0, items }: { f: Frame; x: number; y0: number; items: [XY, string][] }) {
+export function NoteCol({ f, x, y0, items }: { f: Frame; x: number; y0: number; items: [XY, string][] }) {
   let y = y0;
   return <>{items.map(([at, text], i) => { const el = <Note key={i} f={f} at={at} x={x} y={y} text={text} />; y += 5 + Math.floor(text.length / 35) * 2.2; return el; })}</>;
 }
 
-function Grid({ b, children }: { b: Box; children: ReactNode }) {
+export function Grid({ b, children }: { b: Box; children: ReactNode }) {
   return (
     <svg className="pdetails" style={{ left: `${b.x}mm`, top: `${b.y}mm`, width: `${b.w}mm`, height: `${b.h}mm` }} viewBox={`0 0 ${b.w} ${b.h}`}>
       <defs>
@@ -387,7 +392,7 @@ function Grid({ b, children }: { b: Box; children: ReactNode }) {
     </svg>
   );
 }
-const cellsOf = (b: Box) => { const cw = b.w / 2, ch = b.h / 2; return { cw, ch, at: (i: number) => ({ x: (i % 2) * cw, y: Math.floor(i / 2) * ch }) }; };
+export const cellsOf = (b: Box) => { const cw = b.w / 2, ch = b.h / 2; return { cw, ch, at: (i: number) => ({ x: (i % 2) * cw, y: Math.floor(i / 2) * ch }) }; };
 
 /** EST: zapata corrida, zapata aislada, castillo y columna, cadenas. */
 export function MxFoundationDetails({ box: b, p, sheet }: { box: Box; p: Project; sheet: string }) {

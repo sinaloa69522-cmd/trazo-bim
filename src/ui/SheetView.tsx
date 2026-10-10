@@ -18,6 +18,7 @@ import { FoundationDetails, StairDetails } from "./PermitDetails";
 import { CoverBody, DetailsBody, isDetails, NotesBody, PERMIT_KINDS, PermitSide, SheetNotes, SHEET_TITLES, TEXT_SHEETS, type PermitKind } from "./PermitSheets";
 import { SymbolIcon, SystemIcon } from "./MepIcons";
 import { MX_KINDS, MX_TITLES, MxFoundationDetails, MxNotes, MxSide, MxStructDetails, type MxKind } from "./MxSheets";
+import { MX_EXTRA_SIDE, MxArchDetails, MxCoverBody, MxExtraSide, MxInstDetails, MxNotesBody, MxStructDetails2 } from "./MxExtra";
 import { drawMxOverlay } from "../editor/mxRenderer";
 import { FinishSym, mepEn, NorthArrow, SheetLegend } from "./SheetLegend";
 
@@ -192,7 +193,7 @@ function Sheet({ ed, content, level, scale, zoom = 1, set }: { ed: Editor; conte
     ctx.setTransform(OVERSAMPLE, 0, 0, OVERSAMPLE, 0, 0);
     if (isText(content)) {
       ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, W, H);
-      if (content !== "cover") return;
+      if (content !== "cover" && content !== "mxport") return;
       // portada: la fachada sur en la mitad de arriba
       const el = elevation(p, "S"), top = H * 0.48, ew = el.u1 - el.u0, eh = el.z1 - el.z0;
       if (!(ew > 0 && eh > 0)) return;
@@ -252,6 +253,11 @@ function Sheet({ ed, content, level, scale, zoom = 1, set }: { ed: Editor; conte
       {content === "details3" && <StairDetails box={planBox()} />}
       {content === "mxdet1" && <MxFoundationDetails box={planBox()} p={p} sheet={sheetNo} />}
       {content === "mxdet2" && <MxStructDetails box={planBox()} p={p} sheet={sheetNo} />}
+      {content === "mxdet3" && <MxStructDetails2 box={planBox()} p={p} sheet={sheetNo} />}
+      {content === "mxarq" && <MxArchDetails box={planBox()} sheet={sheetNo} />}
+      {content === "mxinst" && <MxInstDetails box={planBox()} sheet={sheetNo} />}
+      {content === "mxport" && <MxCoverBody ed={ed} box={planBox()} />}
+      {content === "mxnotas" && <MxNotesBody box={planBox()} />}
       <div className="viewtitle" style={{ left: `${planBox().x + 6}mm`, top: `${planBox().y + planBox().h + 1}mm` }}>
         <span className="vt-n">{isText(content) ? planName.toUpperCase() : content === "elev" ? t("ALZADOS", "EXTERIOR ELEVATIONS") : content === "fach" ? views.map((v) => v.label).join(t(" y ", " & ")).toUpperCase() : content === "sec" ? t("SECCIONES", "BUILDING SECTIONS") : content === "site" ? planName.toUpperCase() : planName ? `${lv.name} · ${planName}`.toUpperCase() : lv.name.toUpperCase()}</span>
         {!isText(content) && <>
@@ -261,7 +267,7 @@ function Sheet({ ed, content, level, scale, zoom = 1, set }: { ed: Editor; conte
       </div>
       <div className="sheetnorth" style={{ left: `${planBox().x + planBox().w - 26}mm`, top: `${planBox().y + planBox().h - 9}mm` }}><NorthArrow /></div>
       <aside className="sheetside" style={{ left: `${sheetSize().w - FRAME - SIDE}mm`, top: `${FRAME}mm`, width: `${SIDE}mm`, height: `${sheetSize().h - 2 * FRAME}mm` }}>
-        {permit ? <PermitSide ed={ed} content={content} level={level} set={set} /> : !en && ((MX_KINDS as string[]).includes(content) || content === "elec") ? <MxSide ed={ed} content={content} level={level} /> : content === "elec" || content === "plum" ? <MepTables p={p} disc={content} level={level} notes={en} /> : <div className="tables">
+        {permit ? <PermitSide ed={ed} content={content} level={level} set={set} /> : MX_EXTRA_SIDE.includes(content) ? <MxExtraSide ed={ed} content={content} set={set ?? mxSet(ed)} /> : !en && ((MX_KINDS as string[]).includes(content) || content === "elec") ? <MxSide ed={ed} content={content} level={level} /> : content === "elec" || content === "plum" ? <MepTables p={p} disc={content} level={level} notes={en} /> : <div className="tables">
           {content === "fach" && <>
             <h4>{t("Acabados de fachada", "Exterior finishes")}</h4>
             {finishes.length ? <table><tbody>{finishes.map(([name, f]) => <tr key={name}>{f ? <><td className="sw"><FinishSym f={f} /></td><td>{name}</td></> : <td colSpan={2}>{name}</td>}</tr>)}</tbody></table> : <p className="empty">{t("Muros sin tipo asignado.", "No wall types assigned.")}</p>}
@@ -357,17 +363,20 @@ export function mxSet(ed: Editor): PermitEntry[] {
     out.push({ content, level, scale, no: `${prefix}-${String(n).padStart(2, "0")}`, title });
   };
   const lvTitle = (c: Content, i: number) => (many ? `${MX_TITLES[c]} · ${lvs[i].name}` : MX_TITLES[c]);
+  add("mxport", 0, "G", 50); add("mxnotas", 0, "G", 50);
   lvs.forEach((_, i) => add("plan", i, "ARQ", planScale, lvTitle("plan", i)));
   const fs = autoScaleOf(ed, "fach", 0);
   add("fach", 0, "ARQ", fs, "Fachadas sur y norte"); add("fach", 1, "ARQ", fs, "Fachadas este y oeste");
   if (allSections(ed.project).length) add("sec", 0, "ARQ", autoScaleOf(ed, "sec", 0));
   add("elev", 0, "ARQ", autoScaleOf(ed, "elev", 0));
+  add("mxarq", 0, "ARQ", 10);
   add("mxcim", 0, "EST");
   lvs.forEach((_, i) => add("mxest", i, "EST", planScale, lvTitle("mxest", i)));
-  add("mxdet1", 0, "EST", 25); add("mxdet2", 0, "EST", 25);
+  add("mxdet1", 0, "EST", 25); add("mxdet2", 0, "EST", 25); add("mxdet3", 0, "EST", 25);
   lvs.forEach((_, i) => add("elec", i, "IE", planScale, lvTitle("elec", i)));
   lvs.forEach((_, i) => add("hid", i, "IH", planScale, lvTitle("hid", i)));
   lvs.forEach((_, i) => add("san", i, "IS", planScale, lvTitle("san", i)));
+  add("mxinst", 0, "DI", 20);
   return out;
 }
 

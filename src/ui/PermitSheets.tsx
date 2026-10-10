@@ -13,7 +13,7 @@ import { SheetLegend } from "./SheetLegend";
 export type PermitKind = "cover" | "notes" | "site" | "found" | "floorfr" | "wallfr" | "rooffr" | "details" | "details2" | "details3" | "hvac";
 export const PERMIT_KINDS: PermitKind[] = ["cover", "notes", "site", "found", "floorfr", "wallfr", "rooffr", "details", "details2", "details3", "hvac"];
 /** Láminas sin dibujo de planta: se maquetan en HTML/SVG. */
-export const TEXT_SHEETS = ["cover", "notes", "details", "details2", "details3", "mxdet1", "mxdet2"];
+export const TEXT_SHEETS = ["cover", "notes", "details", "details2", "details3", "mxdet1", "mxdet2", "mxdet3", "mxarq", "mxinst", "mxport", "mxnotas"];
 /** Láminas de detalles constructivos (A-501, A-502, A-503). */
 export const isDetails = (c: string) => c.startsWith("details");
 

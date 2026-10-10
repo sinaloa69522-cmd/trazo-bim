@@ -234,6 +234,8 @@ dialog .acts span{margin-right:auto;color:var(--muted);font-size:12px}
 .sheet .pgnotes{column-count:3;column-gap:7mm;column-fill:balance;font-size:8.2pt;line-height:1.35}
 .sheet .pcover .pc-map{height:38mm;border:.3mm dashed #777;display:grid;place-items:center;color:#777;font-size:7pt;text-align:center}
 .sheet .pgnotes section{break-inside:auto}
+.sheet .pgnotes.mx{font-size:8.6pt}
+.sheet .pgnotes.mx section{break-inside:avoid}
 .sheet .pgnotes h4:first-child{margin-top:0}
 .sheet .pgnotes ol{margin:0;padding-left:4.5mm}
 .sheet .pgnotes li{margin-bottom:1mm}
