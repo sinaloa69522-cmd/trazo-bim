@@ -6,7 +6,7 @@ import {
   attachWalls, liftBuriedRoofs, cloneModel, emptyProject, newLevel, nextId, nextSectionName, normalizeProject, sampleProject, type Level, type Project, type ProjectInfo,
   type Deck, type DeckKind, type Dim, type LayerId, type MarkKind, type Model, type RoofKind, type RunSystem, type Stair, type StairKind, type Wall,
 } from "../core/model";
-import { autoDims } from "../core/autodim";
+import { allAutoDims } from "../core/autodim";
 import { axes } from "../core/mxStruct";
 import { fmtArea, fmtElev, fmtLen, fmtSmall, imperial, parseLen, setUnitSystem, FT, IN, type UnitSystem } from "../core/units";
 import { levelText, MARK_KINDS, markHit, markPts, nextDetailNum } from "../core/marks";
@@ -1036,10 +1036,17 @@ export class Editor {
     this.message = on ? "Las cotas de fachada se ponen y se rehacen solas mientras dibujas." : "Cotas automáticas desactivadas. Las tuyas se conservan.";
   }
 
+  /** Cotas interiores (ancho y largo libres) de cada habitación, dentro del acotado automático. */
+  get innerDims() { return this.project.innerDims !== false; }
+  setInnerDims(on: boolean) {
+    this.edit(() => { this.project.innerDims = on; });
+    this.message = on ? "Cada habitación lleva su ancho y su largo libres, a cara de muro." : "Cotas interiores quitadas; las de fachada se conservan.";
+  }
+
   /** Rehace las cotas automáticas de cada nivel si han cambiado sus muros o huecos. */
   private refreshAutoDims() {
     for (const m of this.project.levels) {
-      const want = autoDims(m), have = m.dims.filter((d) => d.auto);
+      const want = allAutoDims(m, this.innerDims), have = m.dims.filter((d) => d.auto);
       const key = (d: Omit<Dim, "id">) => [d.x1, d.y1, d.x2, d.y2, d.off].map((v) => v.toFixed(3)).join(",");
       if (want.length === have.length && want.every((d, i) => key(d) === key(have[i]))) continue;
       const gone = new Set(have.map((d) => d.id));
@@ -1051,7 +1058,7 @@ export class Editor {
 
   /** Acota las fachadas del nivel: sustituye las cotas automáticas anteriores y respeta las dibujadas a mano. */
   autoDimension() {
-    const m = this.model, dims = autoDims(m);
+    const m = this.model, dims = allAutoDims(m, this.innerDims);
     if (!dims.length) { this.log("No hay muros de fachada paralelos a los ejes que acotar."); return; }
     this.snapshot();
     const removed = m.dims.filter((d) => d.auto).length;
@@ -1060,7 +1067,8 @@ export class Editor {
     for (const d of dims) m.dims.push({ id: nextId(m), ...d });
     this.vis.cotas = true;
     this.project.autoDims = true;
-    this.message = `${dims.length} cotas exteriores en cadena (huecos, muros y total)${removed ? ", sustituyendo las automáticas anteriores" : ""}. Las tuyas se conservan.`;
+    const inner = dims.filter((d) => d.inner).length;
+    this.message = `${dims.length - inner} cotas exteriores en cadena (huecos, muros y total)${inner ? ` y ${inner} interiores` : ""}${removed ? ", sustituyendo las automáticas anteriores" : ""}. Las tuyas se conservan.`;
     this.changed();
   }
 

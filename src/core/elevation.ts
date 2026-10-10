@@ -234,3 +234,62 @@ function cutPolygon(ps: P3[], f: (q: Pt) => number, view: (q: Pt) => { u: number
   hits.sort((x, y) => x.u - y.u || x.z - y.z);
   return [hits[0], hits[hits.length - 1]];
 }
+
+/** ¿Está q dentro del polígono (u, z)? */
+export function insideFace(q: { u: number; z: number }, pts: { u: number; z: number }[]) {
+  let r = false;
+  for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
+    const a = pts[i], b = pts[j];
+    if ((a.z > q.z) !== (b.z > q.z) && q.u < ((b.u - a.u) * (q.z - a.z)) / (b.z - a.z) + a.u) r = !r;
+  }
+  return r;
+}
+
+const ext = (f: EFace) => {
+  let u0 = Infinity, u1 = -Infinity, z0 = Infinity, z1 = -Infinity;
+  for (const q of f.pts) { u0 = Math.min(u0, q.u); u1 = Math.max(u1, q.u); z0 = Math.min(z0, q.z); z1 = Math.max(z1, q.z); }
+  return { u0, u1, z0, z1 };
+};
+const uniq = (vs: number[]) => [...new Set(vs.map((v) => Math.round(v * 1000) / 1000))].sort((a, b) => a - b).filter((v, i, a) => i === 0 || v - a[i - 1] > 0.02);
+
+/**
+ * Cadenas de cotas de un alzado o una sección, de dentro hacia fuera:
+ * horizontales bajo el terreno (huecos vistos o muros cortados, y el total)
+ * y verticales a la izquierda (antepechos y dinteles, niveles y la altura total).
+ */
+export function elevationDims(el: Elevation): { h: number[][]; v: number[][] } {
+  const cut = el.faces.some((f) => f.cut);
+  // carpinterías que se ven: no las tapa ninguna cara pintada después
+  const visible = el.faces.filter((f, i) => (f.kind === "glass" || f.kind === "door") && !f.cut && (() => {
+    const e = ext(f), q = { u: (e.u0 + e.u1) / 2, z: (e.z0 + e.z1) / 2 };
+    return !el.faces.slice(i + 1).some((g) => !g.cut && g.kind !== "glass" && g.kind !== "door" && insideFace(q, g.pts));
+  })()).map(ext);
+  const walls = el.faces.filter((f) => f.kind === "wall" || (f.cut && f.kind === "cut")).map(ext);
+  if (!walls.length) return { h: [], v: [] };
+  const lo = Math.min(...el.levels.map((l) => l.elev), 0);
+  // muros de la planta más baja: los cortados (estrechos y altos) o las caras vistas que arrancan del suelo
+  const base = walls.filter((w) => w.z0 < lo + 0.05 && w.z1 > lo + 1);
+  const u0 = Math.min(...base.map((w) => w.u0)), u1 = Math.max(...base.map((w) => w.u1));
+  const inner = cut
+    ? el.faces.filter((f) => f.cut && f.kind === "cut").map(ext)
+      // trozos de muro cortados en la planta baja (también antepechos y dinteles si el corte pasa por un hueco)
+      .filter((w) => w.u1 - w.u0 < 0.8 && w.z0 < lo + 2.4 && w.z1 > lo + 0.3).flatMap((w) => [w.u0, w.u1])
+    : visible.flatMap((o) => [o.u0, o.u1]);
+  const clamp = (u: number) => Math.max(u0, Math.min(u1, u));
+  const h: number[][] = [];
+  if (isFinite(u0) && u1 - u0 > 0.1) {
+    const chain = uniq([u0, ...inner.map(clamp), u1]);
+    if (chain.length > 2) h.push(chain);
+    h.push([u0, u1].map((u) => Math.round(u * 1000) / 1000));
+  }
+  // en vertical: los antepechos y dinteles vistos entre niveles, los niveles y el total
+  // coronación de los muros de cada planta (el arranque del alero o de la azotea)
+  const tops = el.levels.map((l) => Math.max(-Infinity, ...walls.filter((w) => Math.abs(w.z0 - l.elev) < 0.05 && w.z1 - w.z0 > 1).map((w) => w.z1))).filter((z) => isFinite(z));
+  const lv = uniq([...el.levels.map((l) => l.elev).filter((z) => z < el.z1 - 0.05), ...tops.filter((z) => z < el.z1 - 0.05), 0, el.z1]).filter((z) => z >= lo - 1e-6);
+  const v: number[][] = [];
+  const ops = uniq([...lv, ...visible.flatMap((o) => [o.z0, o.z1])]);
+  if (ops.length > lv.length) v.push(ops);
+  if (lv.length > 2) v.push(lv);
+  if (lv.length > 1) v.push([lv[0], lv[lv.length - 1]]);
+  return { h, v };
+}

@@ -68,3 +68,52 @@ export function autoDims(m: Model): Omit<Dim, "id">[] {
   }
   return out;
 }
+
+/** Separación de las cotas interiores respecto a la cara del muro, dentro de la habitación. */
+export const INNER_OFFSET = 0.45;
+
+/**
+ * Cotas interiores de cada habitación, a caras de muro: el ancho libre junto al muro de arriba
+ * y el largo libre junto al de la izquierda, para no pisar el rótulo del centro.
+ * Se buscan los muros paralelos a los ejes más cercanos a la semilla de la habitación.
+ */
+export function interiorDims(m: Model): Omit<Dim, "id">[] {
+  const out: Omit<Dim, "id">[] = [], seen = new Set<string>();
+  const ortho = m.walls.map((w) => ({ w, d: dir(w) })).filter(({ d }) => d.L > 0.05 && (Math.abs(d.ux) < 0.01 || Math.abs(d.uy) < 0.01));
+  /** Caras de muro más cercanas a p hacia un lado y otro, a lo largo de x (horiz) o de y. */
+  const faces = (p: Pt, horiz: boolean): [number, number] | null => {
+    let lo = -Infinity, hi = Infinity;
+    const c = horiz ? p.x : p.y, q = horiz ? p.y : p.x;
+    for (const { w, d } of ortho) {
+      // el rayo horizontal choca con muros verticales, y al revés
+      if (horiz ? Math.abs(d.ux) > 0.01 : Math.abs(d.uy) > 0.01) continue;
+      const a = horiz ? Math.min(w.y1, w.y2) : Math.min(w.x1, w.x2), b = horiz ? Math.max(w.y1, w.y2) : Math.max(w.x1, w.x2);
+      if (q < a - w.thick / 2 || q > b + w.thick / 2) continue;
+      const k = horiz ? w.x1 : w.y1, h = w.thick / 2;
+      if (k + h <= c && k + h > lo) lo = k + h;
+      if (k - h >= c && k - h < hi) hi = k - h;
+    }
+    return isFinite(lo) && isFinite(hi) ? [lo, hi] : null;
+  };
+  for (const r of m.rooms) {
+    const v = faces(r, false), h = faces(r, true);
+    if (!v || !h) continue;
+    // el ancho se mide junto al muro de arriba y el largo junto al de la izquierda
+    const yh = v[1] - v[0] > 2 * INNER_OFFSET + 0.3 ? v[0] + INNER_OFFSET : r.y, hx = faces({ x: r.x, y: yh }, true);
+    const xv = h[1] - h[0] > 2 * INNER_OFFSET + 0.3 ? h[0] + INNER_OFFSET : r.x, vy = faces({ x: xv, y: r.y }, false);
+    const add = (a: Pt, b: Pt) => {
+      if (Math.hypot(b.x - a.x, b.y - a.y) < 0.3) return;
+      const d = { x1: r3(a.x), y1: r3(a.y), x2: r3(b.x), y2: r3(b.y), off: 0, auto: true, inner: true };
+      const k = [d.x1, d.y1, d.x2, d.y2].join(",");
+      if (!seen.has(k)) { seen.add(k); out.push(d); }
+    };
+    if (hx) add({ x: hx[0], y: yh }, { x: hx[1], y: yh });
+    if (vy) add({ x: xv, y: vy[0] }, { x: xv, y: vy[1] });
+  }
+  return out;
+}
+
+/** Todas las cotas automáticas de un nivel: las exteriores en cadena y, si se piden, las interiores. */
+export function allAutoDims(m: Model, inner = true): Omit<Dim, "id">[] {
+  return [...autoDims(m), ...(inner ? interiorDims(m) : [])];
+}

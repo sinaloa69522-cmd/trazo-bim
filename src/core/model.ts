@@ -6,7 +6,7 @@ import type { PatLine } from "./hatch";
 import type { FoundationKind } from "./foundation";
 import { autoRoute, mepDef, sanitaryPoints } from "./mep";
 import { typeForThick } from "./wallTypes";
-import { autoDims } from "./autodim";
+import { allAutoDims } from "./autodim";
 
 export interface Wall {
   id: number;
@@ -53,6 +53,8 @@ export interface Dim extends Line {
   off: number;
   /** Creada por el acotado automático: se sustituye al volver a acotar */
   auto?: boolean;
+  /** Automática interior (ancho y largo libres de una habitación) */
+  inner?: boolean;
 }
 
 export interface Room {
@@ -315,6 +317,8 @@ export interface Project {
   foundation?: FoundationKind;
   /** false: las cotas de fachada no se rehacen solas al dibujar */
   autoDims?: boolean;
+  /** false: sin cotas interiores automáticas de las habitaciones */
+  innerDims?: boolean;
 }
 
 export const defaultInfo = (): ProjectInfo => ({ name: "Vivienda unifamiliar", author: "", client: "", date: new Date().toISOString().slice(0, 10) });
@@ -439,14 +443,14 @@ export function sampleModel(): Model {
   O(c, 0.82, "door", 1.0); O(c, 0.3, "window", 2.0);
   O(d, 0.27, "window", 1.0); O(b, 0.5, "window", 1.5);
   O(e, 0.72, "door", 0.8); O(f, 0.62, "door", 0.8);
-  // las cotas de fachada las pone el acotado automático
-  m.dims.push(...autoDims(m).map((d) => ({ id: nextId(m), ...d })));
   m.lines.push({ id: nextId(m), x1: -1.2, y1: 8.4, x2: 11.2, y2: 8.4 });
   m.rooms.push(
     { id: nextId(m), x: 3, y: 2, name: "Dormitorio" },
     { id: nextId(m), x: 3, y: 5.5, name: "Baño" },
     { id: nextId(m), x: 8, y: 3.5, name: "Estar-comedor" },
   );
+  // las cotas de fachada y las interiores las pone el acotado automático
+  m.dims.push(...allAutoDims(m).map((d) => ({ id: nextId(m), ...d })));
   return m;
 }
 

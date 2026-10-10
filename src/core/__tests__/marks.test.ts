@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { Editor } from "../../editor/Editor";
 import { toDxf } from "../dxf";
-import { elevation, section } from "../elevation";
+import { elevation, elevationDims, section } from "../elevation";
 import { levelText } from "../marks";
 import { normalizeProject } from "../model";
 import { transformElements, translation } from "../transform";
@@ -83,5 +83,30 @@ describe("símbolos de anotación", () => {
     expect(se.tops).toHaveLength(0);
     ed.flipSection(ed.project.levels[0].sections[0].id);
     expect(section(ed.project, ed.project.levels[0].sections[0]).tops[0].elev).toBeCloseTo(el.tops[0].elev);
+  });
+});
+
+describe("cotas de cortes y fachadas", () => {
+  it("la fachada sur acota sus ventanas, el total y las alturas", () => {
+    const ed = new Editor();
+    const d = elevationDims(elevation(ed.project, "S"));
+    // total a cara exterior: 10,25
+    const total = d.h[d.h.length - 1];
+    expect(total[1] - total[0]).toBeCloseTo(10.25);
+    // la cadena de huecos tiene las dos ventanas de la fachada (cuatro bordes) entre los extremos
+    expect(d.h[0]).toHaveLength(6);
+    // en vertical: antepecho 0,90 y ventana de 1,20 hasta 2,10; luego la altura total
+    expect(d.v[0].slice(0, 3)).toEqual([0, 0.9, 2.1]);
+    expect(d.v[d.v.length - 1][0]).toBe(0);
+    // los niveles: suelo, coronación de muros a 2,70 y cumbrera
+    expect(d.v[1].slice(0, 2)).toEqual([0, 2.7]);
+  });
+
+  it("el corte acota los muros cortados con su espesor", () => {
+    const ed = new Editor();
+    const d = elevationDims(section(ed.project, ed.project.levels[0].sections[0]));
+    const c = d.h[0], spans = c.slice(1).map((u, i) => Math.round((u - c[i]) * 1000) / 1000);
+    // muro de 0,25, dormitorio, tabique de 0,12, estar y muro de 0,25
+    expect(spans).toEqual([0.25, 5.815, 0.12, 3.815, 0.25]);
   });
 });

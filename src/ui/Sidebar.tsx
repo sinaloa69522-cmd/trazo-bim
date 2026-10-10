@@ -730,11 +730,12 @@ function DimTools({ ed }: { ed: Editor }) {
       <h2>Cotas</h2>
       <p className="hint">Clic en dos puntos y un tercero para separar la cota del dibujo.</p>
       <label className="check"><input type="checkbox" checked={ed.liveDims} onChange={(e) => ed.setLiveDims(e.target.checked)} /> Cotas de fachada automáticas al dibujar</label>
+      <label className="check"><input type="checkbox" checked={ed.innerDims} disabled={!ed.liveDims} onChange={(e) => ed.setInnerDims(e.target.checked)} /> Cotas interiores de cada habitación</label>
       <button className="btn primary wide" onClick={() => ed.autoDimension()} title="Comando AC">
         {auto ? "Rehacer cotas de fachada" : "Acotar fachadas"}
       </button>
       {auto > 0 && <button className="btn wide" onClick={() => ed.clearAutoDims()}>Quitar cotas automáticas ({auto})</button>}
-      <p className="hint">Pone tres cadenas por fachada: huecos, muros que acometen y total, a cara exterior.</p>
+      <p className="hint">Pone tres cadenas por fachada (huecos, muros que acometen y total, a cara exterior) y el ancho y el largo libres de cada habitación. Los cortes y las fachadas de las láminas se acotan solos.</p>
     </section>
   );
 }
