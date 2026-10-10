@@ -1,3 +1,4 @@
+import { saveFile } from "./saveFile";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { toDxf } from "../core/dxf";
 import { toIfc } from "../core/ifc";
@@ -32,10 +33,7 @@ export function ExportDialog({ ed, format, onClose }: { ed: Editor; format: Expo
   useEffect(() => { ref.current?.showModal(); }, []);
 
   const download = () => {
-    const url = URL.createObjectURL(new Blob([text], { type: F.mime }));
-    const a = document.createElement("a");
-    a.href = url; a.download = file; a.click();
-    URL.revokeObjectURL(url);
+    void saveFile(file, text, F.mime);
     setInfo(`Descargado como ${file}.`);
   };
 
