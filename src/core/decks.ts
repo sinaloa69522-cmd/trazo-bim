@@ -67,7 +67,7 @@ export interface DeckGeom {
   steps: Steps | null;
   /** Tramos de barandal (guard) sobre el borde: sin el lado de la casa ni el hueco de la escalera */
   guards: [Pt, Pt][];
-  /** Pasamanos de la escalera (a ambos lados) con su arranque abajo: [arriba, abajo] */
+  /** Pasamanos de la escalera (a ambos lados): [arriba, abajo], con z sobre el terreno */
   handrails: [P3, P3][];
   /** Barandal obligatorio: más de 30" sobre el terreno (R312.1.1) */
   guardRequired: boolean;
@@ -120,8 +120,9 @@ export function deckGeom(d: Deck, walls: Wall[] = []): DeckGeom {
     });
     if (steps && steps.n >= 2) for (const p of [steps.a, steps.b]) {
       const inset = { x: p.x + (p === steps.a ? 1 : -1) * steps.along.x * 2 * IN, y: p.y + (p === steps.a ? 1 : -1) * steps.along.y * 2 * IN };
+      // sigue la línea de las narices de los peldaños (R311.7.8.1: 34" a 38" sobre ella)
       const r = steps.run - steps.tread / 2;
-      handrails.push([{ ...inset, z: H + HANDRAIL_H }, { x: inset.x + steps.out.x * r, y: inset.y + steps.out.y * r, z: steps.riser + HANDRAIL_H }]);
+      handrails.push([{ ...inset, z: H + HANDRAIL_H }, { x: inset.x + steps.out.x * r, y: inset.y + steps.out.y * r, z: H - (r * steps.riser) / steps.tread + HANDRAIL_H }]);
     }
   }
   // quita los tramos nulos
@@ -177,7 +178,7 @@ export function deckBoxes(d: Deck, walls: Wall[], e: number): Box[] {
       const end = { x: p.x + s.out.x * s.run, y: p.y + s.out.y * s.run };
       out.push({ a: { ...p, z: top - th - 5 * IN }, b: { ...end, z: e + 3 * IN }, w: 1.5 * IN, h: 11.25 * IN, color: PT_COLOR });
     }
-    for (const [hi, lo] of g.handrails) out.push(...rail(hi, lo, hi.z - HANDRAIL_H, lo.z - HANDRAIL_H, rt.id, rt.color));
+    for (const [hi, lo] of g.handrails) out.push(...rail(hi, lo, e + hi.z - HANDRAIL_H, e + lo.z - HANDRAIL_H, rt.id, rt.color));
   }
   // porche: columnas en el borde exterior, viga y cubierta a un agua hacia fuera de la casa
   if (t.roof) out.push(...porchRoof(d, g, top));
