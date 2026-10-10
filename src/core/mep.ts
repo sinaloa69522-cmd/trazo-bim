@@ -74,6 +74,11 @@ export const MEP: MepDef[] = [
     draw: () => [rect(-0.25, -0.06, 0.25, 0.1), { pts: [{ x: -0.25, y: -0.06 }, { x: 0.25, y: -0.06 }, { x: -0.25, y: 0.1 }], closed: true, fill: true }],
   },
   {
+    kind: "acometida", label: "Acometida y medidor", disc: "elec", sys: "elec", h: 1.6, wall: true, circuit: "", text: "M",
+    ifc: { cls: "IFCFLOWMETER", type: "ENERGYMETER" },
+    draw: () => [rect(-0.2, -0.06, 0.2, 0.2), circle(0, 0.07, 0.09, false, 14)],
+  },
+  {
     kind: "toma-af", label: "Toma de agua fría", disc: "plum", sys: "af", h: 0.5, wall: false, circuit: "",
     ifc: { cls: "IFCVALVE", type: "ISOLATING" },
     draw: () => [circle(0, 0, 0.06, true, 12)],
@@ -107,6 +112,16 @@ export const MEP: MepDef[] = [
     kind: "contador", label: "Contador de agua", disc: "plum", sys: "af", h: 0.4, wall: true, circuit: "", text: "CA",
     ifc: { cls: "IFCFLOWMETER", type: "WATERMETER" },
     draw: () => [rect(-0.18, -0.06, 0.18, 0.16)],
+  },
+  {
+    kind: "registro", label: "Registro sanitario 40×60 cm", disc: "plum", sys: "san", h: 0, wall: false, circuit: "", text: "R",
+    ifc: { cls: "IFCDISTRIBUTIONCHAMBERELEMENT", type: "INSPECTIONCHAMBER" },
+    draw: () => [rect(-0.2, -0.3, 0.2, 0.3), rect(-0.14, -0.24, 0.14, 0.24)],
+  },
+  {
+    kind: "tinaco", label: "Tinaco 1100 L", disc: "plum", sys: "af", h: 0, wall: false, circuit: "", text: "T",
+    ifc: { cls: "IFCTANK", type: "STORAGE" },
+    draw: () => [circle(0, 0, 0.55, false, 28), circle(0, 0, 0.5, false, 28)],
   },
   {
     kind: "termo", label: "Termo de agua caliente", disc: "plum", sys: "ac", h: 1.4, wall: true, circuit: "C4", text: "ACS",

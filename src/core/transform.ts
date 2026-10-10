@@ -2,7 +2,7 @@ import type { Pt } from "./geometry";
 import { mapLines } from "./hatch";
 import { nextId, type Model } from "./model";
 
-export type ElementType = "wall" | "opening" | "line" | "dim" | "room" | "slab" | "roof" | "stair" | "deck" | "furniture" | "section" | "text" | "fixture" | "run" | "underlay" | "hatch";
+export type ElementType = "wall" | "opening" | "line" | "dim" | "room" | "slab" | "roof" | "stair" | "deck" | "column" | "furniture" | "section" | "text" | "fixture" | "run" | "underlay" | "hatch";
 export interface ElementRef { type: ElementType; id: number }
 
 type Seg = { x1: number; y1: number; x2: number; y2: number };
@@ -33,7 +33,7 @@ function applySeg(s: Seg, t: Xform) {
 }
 
 const listOf = (m: Model, type: ElementType) =>
-  ({ wall: m.walls, opening: m.openings, line: m.lines, dim: m.dims, room: m.rooms, slab: m.slabs, roof: m.roofs, stair: m.stairs, deck: m.decks, furniture: m.furniture, section: m.sections, text: m.texts, fixture: m.fixtures, run: m.runs, underlay: m.underlays, hatch: m.hatches })[type] as { id: number }[];
+  ({ wall: m.walls, opening: m.openings, line: m.lines, dim: m.dims, room: m.rooms, slab: m.slabs, roof: m.roofs, stair: m.stairs, deck: m.decks, column: m.columns, furniture: m.furniture, section: m.sections, text: m.texts, fixture: m.fixtures, run: m.runs, underlay: m.underlays, hatch: m.hatches })[type] as { id: number }[];
 
 export function findElement(m: Model, r: ElementRef) {
   return listOf(m, r.type).find((o) => o.id === r.id) ?? null;
@@ -55,6 +55,12 @@ export function transformElements(m: Model, refs: ElementRef[], t: Xform, copy: 
     if (r.type === "room") { const p = t.map(el); el.x = p.x; el.y = p.y; if (copy) el.name = `${el.name} (copia)`; }
     // el texto solo cambia de sitio: reflejado seguiría teniendo que leerse
     else if (r.type === "text") { const p = t.map(el); el.x = p.x; el.y = p.y; }
+    // la columna se lleva por su centro; girada 90° cambia el lado en x por el lado en y
+    else if (r.type === "column") {
+      const p = t.map(el), q = t.map({ x: el.x + 1, y: el.y });
+      el.x = p.x; el.y = p.y;
+      if (Math.abs(q.y - p.y) > Math.abs(q.x - p.x)) [el.w, el.d] = [el.d, el.w];
+    }
     else if (r.type === "run") el.pts = el.pts.map(t.map);
     // la trama de la biblioteca va referida al origen; la importada se lleva con el sombreado
     else if (r.type === "hatch") { el.loops = el.loops.map((q: Pt[]) => q.map(t.map)); if (el.lines) el.lines = mapLines(el.lines, t.map); }
@@ -102,6 +108,8 @@ export function deleteElements(m: Model, refs: ElementRef[]) {
   m.slabs = m.slabs.filter((r) => !slabs.has(r.id));
   const roofs = ids("roof"), stairs = ids("stair"), decks = ids("deck");
   m.decks = m.decks.filter((r) => !decks.has(r.id));
+  const cols = ids("column");
+  m.columns = m.columns.filter((r) => !cols.has(r.id));
   m.roofs = m.roofs.filter((r) => !roofs.has(r.id));
   m.stairs = m.stairs.filter((r) => !stairs.has(r.id));
   const furn = ids("furniture");

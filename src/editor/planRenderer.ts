@@ -3,7 +3,7 @@ import { deckGeom, deckType } from "../core/decks";
 import { dimGeom, dimOffset, dir, loc, pieces, roofGeom, stairSteps, textBox, type Pt } from "../core/geometry";
 import { furnitureStrokes, type Stroke } from "../core/furniture";
 import { discOfSystem, fixtureStrokes, fixtureTextAt, mepDef, systemDef, type SymStroke } from "../core/mep";
-import type { Deck, Dim, Fixture, HatchRegion, Model, Roof, Run, Section, Stair, Wall } from "../core/model";
+import type { Column, Deck, Dim, Fixture, HatchRegion, Model, Roof, Run, Section, Stair, Wall } from "../core/model";
 import { hatchSegments, isSolid, patternLines, patternSpacing, type HatchSegments } from "../core/hatch";
 import { RC } from "../core/rooms";
 import { openingSymbol } from "../core/openingStyles";
@@ -239,6 +239,11 @@ export function drawPlan(ctx: CanvasRenderingContext2D, ed: Editor, C: PlanColor
     const hl = isSel("stair", st.id) || (hover?.type === "stair" && hover.id === st.id);
     drawStair(ctx, ed, st, hl ? C.accent : C.fg, hl ? 2 : 1);
   }
+  // columnas: sección cortada, rellena como el muro
+  if (ed.vis.columnas) for (const c of m.columns) {
+    const hl = isSel("column", c.id) || (hover?.type === "column" && hover.id === c.id);
+    drawColumn(ctx, ed, c, hl ? C.accent : C.wall, hl ? 2 : 1);
+  }
   if (ed.vis.cubiertas) for (const r of m.roofs) {
     const hl = isSel("roof", r.id) || (hover?.type === "roof" && hover.id === r.id);
     drawRoof(ctx, ed, r, hl ? C.accent : C.door, hl ? 2 : 1);
@@ -423,6 +428,11 @@ export function drawPlan(ctx: CanvasRenderingContext2D, ed: Editor, C: PlanColor
     strokes(furnitureStrokes({ kind: ed.defaults.furnKind, x: p.x, y: p.y, rot: ed.defaults.furnRot }), C.accent, 1.2);
     ctx.globalAlpha = 1;
   }
+  if (ed.tool === "column" && ed.mouse.in) {
+    ctx.globalAlpha = 0.6;
+    drawColumn(ctx, ed, { id: 0, x: p.x, y: p.y, w: ed.defaults.colW, d: ed.defaults.colW }, C.accent, 1.2);
+    ctx.globalAlpha = 1;
+  }
   // mecanismo o punto que se va a colocar
   if (ed.tool === "fixture" && ed.mouse.in) {
     const c = ed.fixtureCandidate(p);
@@ -510,6 +520,13 @@ function path(ctx: CanvasRenderingContext2D, ed: Editor, pts: Pt[], close = fals
   pts.forEach((p, i) => { const s = ed.toS(p.x, p.y); if (i) ctx.lineTo(s.x, s.y); else ctx.moveTo(s.x, s.y); });
   if (close) ctx.closePath();
   ctx.stroke();
+}
+
+/** Columna en planta: sección cortada rellena con su contorno. */
+export function drawColumn(ctx: CanvasRenderingContext2D, ed: Editor, c: Column, col: string, lw: number) {
+  const s = ed.toS(c.x, c.y), w = c.w * ed.view.scale, d = c.d * ed.view.scale;
+  ctx.beginPath(); ctx.rect(s.x - w / 2, s.y - d / 2, w, d);
+  ctx.fillStyle = col; ctx.fill(); ctx.lineWidth = lw; ctx.strokeStyle = col; ctx.stroke();
 }
 
 /** Deck o porche en planta: tablas, barandal doble, escalones con flecha de bajada, columnas y alero del porche. */

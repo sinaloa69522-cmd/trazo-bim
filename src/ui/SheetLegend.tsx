@@ -291,6 +291,7 @@ const MEP_EN: Record<string, string> = {
   enchufe: "DUPLEX RECEPTACLE 15/20A", "enchufe-fuerza": "240V RECEPTACLE (RANGE / DRYER)", cuadro: "MAIN SERVICE PANEL",
   "toma-af": "COLD WATER OUTLET", "toma-ac": "HOT WATER OUTLET", desague: "FIXTURE DRAIN", sumidero: "FLOOR DRAIN",
   bajante: "VENT / SOIL STACK", llave: "SHUT-OFF VALVE", contador: "WATER METER", termo: "WATER HEATER",
+  acometida: "ELECTRIC METER & SERVICE", registro: "CLEANOUT / INSPECTION CHAMBER", tinaco: "ROOF WATER TANK",
 };
 const SYS_EN: Record<string, string> = { elec: "BRANCH CIRCUIT / HOMERUN", af: "COLD WATER (CW)", ac: "HOT WATER (HW)", san: "SANITARY / DWV" };
 const CIRCUIT_EN: Record<string, string> = {
