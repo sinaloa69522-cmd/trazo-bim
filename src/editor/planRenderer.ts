@@ -329,10 +329,10 @@ export function drawPlan(ctx: CanvasRenderingContext2D, ed: Editor, C: PlanColor
     const mid = toS((a.x + b.x) / 2, (a.y + b.y) / 2);
     ctx.font = MONO; ctx.fillStyle = C.danger; ctx.fillText(fmtLen(Math.hypot(b.x - a.x, b.y - a.y)), mid.x + 8, mid.y - 8);
   }
-  const xf = ed.previewXform();
-  if (xf && draft) {
+  const xfs = ed.previewXforms();
+  if (xfs.length && draft) {
     ctx.globalAlpha = 0.55;
-    for (const r of ed.sels) {
+    for (const xf of xfs) for (const r of ed.sels) {
       if (r.type === "opening") continue;
       if (r.type === "slab") {
         const sl = ed.model.slabs.find((x) => x.id === r.id);
@@ -364,8 +364,8 @@ export function drawPlan(ctx: CanvasRenderingContext2D, ed: Editor, C: PlanColor
         if (u) { const q = xf.map(u); poly([q, { x: q.x + u.w, y: q.y }, { x: q.x + u.w, y: q.y + u.h }, { x: q.x, y: q.y + u.h }], null, C.accent, 1.5); }
         continue;
       }
-      const list: { id: number }[] = ed.model[({ wall: "walls", line: "lines", dim: "dims", room: "rooms", roof: "roofs", stair: "stairs", deck: "decks", section: "sections", text: "texts" } as const)[r.type as "wall"]];
-      const o = list.find((x) => x.id === r.id) as Wall | Model["lines"][number] | Model["rooms"][number] | undefined;
+      const list: { id: number }[] = ed.model[({ wall: "walls", line: "lines", dim: "dims", room: "rooms", roof: "roofs", stair: "stairs", deck: "decks", column: "columns", section: "sections", text: "texts" } as const)[r.type as "wall"]];
+      const o = list?.find((x) => x.id === r.id) as Wall | Model["lines"][number] | Model["rooms"][number] | undefined;
       if (!o) continue;
       if ("x1" in o) {
         const a = xf.map({ x: o.x1, y: o.y1 }), b = xf.map({ x: o.x2, y: o.y2 });
@@ -377,12 +377,20 @@ export function drawPlan(ctx: CanvasRenderingContext2D, ed: Editor, C: PlanColor
     }
     ctx.globalAlpha = 1;
     const bp = draft.pts[0];
-    if (ed.tool === "mirror") {
+    if (ed.tool === "rotate") {
+      // radio de referencia horizontal, radio al cursor y arco del giro
+      const r = Math.hypot(p.x - bp.x, p.y - bp.y), a = xfs[0].rot ?? 0, s0 = toS(bp.x, bp.y);
+      seg(bp, { x: bp.x + r, y: bp.y }, C.accent, 1, [2, 4]); seg(bp, p, C.accent, 1, [5, 4]);
+      ctx.beginPath(); ctx.arc(s0.x, s0.y, Math.min(40, r * ed.view.scale), 0, (-a * Math.PI) / 180, a > 0); ctx.strokeStyle = C.accent; ctx.lineWidth = 1; ctx.stroke();
+      ctx.fillStyle = C.accent; ctx.font = "11px 'IBM Plex Mono', monospace"; ctx.fillText(`${Math.round(a * 10) / 10}°`, s0.x + 8, s0.y - 8);
+    } else if (ed.tool === "scale" && draft.pts.length > 1) {
+      seg(bp, draft.pts[1], C.accent, 1, [2, 4]); seg(bp, p, C.accent, 1, [5, 4]);
+    } else if (ed.tool === "mirror") {
       // eje de simetría prolongado
       const dx = p.x - bp.x, dy = p.y - bp.y, k = 1000 / ed.view.scale / (Math.hypot(dx, dy) || 1);
       seg({ x: bp.x - dx * k, y: bp.y - dy * k }, { x: bp.x + dx * k, y: bp.y + dy * k }, C.accent, 1, [10, 4, 2, 4]);
     } else seg(bp, p, C.accent, 1, [5, 4]);
-    lengthTag(ctx, ed, C, bp, p);
+    if (ed.tool !== "rotate") lengthTag(ctx, ed, C, bp, p);
   } else if (draft?.pts.length) {
     const last = draft.pts[draft.pts.length - 1];
     if (ed.tool === "wall") {

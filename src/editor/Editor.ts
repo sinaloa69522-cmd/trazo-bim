@@ -19,13 +19,15 @@ import { openingStyle } from "../core/openingStyles";
 import { foundationType, type FoundationKind } from "../core/foundation";
 import { computeRooms, RC, roomAt, type RoomGrid } from "../core/rooms";
 import { hatchArea, hatchPattern, inHatch, maskLoops, IMPORTED } from "../core/hatch";
-import { deleteElements, reflection, scaling, transformElements, translation, type Xform } from "../core/transform";
+import { deleteElements, reflection, rotation, scaling, screenAngle, transformElements, translation, type Xform } from "../core/transform";
 
-export type Tool = "select" | "wall" | "door" | "window" | "line" | "dim" | "room" | "move" | "copy" | "mirror" | "trim" | "extend" | "offset" | "slab" | "roof" | "stair" | "deck" | "column" | "furniture" | "section" | "hole" | "text" | "fixture" | "run" | "calibrate" | "hatch";
+export type Tool = "select" | "wall" | "door" | "window" | "line" | "dim" | "room" | "move" | "copy" | "mirror" | "rotate" | "scale" | "array" | "trim" | "extend" | "offset" | "slab" | "roof" | "stair" | "deck" | "column" | "furniture" | "section" | "hole" | "text" | "fixture" | "run" | "calibrate" | "hatch";
 /** Herramientas que actúan pulsando directamente sobre un muro o una línea. */
 const PICK_TOOLS: Tool[] = ["trim", "extend", "offset"];
 /** Herramientas que actúan sobre la selección actual. */
-const MODIFY_TOOLS: Tool[] = ["move", "copy", "mirror"];
+const MODIFY_TOOLS: Tool[] = ["move", "copy", "mirror", "rotate", "scale", "array"];
+const MODIFY_NAME: Partial<Record<Tool, string>> = { move: "Mover", copy: "Copiar", mirror: "Simetría", rotate: "Girar", scale: "Escala", array: "Matriz" };
+const fmtNum = (v: number) => String(Math.round(v * 1000) / 1000);
 export type SelType = "wall" | "opening" | "line" | "dim" | "room" | "slab" | "roof" | "stair" | "deck" | "column" | "furniture" | "section" | "text" | "fixture" | "run" | "underlay" | "hatch";
 export interface Selection { type: SelType; id: number }
 export interface SnapPt extends Pt { kind: "end" | "mid" | null }
@@ -55,7 +57,8 @@ const COMMANDS: Record<string, Tool> = {
   M: "wall", MURO: "wall", P: "door", PUERTA: "door", V: "window", VENTANA: "window",
   L: "line", LINEA: "line", "LÍNEA": "line", C: "dim", COTA: "dim", S: "select", SEL: "select",
   H: "room", HAB: "room", HABITACION: "room", "HABITACIÓN": "room",
-  MO: "move", MOVER: "move", CO: "copy", COPIA: "copy", SI: "mirror", SIMETRIA: "mirror", "SIMETRÍA": "mirror",
+  MO: "move", MOVER: "move", MOVE: "move", CO: "copy", COPIA: "copy", COPIAR: "copy", COPY: "copy", SI: "mirror", SIMETRIA: "mirror", "SIMETRÍA": "mirror", MI: "mirror", MIRROR: "mirror",
+  RO: "rotate", GI: "rotate", ROTAR: "rotate", ROTATE: "rotate", ESC: "scale", ESCALA: "scale", SC: "scale", SCALE: "scale", MA: "array", MATRIZ: "array", AR: "array", ARRAY: "array",
   LO: "slab", LOSA: "slab", TR: "trim", RECORTAR: "trim", AL: "extend", ALARGAR: "extend", DE: "offset", DESFASE: "offset", EQ: "offset", EQUIDISTANCIA: "offset",
   CU: "roof", CUBIERTA: "roof", TEJADO: "roof", ES: "stair", ESCALERA: "stair", DK: "deck", DECK: "deck", PORCHE: "deck", CL: "column", COL: "column", COLUMNA: "column", MB: "furniture", MOBILIARIO: "furniture", MUEBLE: "furniture",
   HL: "hole", HUECO: "hole", TX: "text", TEXTO: "text", SE: "section", SECCION: "section", "SECCIÓN": "section", CORTE: "section",
@@ -105,6 +108,10 @@ export class Editor {
   set sel(s: Selection | null) { this.sels = s ? [s] : []; }
   /** Distancia de desfase (equidistancia) y elemento elegido para desfasar. */
   offsetDist = 1;
+  /** Elementos de la matriz (incluido el original) */
+  arrayN = 3;
+  /** Herramienta de modificar elegida sin selección: se elige y se confirma con Enter */
+  pendingModify: Tool | null = null;
   offsetTarget: Linear | null = null;
   /** Ventana de selección en curso, en coordenadas del dibujo. */
   box: { a: Pt; b: Pt } | null = null;
@@ -338,6 +345,9 @@ export class Editor {
       case "move": return n ? "MOVER  Precisa punto de destino:" : "MOVER  Precisa punto base:";
       case "copy": return n ? "COPIA  Precisa punto de destino [Esc termina]:" : "COPIA  Precisa punto base:";
       case "mirror": return n ? "SIMETRÍA  Segundo punto del eje:" : "SIMETRÍA  Primer punto del eje de simetría:";
+      case "rotate": return n ? "GIRAR  Ángulo en grados o punto que lo indica:" : "GIRAR  Precisa punto base (centro del giro):";
+      case "scale": return n === 0 ? "ESCALA  Precisa punto base:" : n === 1 ? "ESCALA  Factor de escala, o punto de referencia:" : "ESCALA  Punto de la nueva longitud:";
+      case "array": return n ? `MATRIZ  Punto o distancia de la primera copia (${this.arrayN} elementos):` : `MATRIZ  Precisa punto base (${this.arrayN} elementos; teclea un número para cambiarlo):`;
       case "slab": return n < 3 ? `LOSA  Precisa ${n ? "siguiente" : "primer"} vértice del contorno:` : "LOSA  Siguiente vértice [Enter o clic en el primero cierra]:";
       case "roof": return n ? "CUBIERTA  Esquina opuesta del perímetro:" : `CUBIERTA  Primera esquina del perímetro (${ROOF_LABEL[d.roofKind].toLowerCase()}, ${d.pitch}°):`;
       case "column": return `COLUMNA  Punto del centro (${fmtLen(d.colW)} × ${fmtLen(d.colW)}):`;
@@ -409,7 +419,9 @@ export class Editor {
 
   // ---------- herramientas ----------
   setTool(t: Tool) {
-    if (MODIFY_TOOLS.includes(t) && !this.sels.length) { this.message = "Selecciona primero uno o varios elementos."; t = "select"; }
+    if (MODIFY_TOOLS.includes(t) && !this.sels.length) {
+      this.pendingModify = t; this.message = `${MODIFY_NAME[t]}: selecciona los elementos y pulsa Enter (o el botón otra vez).`; t = "select";
+    } else this.pendingModify = null;
     if (MODIFY_TOOLS.includes(t) && this.sels.every((s) => s.type === "opening")) {
       this.message = "Las puertas y ventanas se mueven con su muro. Selecciona el muro."; t = "select";
     }
@@ -758,35 +770,75 @@ export class Editor {
     }
   }
 
-  /** Mover, copiar o simetría sobre toda la selección. */
+  /** Mover, copiar, simetría, girar, escala o matriz sobre toda la selección. */
   private modify(p: Pt) {
     if (!this.sels.length) { this.setTool("select"); return; }
-    if (!this.draft) { this.draft = { pts: [p] }; this.emit(); return; }
-    const bp = this.draft.pts[0];
+    const pts = this.draft?.pts ?? [];
+    if (!pts.length) { this.draft = { pts: [p] }; this.emit(); return; }
+    const bp = pts[0];
     if (Math.hypot(p.x - bp.x, p.y - bp.y) < 1e-6) return;
-    const xf: Xform = this.tool === "mirror" ? reflection(bp, p) : translation(p.x - bp.x, p.y - bp.y);
+    // escala por referencia: el segundo punto marca la longitud actual y el tercero la nueva
+    if (this.tool === "scale" && pts.length === 1) { this.draft = { pts: [bp, p] }; this.emit(); return; }
+    const xf = this.xformTo(p);
+    if (xf) this.applyModify(xf);
+  }
+
+  /** Transformación que resulta de llevar el último punto a p con la herramienta actual. */
+  private xformTo(p: Pt): Xform | null {
+    const pts = this.draft?.pts ?? [], bp = pts[0];
+    if (!bp || Math.hypot(p.x - bp.x, p.y - bp.y) < 1e-6) return null;
+    switch (this.tool) {
+      case "mirror": return reflection(bp, p);
+      case "rotate": {
+        let a = screenAngle(bp, p);
+        if (this.ortho) a = Math.round(a / 90) * 90;
+        return rotation(bp, Math.round(a * 100) / 100);
+      }
+      case "scale": {
+        if (pts.length < 2) return null;
+        const ref = Math.hypot(pts[1].x - bp.x, pts[1].y - bp.y);
+        return ref > 1e-9 ? scaling(bp, Math.hypot(p.x - bp.x, p.y - bp.y) / ref) : null;
+      }
+      default: return translation(p.x - bp.x, p.y - bp.y);
+    }
+  }
+
+  /** Aplica a la selección la transformación (o la matriz de copias). */
+  private applyModify(xf: Xform) {
+    if (!this.sels.length) return;
     this.snapshot();
-    const copy = this.tool !== "move";
-    const result = transformElements(this.model, this.sels, xf, copy);
+    const tool = this.tool, copy = tool === "copy" || tool === "mirror" || tool === "array";
+    let result: ReturnType<typeof transformElements> = [];
+    if (tool === "array") {
+      // copias a 1, 2… veces el desplazamiento
+      const d = xf.map({ x: 0, y: 0 });
+      for (let k = 1; k < this.arrayN; k++) result.push(...transformElements(this.model, this.sels, translation(d.x * k, d.y * k), true));
+    } else result = transformElements(this.model, this.sels, xf, copy);
     // cada sección copiada lleva su propia letra
     if (copy) for (const r of result) if (r.type === "section") { const se = this.model.sections.find((x) => x.id === r.id); if (se) se.name = nextSectionName(this.project); }
-    const n = result.length;
-    if (this.tool === "copy") {
-      this.message = `${n} copia${n > 1 ? "s" : ""} creada${n > 1 ? "s" : ""}. Haz clic para otra copia o Esc para terminar.`;
+    const n = this.sels.filter((r) => r.type !== "opening").length, el = `${n} elemento${n > 1 ? "s" : ""}`;
+    if (tool === "copy") {
+      this.message = `${result.length} copia${result.length > 1 ? "s" : ""} creada${result.length > 1 ? "s" : ""}. Haz clic para otra copia o Esc para terminar.`;
     } else {
-      this.message = this.tool === "move" ? `${n} elemento${n > 1 ? "s" : ""} movido${n > 1 ? "s" : ""}.` : `Simetría creada con ${n} elemento${n > 1 ? "s" : ""}. Los originales se conservan.`;
-      if (this.tool === "mirror") this.sels = result;
+      this.message = tool === "move" ? `${el} movido${n > 1 ? "s" : ""}.`
+        : tool === "mirror" ? `Simetría creada con ${el}. Los originales se conservan.`
+        : tool === "rotate" ? `${el} girado${n > 1 ? "s" : ""} ${fmtNum(xf.rot ?? 0)}°.${Math.abs((xf.rot ?? 0) % 90) > 1e-6 && this.sels.some((r) => r.type === "roof" || r.type === "deck" || r.type === "column") ? " Cubiertas, decks y columnas solo giran de 90 en 90°: de ellos se movió el centro." : ""}`
+        : tool === "scale" ? `${el} a escala ${fmtNum(xf.map({ x: 1, y: 0 }).x - xf.map({ x: 0, y: 0 }).x)}. Los espesores de muro y las piezas de catálogo conservan su tamaño.`
+        : `Matriz de ${this.arrayN} elementos: ${result.length} copias creadas.`;
+      if (tool === "mirror") this.sels = result;
       this.draft = null; this.tool = "select";
     }
     this.changed();
   }
 
-  /** Vista previa de la transformación en curso (para dibujarla). */
-  previewXform(): Xform | null {
-    if (!MODIFY_TOOLS.includes(this.tool) || !this.draft?.pts.length || !this.mouse.in) return null;
-    const bp = this.draft.pts[0], p = this.snap ?? this.mouse;
-    if (Math.hypot(p.x - bp.x, p.y - bp.y) < 1e-6) return null;
-    return this.tool === "mirror" ? reflection(bp, p) : translation(p.x - bp.x, p.y - bp.y);
+  /** Vistas previas de la transformación en curso (varias en la matriz). */
+  previewXforms(): Xform[] {
+    if (!MODIFY_TOOLS.includes(this.tool) || !this.draft?.pts.length || !this.mouse.in) return [];
+    const xf = this.xformTo(this.snap ?? this.mouse);
+    if (!xf) return [];
+    if (this.tool !== "array") return [xf];
+    const d = xf.map({ x: 0, y: 0 });
+    return Array.from({ length: this.arrayN - 1 }, (_, i) => translation(d.x * (i + 1), d.y * (i + 1)));
   }
 
   /** Convierte las líneas seleccionadas en muros con el espesor y la altura por defecto. */
@@ -1171,6 +1223,7 @@ export class Editor {
   edit(fn: () => void) { this.snapshot(); fn(); this.changed(); }
 
   escape() {
+    if (this.pendingModify) { this.pendingModify = null; this.log("Comando cancelado."); return; }
     if (this.textAt) { this.textAt = null; this.log("Texto cancelado."); return; }
     if (MODIFY_TOOLS.includes(this.tool)) { this.setTool("select"); return; }
     if (this.tool === "offset" && this.offsetTarget) { this.offsetTarget = null; this.emit(); return; }
@@ -1194,6 +1247,7 @@ export class Editor {
     }
     const s = raw.trim().toUpperCase().replace(/\s+/g, "");
     if (!s) {
+      if (this.pendingModify && this.tool === "select") { if (this.sels.length) this.setTool(this.pendingModify); else this.log("Selecciona al menos un elemento, o Esc para cancelar."); return; }
       if (this.draft && this.tool === "slab") { this.closeSlab(); return; }
       if (this.draft && this.tool === "hatch") { this.closeHatch(); return; }
       if (this.draft && this.tool !== "dim") { this.finishDraft(); return; }
@@ -1216,8 +1270,18 @@ export class Editor {
       this.offsetDist = len; this.log(`Distancia de desfase: ${fmtLen(len)}.`);
       return;
     }
+    const num = Number(raw.trim().replace(",", "."));
+    if (this.tool === "rotate" && this.draft?.pts.length && Number.isFinite(num)) { this.applyModify(rotation(this.draft.pts[0], num)); return; }
+    if (this.tool === "scale" && this.draft?.pts.length === 1 && Number.isFinite(num)) {
+      if (num <= 0) { this.log("El factor de escala tiene que ser mayor que 0."); return; }
+      this.applyModify(scaling(this.draft.pts[0], num)); return;
+    }
+    if (this.tool === "array" && !this.draft?.pts.length && Number.isInteger(num)) {
+      if (num < 2 || num > 200) { this.log("La matriz lleva de 2 a 200 elementos."); return; }
+      this.arrayN = num; this.log(`Matriz de ${num} elementos.`); return;
+    }
     const lengthOk = this.draft?.pts.length &&
-      (["wall", "line", "move", "copy", "mirror", "slab", "stair", "run", "hatch"].includes(this.tool) || (this.tool === "dim" && this.draft.pts.length === 1));
+      (["wall", "line", "move", "copy", "mirror", "array", "slab", "stair", "run", "hatch"].includes(this.tool) || (this.tool === "dim" && this.draft.pts.length === 1));
     if (Number.isFinite(len) && lengthOk) {
       const L = len, from = this.draft!.pts[this.draft!.pts.length - 1], p = this.snap ?? this.mouse;
       let dx = p.x - from.x, dy = p.y - from.y;
@@ -1236,7 +1300,7 @@ export class Editor {
       this.commitPoint({ x, y });
       return;
     }
-    this.log(`Comando desconocido: "${raw}". Prueba M, P, V, L, C, H, LO, CU, ES, MB, MO, CO, SI, TR, AL, DE, B (borrar), U (deshacer), Z (encuadrar).`);
+    this.log(`Comando desconocido: "${raw}". Prueba M, P, V, L, C, H, LO, CU, ES, MB, MO, CO, RO, SI, ESC, MA, TR, AL, DE, B (borrar), U (deshacer), Z (encuadrar).`);
   }
   /** La vista de planta registra aquí cómo encuadrar, porque conoce su tamaño. */
   fitRequest: (() => void) | null = null;

@@ -124,7 +124,7 @@ dialog .acts span{margin-right:auto;color:var(--muted);font-size:12px}
   .group::-webkit-scrollbar{display:none}
   .top > .group[aria-label="Vista"]{order:9;flex:1 0 100%}
   .brand{flex:1}
-  #tools{order:10;flex:1 0 100%}
+  #tools,#modtools{order:10;flex:1 0 100%}
   .tb{padding:8px 10px}
   .tb svg{width:18px;height:18px}
   .tb .lbl,.tb kbd{display:none}
@@ -148,7 +148,8 @@ dialog .acts span{margin-right:auto;color:var(--muted);font-size:12px}
   .cmd input{font-size:16px}
 }
 @media (max-width:1560px){.tb kbd{display:none}.brand small{display:none}}
-@media (max-width:1400px){#tools .tb .lbl{display:none}}
+@media (max-width:2300px){#tools .tb .lbl,#modtools .tb .lbl{display:none}}
+@media (min-width:761px){#tools,#modtools{flex-wrap:wrap;min-width:0}}
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
 
 /* ---------- lámina ---------- */

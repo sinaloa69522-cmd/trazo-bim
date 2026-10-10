@@ -40,9 +40,17 @@ const TOOLS: { tool: Tool; label: string; key: string; icon: JSX.Element; disc?:
   { tool: "trim", label: "Recortar", key: "TR", icon: <><path d="M2 8h12M8 2v12" /><path d="M10.5 5.5l3-3" strokeDasharray="1.5 1.5" /></> },
   { tool: "extend", label: "Alargar", key: "AL", icon: <><path d="M13 2v12M2 8h7" /><path d="M9 8h4" strokeDasharray="1.5 1.5" /><path d="M7.5 6.5L9.5 8l-2 1.5" /></> },
   { tool: "offset", label: "Desfase", key: "DE", icon: <path d="M2 5h12M2 11h12" /> },
+  { tool: "move", label: "Mover", key: "MO", icon: <path d="M8 1.5v13M1.5 8h13M8 1.5l-2 2M8 1.5l2 2M8 14.5l-2-2M8 14.5l2-2M1.5 8l2-2M1.5 8l2 2M14.5 8l-2-2M14.5 8l-2 2" /> },
+  { tool: "copy", label: "Copiar", key: "CO", icon: <><rect x="2" y="2" width="8" height="8" /><rect x="6" y="6" width="8" height="8" /></> },
+  { tool: "rotate", label: "Girar", key: "RO", icon: <><path d="M13 8a5 5 0 1 1-1.5-3.6" /><path d="M12 1.5v3h-3" /></> },
+  { tool: "mirror", label: "Simetría", key: "SI", icon: <><path d="M8 1.5v13" strokeDasharray="2 1.5" /><path d="M6 4L2 12h4zM10 4l4 8h-4z" /></> },
+  { tool: "scale", label: "Escala", key: "ESC", icon: <><rect x="2" y="8" width="6" height="6" /><path d="M2 8V2h12v12H8M9 7l4-4M10 3h3v3" /></> },
+  { tool: "array", label: "Matriz", key: "MA", icon: <><rect x="2" y="2" width="4" height="4" /><rect x="10" y="2" width="4" height="4" /><rect x="2" y="10" width="4" height="4" /><rect x="10" y="10" width="4" height="4" /></> },
 ];
 
 const CATALOG_TOOLS: Tool[] = ["furniture", "fixture", "run", "hatch"];
+/** Herramientas de modificar, en su propio grupo de la barra. */
+const EDIT_TOOLS: Tool[] = ["move", "copy", "rotate", "mirror", "scale", "array", "trim", "extend", "offset"];
 
 /** Descarga un texto como archivo. */
 function download(name: string, text: string, type = "application/json") {
@@ -154,6 +162,22 @@ export function App() {
     return () => { document.removeEventListener("keydown", down); document.removeEventListener("keyup", up); };
   }, [ed]);
 
+  const toolButton = (t: (typeof TOOLS)[number]) => (
+    <button key={t.key} className="tb" title={`${t.label} (${t.key})`}
+      aria-pressed={(ed.tool === t.tool || ed.pendingModify === t.tool) && (!t.disc || mepDef(ed.defaults.mepKind).disc === t.disc)}
+      onClick={() => {
+        if (t.disc) ed.pickDiscipline(t.disc);
+        // segundo clic en la herramienta pendiente: confirma la selección
+        else if (ed.pendingModify === t.tool) ed.runCommand("");
+        else ed.setTool(t.tool);
+        // en el celular el catálogo de estas herramientas está en el panel
+        if (innerWidth < 760 && CATALOG_TOOLS.includes(t.tool)) setPanel(true);
+        focusCmd();
+      }}>
+      <svg viewBox="0 0 16 16">{t.icon}</svg><span className="lbl">{t.label}</span><kbd>{t.key}</kbd>
+    </button>
+  );
+
   return (
     <div className="app" data-dragging={dragging || undefined}
       onDragOver={(e) => { if (e.dataTransfer.types.includes("Files")) { e.preventDefault(); setDragging(true); } }}
@@ -162,18 +186,13 @@ export function App() {
       <header className="top" data-menu={menu || undefined}>
         <div className="brand">Smartarchitect <small>v0.2</small></div>
         <div className="group" role="toolbar" aria-label="Herramientas" id="tools">
-          {TOOLS.map((t) => (
-            <button key={t.key} className="tb" title={`${t.label} (${t.key})`}
-              aria-pressed={ed.tool === t.tool && (!t.disc || mepDef(ed.defaults.mepKind).disc === t.disc)}
-              onClick={() => {
-                if (t.disc) ed.pickDiscipline(t.disc); else ed.setTool(t.tool);
-                // en el celular el catálogo de estas herramientas está en el panel
-                if (innerWidth < 760 && CATALOG_TOOLS.includes(t.tool)) setPanel(true);
-                focusCmd();
-              }}>
-              <svg viewBox="0 0 16 16">{t.icon}</svg><span className="lbl">{t.label}</span><kbd>{t.key}</kbd>
-            </button>
-          ))}
+          {TOOLS.filter((t) => !EDIT_TOOLS.includes(t.tool)).map(toolButton)}
+        </div>
+        <div className="group" role="toolbar" aria-label="Modificar" id="modtools">
+          {TOOLS.filter((t) => EDIT_TOOLS.includes(t.tool)).map(toolButton)}
+          <button className="tb" title="Borrar la selección (Supr o B)" onClick={() => { ed.deleteSel(); focusCmd(); }}>
+            <svg viewBox="0 0 16 16"><path d="M2.5 4h11M6 4V2h4v2M4 4l1 10h6l1-10M7 7v5M9 7v5" /></svg><span className="lbl">Borrar</span><kbd>B</kbd>
+          </button>
         </div>
         <div className="group" role="group" aria-label="Vista">
           {([["plan", "Planta"], ["split", "Dividida"], ["3d", "3D"], ["sheet", "Lámina"], ["budget", "Presupuesto"]] as const).map(([v, label]) => (

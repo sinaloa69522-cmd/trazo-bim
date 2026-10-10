@@ -7,13 +7,25 @@ export interface ElementRef { type: ElementType; id: number }
 
 type Seg = { x1: number; y1: number; x2: number; y2: number };
 
-/** Transformación de puntos y si invierte la orientación (simetría). */
-export interface Xform { map: (p: Pt) => Pt; reflects: boolean }
+/** Transformación de puntos y si invierte la orientación (simetría); rot: giro en grados (antihorario en pantalla). */
+export interface Xform { map: (p: Pt) => Pt; reflects: boolean; rot?: number }
 
 export const translation = (dx: number, dy: number): Xform => ({ map: (p) => ({ x: p.x + dx, y: p.y + dy }), reflects: false });
 
 /** Escala uniforme con centro c. */
 export const scaling = (c: Pt, k: number): Xform => ({ map: (p) => ({ x: c.x + (p.x - c.x) * k, y: c.y + (p.y - c.y) * k }), reflects: false });
+
+/**
+ * Giro de deg grados alrededor de c, en sentido antihorario tal como se ve en pantalla
+ * (en el modelo la y crece hacia abajo).
+ */
+export function rotation(c: Pt, deg: number): Xform {
+  const a = (-deg * Math.PI) / 180, cs = Math.cos(a), sn = Math.sin(a);
+  return { reflects: false, rot: deg, map: (p) => { const dx = p.x - c.x, dy = p.y - c.y; return { x: c.x + dx * cs - dy * sn, y: c.y + dx * sn + dy * cs }; } };
+}
+
+/** Ángulo en pantalla (grados, antihorario desde +x) del vector de a a b. */
+export const screenAngle = (a: Pt, b: Pt) => (Math.atan2(-(b.y - a.y), b.x - a.x) * 180) / Math.PI;
 
 /** Simetría respecto a la recta que pasa por a y b. */
 export function reflection(a: Pt, b: Pt): Xform {
@@ -53,8 +65,25 @@ export function transformElements(m: Model, refs: ElementRef[], t: Xform, copy: 
     const el = copy ? JSON.parse(JSON.stringify(src)) : src;
     if (copy) el.id = nextId(m);
     if (r.type === "room") { const p = t.map(el); el.x = p.x; el.y = p.y; if (copy) el.name = `${el.name} (copia)`; }
-    // el texto solo cambia de sitio: reflejado seguiría teniendo que leerse
-    else if (r.type === "text") { const p = t.map(el); el.x = p.x; el.y = p.y; }
+    // el texto solo cambia de sitio (reflejado seguiría teniendo que leerse); al girar, gira con el dibujo
+    else if (r.type === "text") { const p = t.map(el); el.x = p.x; el.y = p.y; if (t.rot) el.rot = ((el.rot + t.rot) % 360 + 360) % 360; }
+    // cubiertas y decks son rectángulos alineados: giran por cuartos de vuelta; con otro ángulo se lleva su centro
+    else if (r.type === "roof" || r.type === "deck") {
+      const exact = t.rot === undefined || Math.abs(t.rot - Math.round(t.rot / 90) * 90) < 1e-6;
+      if (exact) {
+        const a = t.map({ x: el.x1, y: el.y1 }), b = t.map({ x: el.x2, y: el.y2 });
+        // los escalones del deck siguen a su lado (0 arriba, 1 derecha, 2 abajo, 3 izquierda)
+        if (r.type === "deck" && el.stairSide != null) {
+          const D = [[0, -1], [1, 0], [0, 1], [-1, 0]], c = { x: (el.x1 + el.x2) / 2, y: (el.y1 + el.y2) / 2 }, [dx, dy] = D[el.stairSide];
+          const p0 = t.map(c), p1 = t.map({ x: c.x + dx, y: c.y + dy }), ux = p1.x - p0.x, uy = p1.y - p0.y;
+          el.stairSide = Math.abs(ux) > Math.abs(uy) ? (ux > 0 ? 1 : 3) : (uy > 0 ? 2 : 0);
+        }
+        el.x1 = Math.min(a.x, b.x); el.y1 = Math.min(a.y, b.y); el.x2 = Math.max(a.x, b.x); el.y2 = Math.max(a.y, b.y);
+      } else {
+        const c = t.map({ x: (el.x1 + el.x2) / 2, y: (el.y1 + el.y2) / 2 }), hw = Math.abs(el.x2 - el.x1) / 2, hh = Math.abs(el.y2 - el.y1) / 2;
+        el.x1 = c.x - hw; el.x2 = c.x + hw; el.y1 = c.y - hh; el.y2 = c.y + hh;
+      }
+    }
     // la columna se lleva por su centro; girada 90° cambia el lado en x por el lado en y
     else if (r.type === "column") {
       const p = t.map(el), q = t.map({ x: el.x + 1, y: el.y });
