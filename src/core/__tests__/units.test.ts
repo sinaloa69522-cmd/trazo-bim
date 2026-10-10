@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { Editor } from "../../editor/Editor";
 import { toDxf } from "../dxf";
 import { parseDxf } from "../dxfImport";
-import { stairSteps } from "../geometry";
+import { stairSteps } from "../stairs";
 import { normalizeProject } from "../model";
 import { feetInches, fmtArea, fmtDim, fmtLen, FT, IN, parseLen, scaleLabel, setUnitSystem } from "../units";
 

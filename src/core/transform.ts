@@ -91,6 +91,12 @@ export function transformElements(m: Model, refs: ElementRef[], t: Xform, copy: 
       if (Math.abs(q.y - p.y) > Math.abs(q.x - p.x)) [el.w, el.d] = [el.d, el.w];
     }
     else if (r.type === "run") el.pts = el.pts.map(t.map);
+    // reflejada, la escalera gira hacia el otro lado
+    else if (r.type === "stair") {
+      const a = t.map({ x: el.x1, y: el.y1 }), b = t.map({ x: el.x2, y: el.y2 });
+      el.x1 = a.x; el.y1 = a.y; el.x2 = b.x; el.y2 = b.y;
+      if (t.reflects) el.turn = -(el.turn ?? 1);
+    }
     // la trama de la biblioteca va referida al origen; la importada se lleva con el sombreado
     else if (r.type === "hatch") { el.loops = el.loops.map((q: Pt[]) => q.map(t.map)); if (el.lines) el.lines = mapLines(el.lines, t.map); }
     // el calco no gira ni se refleja: se lleva su centro

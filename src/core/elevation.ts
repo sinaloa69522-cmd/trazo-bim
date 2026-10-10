@@ -1,5 +1,6 @@
 import { furnitureSolids, furnitureToPlan } from "./furniture";
-import { dir, endExt, loc, roofGeom, stairSteps, type Pt } from "./geometry";
+import { dir, endExt, loc, roofGeom, type Pt } from "./geometry";
+import { stairGeom } from "./stairs";
 import { wallType, type Hatch } from "./wallTypes";
 import { finishName, gableWall, outward, roofFinish, finish as finishById, type Finish } from "./finishes";
 import type { OpeningKind, Project, Section } from "./model";
@@ -183,9 +184,7 @@ function project(p: Project, fr: Frame): Elevation {
     if (!fr.cut) continue;
     for (const st of lv.stairs) {
       // peldaños macizos, como en el 3D
-      const k = stairSteps(st), h = st.width / 2;
-      for (let i = 0; i < k.n; i++)
-        prism([loc(st, i * k.tread, -h), loc(st, (i + 1) * k.tread, -h), loc(st, (i + 1) * k.tread, h), loc(st, i * k.tread, h)], e, e + (i + 1) * k.riser, "stair");
+      for (const pc of stairGeom(st).pieces) prism(pc.pts, e + pc.z0, e + pc.z, "stair");
     }
     for (const f of lv.furniture) for (const s of furnitureSolids(f.kind)) {
       const c = [[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([i, j]) => furnitureToPlan(f, { x: s.x + (i * s.w) / 2, y: s.y + (j * s.d) / 2 }));

@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { Editor } from "../../editor/Editor";
 import { toDxf } from "../dxf";
-import { roofGeom, stairSteps } from "../geometry";
+import { roofGeom } from "../geometry";
+import { stairSteps } from "../stairs";
 import type { Roof } from "../model";
 
 const roof = (kind: Roof["kind"], x2 = 10, y2 = 6): Roof =>
