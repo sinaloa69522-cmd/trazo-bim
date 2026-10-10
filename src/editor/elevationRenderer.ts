@@ -1,4 +1,4 @@
-import { fmtDim, fmtElev } from "../core/units";
+import { fmtDim, fmtElev, imperial } from "../core/units";
 import type { EFace, Elevation, FaceKind } from "../core/elevation";
 import { elevationLines } from "../core/openingStyles";
 
@@ -45,16 +45,22 @@ export function drawElevation(ctx: CanvasRenderingContext2D, el: Elevation, ox: 
   ctx.fillStyle = "#ffffff"; ctx.fillRect(g0, gy, g1 - g0, Math.max(0, Y(el.z0) - gy) + 2);
   for (const f of el.faces) if (f.cut) paint(f);
   ctx.beginPath(); ctx.moveTo(g0, gy); ctx.lineTo(g1, gy); ctx.strokeStyle = "#111"; ctx.lineWidth = 1.8; ctx.stroke();
-  // cotas de nivel a la derecha
-  ctx.font = `7px ${MONO}`; ctx.fillStyle = "#111";
-  for (const l of el.levels) {
-    const y = Y(l.elev), x0 = X(el.u1) + 0.3 * s, x1 = x0 + 34;
+  // niveles a la derecha: N.P.T. de cada planta y la coronación (azotea o cumbrera)
+  ctx.font = `7px ${MONO}`; ctx.fillStyle = "#111"; ctx.strokeStyle = "#111";
+  const us = imperial(), placed: number[] = [];
+  const mark = (z: number, label: string, name: string) => {
+    const y = Y(z), x0 = X(el.u1) + 0.3 * s, x1 = x0 + 34;
+    // una coronación pegada a un nivel taparía su rótulo
+    if (placed.some((q) => Math.abs(q - y) < 10)) return;
+    placed.push(y);
     ctx.beginPath(); ctx.setLineDash([6, 2, 1, 2]); ctx.moveTo(X(el.u1) + 0.05 * s, y); ctx.lineTo(x1, y);
     ctx.lineWidth = 0.4; ctx.stroke(); ctx.setLineDash([]);
-    ctx.beginPath(); ctx.moveTo(x0, y); ctx.lineTo(x0 - 3, y - 4); ctx.lineTo(x0 + 3, y - 4); ctx.closePath(); ctx.fill();
-    ctx.fillText(fmtElev(l.elev), x0 + 5, y - 2);
-    ctx.fillText(l.name, x0 + 5, y + 7);
-  }
+    levelSymbol(ctx, x0, y);
+    ctx.fillText(label, x0 + 5, y - 2);
+    if (name) ctx.fillText(name, x0 + 5, y + 7);
+  };
+  for (const l of el.levels) mark(l.elev, us ? fmtElev(l.elev) : `N.P.T. ${fmtElev(l.elev)}`, l.name);
+  for (const t of el.tops ?? []) mark(t.elev, `${us ? (t.tag === "N.L.A." ? "T.O. ROOF" : "RIDGE") : t.tag} ${fmtElev(t.elev)}`, "");
   if (opts.heights) heightDims(ctx, el, X, Y);
   if (opts.tags) materialTags(ctx, el, X, Y);
   // título de la vista
@@ -64,6 +70,13 @@ export function drawElevation(ctx: CanvasRenderingContext2D, el: Elevation, ox: 
 }
 
 type Px = (v: number) => number;
+
+/** Símbolo de nivel en corte y fachada: triángulo con la punta en la línea y la mitad izquierda rellena. */
+function levelSymbol(ctx: CanvasRenderingContext2D, x: number, y: number) {
+  ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x - 3.5, y - 5); ctx.lineTo(x + 3.5, y - 5); ctx.closePath();
+  ctx.lineWidth = 0.5; ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x - 3.5, y - 5); ctx.lineTo(x, y - 5); ctx.closePath(); ctx.fill();
+}
 
 /** Trama del acabado en coordenadas del dibujo, para que siga continua de una cara a otra. Usa el trazado actual como recorte. */
 function texture(ctx: CanvasRenderingContext2D, f: EFace, X: Px, Y: Px, s: number) {

@@ -5,7 +5,8 @@ import { stairGeom } from "../core/stairs";
 import { drawAxes } from "./mxRenderer";
 import { furnitureStrokes, type Stroke } from "../core/furniture";
 import { discOfSystem, fixtureStrokes, fixtureTextAt, mepDef, systemDef, type SymStroke } from "../core/mep";
-import type { Column, Deck, Dim, Fixture, HatchRegion, Model, Roof, Run, Section, Stair, Wall } from "../core/model";
+import type { Column, Deck, Dim, Fixture, HatchRegion, Mark, Model, Roof, Run, Section, Stair, Wall } from "../core/model";
+import { levelText, MARK_PX, textPx } from "../core/marks";
 import { hatchSegments, isSolid, patternLines, patternSpacing, type HatchSegments } from "../core/hatch";
 import { RC } from "../core/rooms";
 import { openingSymbol } from "../core/openingStyles";
@@ -297,6 +298,12 @@ export function drawPlan(ctx: CanvasRenderingContext2D, ed: Editor, C: PlanColor
     if (hl) poly(textBox(t), null, C.accent, 0.8);
   }
 
+  // niveles, llamadas de detalle y notas
+  if (ed.vis.anot) for (const mk of m.marks) {
+    const hl = isSel("mark", mk.id) || (hover?.type === "mark" && hover.id === mk.id);
+    drawMark(ctx, ed, mk, m.elev, hl ? C.accent : C.fg, C["plan-bg"], hl ? 1.6 : 1);
+  }
+
   // marcas de tipo de puertas y ventanas
   if (opts.marks) for (const op of m.openings) {
     const w = ed.wallById(op.wallId), mk = opts.marks.get(op.id);
@@ -361,6 +368,14 @@ export function drawPlan(ctx: CanvasRenderingContext2D, ed: Editor, C: PlanColor
       if (r.type === "hatch") {
         const h = ed.model.hatches.find((x) => x.id === r.id);
         if (h) for (const q of h.loops) poly(q.map(xf.map), null, C.accent, 1.5);
+        continue;
+      }
+      if (r.type === "mark") {
+        const mk = ed.model.marks.find((x) => x.id === r.id);
+        if (mk) {
+          const q = xf.map(mk), a = mk.ax !== undefined ? xf.map({ x: mk.ax, y: mk.ay! }) : null;
+          drawMark(ctx, ed, { ...mk, x: q.x, y: q.y, ...(a ? { ax: a.x, ay: a.y } : {}) }, ed.model.elev, C.accent, null, 1.2);
+        }
         continue;
       }
       if (r.type === "underlay") {
@@ -432,6 +447,22 @@ export function drawPlan(ctx: CanvasRenderingContext2D, ed: Editor, C: PlanColor
     } else if (ed.tool === "dim") {
       if (draft.pts.length === 1) { seg(last, p, C.accent, 1, [5, 4]); lengthTag(ctx, ed, C, last, p); }
       else { const [a, b] = draft.pts; drawDim(ctx, ed, { id: 0, x1: a.x, y1: a.y, x2: b.x, y2: b.y, off: dimOffset(a, b, p) }, C.accent); }
+    }
+  }
+  // símbolo que se va a colocar
+  if (ed.tool === "mark" && (ed.mouse.in || ed.noteAt)) {
+    const d = ed.defaults, pts = draft?.pts ?? [], gh: Mark | null =
+      ed.noteAt ? { id: 0, kind: "nota", x: ed.noteAt.p.x, y: ed.noteAt.p.y, ax: ed.noteAt.a.x, ay: ed.noteAt.a.y, label: "…" }
+      : d.markKind === "nivel" ? { id: 0, kind: "nivel", x: p.x, y: p.y, label: d.markLabel, dz: 0 }
+      : d.markKind === "nota" ? (pts.length ? { id: 0, kind: "nota", x: p.x, y: p.y, ax: pts[0].x, ay: pts[0].y, label: "Nota" } : null)
+      : pts.length === 1 ? { id: 0, kind: "detalle", x: p.x, y: p.y, ax: pts[0].x, ay: pts[0].y, r: Math.hypot(p.x - pts[0].x, p.y - pts[0].y), label: "", sheet: "" }
+      : pts.length === 2 ? { id: 0, kind: "detalle", x: p.x, y: p.y, ax: pts[0].x, ay: pts[0].y, r: Math.hypot(pts[1].x - pts[0].x, pts[1].y - pts[0].y), label: "?", sheet: d.detailSheet } : null;
+    if (gh) {
+      ctx.globalAlpha = 0.75;
+      // mientras se marca el radio solo se ve la zona
+      if (gh.kind === "detalle" && pts.length === 1) { const c = toS(gh.ax!, gh.ay!); ctx.beginPath(); ctx.setLineDash([6, 4]); ctx.arc(c.x, c.y, gh.r! * ed.view.scale, 0, Math.PI * 2); ctx.strokeStyle = C.accent; ctx.lineWidth = 1.2; ctx.stroke(); ctx.setLineDash([]); }
+      else drawMark(ctx, ed, gh, m.elev, C.accent, C["plan-bg"], 1.2);
+      ctx.globalAlpha = 1;
     }
   }
   // pieza de mobiliario que se va a colocar
@@ -648,6 +679,49 @@ function drawStair(ctx: CanvasRenderingContext2D, ed: Editor, st: Stair, col: st
     ctx.font = MONO; ctx.textAlign = "center"; ctx.fillText(`SUBE ${g.n}`, 0, -6);
     ctx.restore();
   }
+}
+
+/**
+ * Símbolo de anotación a tamaño fijo en el papel: rótulo de nivel enmarcado, globo de detalle partido
+ * (número arriba, lámina abajo) con su zona punteada, o nota con flecha. bg tapa lo que queda debajo del rótulo.
+ */
+export function drawMark(ctx: CanvasRenderingContext2D, ed: Editor, mk: Mark, elev: number, col: string, bg: string | null, lw: number) {
+  const c = ed.toS(mk.x, mk.y), F = "'IBM Plex Mono', ui-monospace, monospace";
+  ctx.save();
+  ctx.strokeStyle = col; ctx.fillStyle = col; ctx.lineWidth = lw; ctx.setLineDash([]);
+  if (mk.kind === "nivel") {
+    const txt = levelText(mk, elev), w = textPx(txt) + 10, h = MARK_PX.boxH;
+    if (bg) { ctx.fillStyle = bg; ctx.fillRect(c.x - w / 2, c.y - h / 2, w, h); }
+    ctx.lineWidth = 0.8 * lw; ctx.strokeRect(c.x - w / 2, c.y - h / 2, w, h);
+    ctx.fillStyle = col; ctx.font = `600 ${MARK_PX.font}px ${F}`; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    ctx.fillText(txt, c.x, c.y + 0.5);
+  } else if (mk.kind === "detalle") {
+    const R = MARK_PX.bubble, a = ed.toS(mk.ax ?? mk.x, mk.ay ?? mk.y), rz = (mk.r ?? 0) * ed.view.scale;
+    // zona que se detalla
+    if (rz > 2) { ctx.beginPath(); ctx.setLineDash([7, 3, 2, 3]); ctx.lineWidth = 0.8 * lw; ctx.arc(a.x, a.y, rz, 0, Math.PI * 2); ctx.stroke(); ctx.setLineDash([]); }
+    // directriz del borde de la zona al globo
+    const dx = c.x - a.x, dy = c.y - a.y, L = Math.hypot(dx, dy);
+    if (L > rz + R + 1) {
+      ctx.beginPath(); ctx.lineWidth = 0.7 * lw; ctx.moveTo(a.x + (dx / L) * rz, a.y + (dy / L) * rz); ctx.lineTo(c.x - (dx / L) * R, c.y - (dy / L) * R); ctx.stroke();
+    }
+    ctx.beginPath(); ctx.arc(c.x, c.y, R, 0, Math.PI * 2);
+    if (bg) { ctx.fillStyle = bg; ctx.fill(); }
+    ctx.lineWidth = 1.1 * lw; ctx.stroke();
+    ctx.beginPath(); ctx.lineWidth = 0.7 * lw; ctx.moveTo(c.x - R, c.y); ctx.lineTo(c.x + R, c.y); ctx.stroke();
+    ctx.fillStyle = col; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    ctx.font = `600 10px 'IBM Plex Sans', system-ui, sans-serif`; ctx.fillText(mk.label, c.x, c.y - R / 2 + 0.5);
+    const sh = mk.sheet || "—";
+    ctx.font = `${sh.length > 5 ? 5.5 : 6.5}px ${F}`; ctx.fillText(sh, c.x, c.y + R / 2);
+  } else {
+    const a = ed.toS(mk.ax ?? mk.x, mk.ay ?? mk.y), dx = c.x - a.x, dy = c.y - a.y, L = Math.hypot(dx, dy) || 1, sg = mk.x >= (mk.ax ?? mk.x) ? 1 : -1;
+    ctx.beginPath(); ctx.lineWidth = 0.8 * lw; ctx.moveTo(a.x, a.y); ctx.lineTo(c.x, c.y); ctx.lineTo(c.x + sg * 8, c.y); ctx.stroke();
+    // punta de flecha llena
+    const ux = dx / L, uy = dy / L;
+    ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(a.x + ux * 7 - uy * 2.4, a.y + uy * 7 + ux * 2.4); ctx.lineTo(a.x + ux * 7 + uy * 2.4, a.y + uy * 7 - ux * 2.4); ctx.closePath(); ctx.fill();
+    ctx.font = `${MARK_PX.noteFont}px 'IBM Plex Sans', system-ui, sans-serif`; ctx.textAlign = sg > 0 ? "left" : "right"; ctx.textBaseline = "middle";
+    ctx.fillText(mk.label, c.x + sg * 11, c.y);
+  }
+  ctx.restore();
 }
 
 /** Línea de corte: trazo y punto fino, extremos gruesos, flechas hacia el lado que se ve y la letra. */

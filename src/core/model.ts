@@ -185,6 +185,31 @@ export interface Text {
   rot: number;
 }
 
+export type MarkKind = "nivel" | "detalle" | "nota";
+
+/**
+ * Símbolo de anotación (marks.ts), de tamaño fijo en el papel:
+ * nivel en planta (rótulo N.P.T. con la cota), llamada de detalle (zona y globo) o nota con flecha.
+ */
+export interface Mark {
+  id: number;
+  kind: MarkKind;
+  /** Centro del rótulo de nivel, centro del globo del detalle o arranque del texto de la nota */
+  x: number;
+  y: number;
+  /** Detalle: centro de la zona que se detalla; nota: punta de la flecha */
+  ax?: number;
+  ay?: number;
+  /** Detalle: radio de la zona */
+  r?: number;
+  /** Nivel: prefijo (N.P.T., N.T.N.…); detalle: número; nota: texto */
+  label: string;
+  /** Nivel: desnivel respecto a la cota del nivel (p. ej. -0.15 en un patio) */
+  dz?: number;
+  /** Detalle: lámina donde está dibujado */
+  sheet?: string;
+}
+
 /** Mecanismo eléctrico o punto de fontanería (mep.ts), colocado por su centro. */
 export interface Fixture {
   id: number;
@@ -257,6 +282,7 @@ export interface Model {
   furniture: Furniture[];
   sections: Section[];
   texts: Text[];
+  marks: Mark[];
   fixtures: Fixture[];
   runs: Run[];
   underlays: Underlay[];
@@ -325,7 +351,7 @@ export const LAYERS: Layer[] = [
   { id: "calcos", name: "A-CALCOS", label: "Calcos", tok: "--muted" },
 ];
 
-export const emptyModel = (): Model => ({ walls: [], openings: [], lines: [], dims: [], rooms: [], slabs: [], roofs: [], stairs: [], decks: [], columns: [], furniture: [], sections: [], texts: [], fixtures: [], runs: [], underlays: [], hatches: [], nid: 1 });
+export const emptyModel = (): Model => ({ walls: [], openings: [], lines: [], dims: [], rooms: [], slabs: [], roofs: [], stairs: [], decks: [], columns: [], furniture: [], sections: [], texts: [], marks: [], fixtures: [], runs: [], underlays: [], hatches: [], nid: 1 });
 
 export const newLevel = (name: string, elev: number, content: Model = emptyModel()): Level => ({ ...content, name, elev });
 
@@ -350,6 +376,7 @@ export function normalizeModel(raw: unknown): Model {
   m.furniture = m.furniture ?? [];
   m.sections = m.sections ?? [];
   m.texts = m.texts ?? [];
+  m.marks = m.marks ?? [];
   m.fixtures = m.fixtures ?? [];
   m.runs = m.runs ?? [];
   m.underlays = m.underlays ?? [];

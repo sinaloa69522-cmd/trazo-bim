@@ -31,6 +31,8 @@ export interface Elevation {
   u0: number; u1: number; z0: number; z1: number;
   /** Cotas de los niveles para las líneas de referencia */
   levels: { name: string; elev: number }[];
+  /** Coronación: lecho alto de las azoteas y cumbreras, con su propio símbolo de nivel */
+  tops: { tag: "N.L.A." | "Cumbrera"; elev: number }[];
 }
 
 type P3 = { x: number; y: number; z: number };
@@ -77,6 +79,7 @@ function project(p: Project, fr: Frame): Elevation {
   /** Distancia por delante del plano de corte. */
   const ahead = (q: Pt) => (q.x - fr.o.x) * fr.v.x + (q.y - fr.o.y) * fr.v.y;
   const faces: EFace[] = [];
+  const tops: Elevation["tops"] = [];
   /** nudge acerca la cara al observador para que gane a la que tiene justo detrás. */
   const face = (ps: P3[], kind: FaceKind, nudge = 0, mat?: EFace["mat"], op?: EFace["op"]) => {
     if (fr.cut) ps = clip(ps, ahead);
@@ -164,6 +167,7 @@ function project(p: Project, fr: Frame): Elevation {
       }
       // canto del alero
       const zt = e + g.faces[0][0].z;
+      tops.push(r.kind === "flat" ? { tag: "N.L.A.", elev: zt } : { tag: "Cumbrera", elev: e + Math.max(...g.faces.flatMap((f) => f.map((q) => q.z))) });
       prism(g.outline, zt - r.thick, zt, "roof", false);
       if (!fr.cut) continue;
       // faldones cortados: la línea de corte sobre la cara superior, con el espesor medido en vertical
@@ -195,7 +199,11 @@ function project(p: Project, fr: Frame): Elevation {
   let u0 = Infinity, u1 = -Infinity, z0 = Infinity, z1 = -Infinity;
   for (const f of faces) for (const q of f.pts) { u0 = Math.min(u0, q.u); u1 = Math.max(u1, q.u); z0 = Math.min(z0, q.z); z1 = Math.max(z1, q.z); }
   if (!faces.length) { u0 = 0; u1 = 1; z0 = 0; z1 = 1; }
-  return { faces, u0, u1, z0: Math.min(z0, 0), z1, levels: p.levels.map((l) => ({ name: l.name, elev: l.elev })) };
+  // una marca por altura (al centímetro)
+  const seen = new Set<string>();
+  // en un corte, la cumbrera que queda detrás del observador no se ve
+  const top = tops.filter((t) => { const k = `${t.tag}${t.elev.toFixed(2)}`; if (seen.has(k) || t.elev > z1 + 0.01) return false; seen.add(k); return true; });
+  return { faces, u0, u1, z0: Math.min(z0, 0), z1, levels: p.levels.map((l) => ({ name: l.name, elev: l.elev })), tops: top };
 }
 
 /** Recorta un polígono 3D por el semiespacio f >= 0 (Sutherland–Hodgman). */
