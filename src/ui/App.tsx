@@ -34,6 +34,7 @@ const TOOLS: { tool: Tool; label: string; key: string; icon: JSX.Element; disc?:
   { tool: "furniture", label: "Mobiliario", key: "MB", icon: <path d="M4 2v12M4 8h8v6M12 8V5M2 14h2" /> },
   { tool: "section", label: "Sección", key: "SE", icon: <path d="M2 8h12M2 8v-4M14 8V4M2 4l-1 2M2 4l1 2M14 4l-1 2M14 4l1 2" strokeDasharray="0" /> },
   { tool: "text", label: "Texto", key: "TX", icon: <path d="M3 3h10M8 3v10M6 13h4" /> },
+  { tool: "mark", label: "Nivel/Llamada", key: "NV", icon: <><rect x="1.5" y="2" width="9" height="4.5" /><circle cx="10.5" cy="11" r="3.5" /><path d="M7 11h7M2 14.5l3-3" /></> },
   { tool: "fixture", disc: "elec", label: "Electricidad", key: "EL", icon: <path d="M9 1.5L3.5 9H8l-1 5.5L12.5 7H8z" /> },
   { tool: "fixture", disc: "plum", label: "Plomería", key: "PL", icon: <path d="M8 2C6 5 4.5 7 4.5 9.5a3.5 3.5 0 0 0 7 0C11.5 7 10 5 8 2z" /> },
   { tool: "run", label: "Tubería", key: "TU", icon: <path d="M2 4h6v8h6M2 4v0M14 12v0" /> },
@@ -49,7 +50,7 @@ const TOOLS: { tool: Tool; label: string; key: string; icon: JSX.Element; disc?:
   { tool: "array", label: "Matriz", key: "MA", icon: <><rect x="2" y="2" width="4" height="4" /><rect x="10" y="2" width="4" height="4" /><rect x="2" y="10" width="4" height="4" /><rect x="10" y="10" width="4" height="4" /></> },
 ];
 
-const CATALOG_TOOLS: Tool[] = ["furniture", "fixture", "run", "hatch"];
+const CATALOG_TOOLS: Tool[] = ["furniture", "fixture", "run", "hatch", "mark"];
 /** Herramientas de modificar, en su propio grupo de la barra. */
 const EDIT_TOOLS: Tool[] = ["move", "copy", "rotate", "mirror", "scale", "array", "trim", "break", "extend", "offset"];
 

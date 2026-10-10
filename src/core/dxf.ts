@@ -8,13 +8,14 @@ import { stairGeom } from "./stairs";
 import { deckGeom } from "./decks";
 import { hatchSegments, isSolid, patternLines, solidTrapezoids } from "./hatch";
 import type { Model } from "./model";
+import { levelText } from "./marks";
 import type { RoomGrid } from "./rooms";
 
 /**
  * Exporta la planta a DXF ASCII (R12), en metros, o en pulgadas si el proyecto va en pies y pulgadas
  * (como los dibujos de AutoCAD en EE.UU.). El DXF tiene el eje Y hacia arriba, así que se invierte.
  */
-export function toDxf(m: Model, rooms: RoomGrid | null, u: UnitSystem = unitSystem()): string {
+export function toDxf(m: Model, rooms: RoomGrid | null, u: UnitSystem = unitSystem(), elev = (m as Model & { elev?: number }).elev ?? 0): string {
   const k = u === "imperial" ? 1 / IN : 1, S = (v: number) => String(+(v * k).toFixed(4));
   const out = ["0", "SECTION", "2", "HEADER", "9", "$INSUNITS", "70", u === "imperial" ? "1" : "6", "0", "ENDSEC", "0", "SECTION", "2", "ENTITIES"];
   const X = (v: number) => (v * k).toFixed(4), Y = (v: number) => (-v * k).toFixed(4);
@@ -96,6 +97,27 @@ export function toDxf(m: Model, rooms: RoomGrid | null, u: UnitSystem = unitSyst
   for (const t of m.texts ?? [])
     out.push("0", "TEXT", "8", "A-ANOTACION", "10", X(t.x), "20", Y(t.y), "30", "0", "40", S(t.size), "1", t.text, "50", t.rot.toFixed(2));
   for (const l of m.lines) line("A-ANOTACION", { x: l.x1, y: l.y1 }, { x: l.x2, y: l.y2 });
+  // símbolos a tamaño de papel a 1:100 (un globo de 8 mm)
+  const circle = (lay: string, c: Pt, r: number) => out.push("0", "CIRCLE", "8", lay, "10", X(c.x), "20", Y(c.y), "30", "0", "40", S(r));
+  for (const mk of m.marks ?? []) {
+    const c = { x: mk.x, y: mk.y }, a = { x: mk.ax ?? mk.x, y: mk.ay ?? mk.y };
+    if (mk.kind === "nivel") {
+      const t = levelText(mk, elev), w = t.length * 0.09 + 0.16;
+      rect("A-ANOTACION", [{ x: c.x - w / 2, y: c.y - 0.13 }, { x: c.x + w / 2, y: c.y - 0.13 }, { x: c.x + w / 2, y: c.y + 0.13 }, { x: c.x - w / 2, y: c.y + 0.13 }]);
+      text("A-ANOTACION", { x: c.x, y: c.y + 0.07 }, 0.14, t);
+    } else if (mk.kind === "detalle") {
+      const R = 0.4, L = Math.hypot(c.x - a.x, c.y - a.y) || 1, ux = (c.x - a.x) / L, uy = (c.y - a.y) / L, rz = mk.r ?? 0;
+      circle("A-ANOTACION", a, rz); circle("A-ANOTACION", c, R);
+      line("A-ANOTACION", { x: c.x - R, y: c.y }, { x: c.x + R, y: c.y });
+      if (L > rz + R) line("A-ANOTACION", { x: a.x + ux * rz, y: a.y + uy * rz }, { x: c.x - ux * R, y: c.y - uy * R });
+      text("A-ANOTACION", { x: c.x, y: c.y - 0.1 }, 0.2, mk.label);
+      text("A-ANOTACION", { x: c.x, y: c.y + 0.25 }, 0.12, mk.sheet || "-");
+    } else {
+      const sg = mk.x >= a.x ? 1 : -1;
+      line("A-ANOTACION", a, c); line("A-ANOTACION", c, { x: c.x + sg * 0.25, y: c.y });
+      out.push("0", "TEXT", "8", "A-ANOTACION", "10", X(c.x + sg * 0.32), "20", Y(c.y + 0.07), "30", "0", "40", S(0.15), "1", mk.label, "50", "0", "72", sg > 0 ? "0" : "2", "11", X(c.x + sg * 0.32), "21", Y(c.y + 0.07), "31", "0");
+    }
+  }
   for (const d of m.dims) {
     const g = dimGeom(d), sg = Math.sign(d.off || 1);
     line("A-COTAS", { x: d.x1, y: d.y1 }, g.a);

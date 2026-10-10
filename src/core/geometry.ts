@@ -1,4 +1,5 @@
 import type { Dim, Model, Opening, Roof, Wall } from "./model";
+import { markPts } from "./marks";
 
 export interface Pt {
   x: number;
@@ -100,6 +101,7 @@ export function bounds(m: Model, extra: Pt[] = [], robust = false): Bounds {
   for (const h of m.hatches ?? []) for (const q of h.loops) for (const p of q) add(p.x, p.y);
   for (const f of m.furniture ?? []) add(f.x, f.y);
   for (const t of m.texts ?? []) for (const p of textBox(t)) add(p.x, p.y);
+  for (const mk of m.marks ?? []) for (const p of markPts(mk)) add(p.x, p.y);
   for (const p of extra) add(p.x, p.y);
   let b = robust ? robustBox(pts) : null;
   if (!robust && pts.length) {
@@ -146,6 +148,7 @@ function annoPts(m: Model): Pt[] {
   for (const s of [...m.lines, ...m.dims]) pts.push({ x: s.x1, y: s.y1 }, { x: s.x2, y: s.y2 });
   for (const h of m.hatches ?? []) for (const q of h.loops) pts.push(...q);
   for (const t of m.texts ?? []) pts.push(...textBox(t));
+  for (const mk of m.marks ?? []) pts.push(...markPts(mk));
   return pts;
 }
 

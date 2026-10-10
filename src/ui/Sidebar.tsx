@@ -13,6 +13,7 @@ import { finishSwatch } from "../editor/finishTextures";
 import { DECK_TYPES, deckGeom, deckTakeoff, deckType, RAILS, SIDE_NAME } from "../core/decks";
 import { FOUNDATIONS, foundationType, type FoundationKind } from "../core/foundation";
 import { DOOR_STYLES, elevationLines, openingStyle, WINDOW_STYLES, type OpeningStyle } from "../core/openingStyles";
+import { LEVEL_TAGS, levelText, MARK_KINDS } from "../core/marks";
 import { HATCH_PATTERNS, hatchArea, hatchPattern, hatchSegments, IMPORTED, patternLines } from "../core/hatch";
 
 
@@ -158,7 +159,7 @@ function Properties({ ed, onFocusCommand }: { ed: Editor; onFocusCommand: () => 
   let title = "Valores por defecto", body: JSX.Element | null = null;
   const n = ed.sels.length;
   const key = sel ? `${sel.type}-${sel.id}` : n > 1 ? "multi" : "def";
-  const TYPE_LABEL = { wall: "Muros", opening: "Puertas y ventanas", line: "Líneas", dim: "Cotas", room: "Habitaciones", slab: "Losas", roof: "Cubiertas", stair: "Escaleras", deck: "Decks y porches", column: "Columnas", furniture: "Mobiliario", section: "Secciones", text: "Textos", fixture: "Instalaciones", run: "Tuberías", underlay: "Calcos", hatch: "Sombreados" } as const;
+  const TYPE_LABEL = { wall: "Muros", opening: "Puertas y ventanas", line: "Líneas", dim: "Cotas", room: "Habitaciones", slab: "Losas", roof: "Cubiertas", stair: "Escaleras", deck: "Decks y porches", column: "Columnas", furniture: "Mobiliario", section: "Secciones", text: "Textos", mark: "Símbolos", fixture: "Instalaciones", run: "Tuberías", underlay: "Calcos", hatch: "Sombreados" } as const;
 
   if (sel && o && sel.type === "wall") {
     const w = o as Model["walls"][number], up = ed.levelAbove();
@@ -340,6 +341,32 @@ function Properties({ ed, onFocusCommand }: { ed: Editor; onFocusCommand: () => 
       <NumberField id={`${key}-s`} label="Altura letra (m)" value={t.size} min={0.02} onCommit={(v) => ed.edit(() => { t.size = v; })} />
       <NumberField id={`${key}-r`} label="Giro (°)" value={t.rot} min={-360} step={15} digits={0} onCommit={(v) => ed.edit(() => { t.rot = v % 360; })} />
     </>;
+  } else if (sel && o && sel.type === "mark") {
+    const mk = o as Model["marks"][number];
+    title = MARK_KINDS.find((k) => k.id === mk.kind)!.name;
+    const textField = (label: string, value: string, set: (v: string) => void, list?: string) => <>
+      <label htmlFor={`${key}-${label}`} className="full">{label}</label>
+      <input id={`${key}-${label}`} className="full" type="text" defaultValue={value} list={list}
+        onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
+        onBlur={(e) => { const v = e.target.value.trim(); if (v !== value) ed.edit(() => set(v)); }} />
+    </>;
+    if (mk.kind === "nivel") {
+      ro.push(["Rótulo", levelText(mk, ed.model.elev)], ["Cota del nivel", fmtElev(ed.model.elev)]);
+      body = <>
+        {textField("Prefijo", mk.label, (v) => { mk.label = v; }, "level-tags")}
+        <NumberField id={`${key}-dz`} label="Desnivel (m)" value={mk.dz ?? 0} min={-99} onCommit={(v) => ed.edit(() => { mk.dz = v; })} />
+        <p className="hint">Desnivel sobre la cota del nivel: -0.15 en un patio, -0.02 en un baño.</p>
+        <datalist id="level-tags">{LEVEL_TAGS.map(([t]) => <option key={t} value={t} />)}</datalist>
+      </>;
+    } else if (mk.kind === "detalle") {
+      ro.push(["Radio de la zona", fmtLen(mk.r ?? 0)]);
+      body = <>
+        {textField("Número", mk.label, (v) => { mk.label = v || mk.label; })}
+        {textField("Lámina", mk.sheet ?? "", (v) => { mk.sheet = v; ed.defaults.detailSheet = v; })}
+        <NumberField id={`${key}-r`} label="Radio (m)" value={mk.r ?? 0.5} min={0.1} onCommit={(v) => ed.edit(() => { mk.r = v; })} />
+        <p className="hint">El globo lleva el número del detalle arriba y la lámina donde está dibujado abajo.</p>
+      </>;
+    } else body = textField("Texto", mk.label, (v) => { mk.label = v || mk.label; });
   } else if (sel && o && sel.type === "fixture") {
     const f = o as Model["fixtures"][number], d = mepDef(f.kind);
     title = d.label;
@@ -530,6 +557,42 @@ function StairTools({ ed }: { ed: Editor }) {
   );
 }
 
+/** Con la herramienta de símbolos: nivel en planta, llamada de detalle o nota con flecha. */
+function MarkTools({ ed }: { ed: Editor }) {
+  const d = ed.defaults, k = MARK_KINDS.find((x) => x.id === d.markKind)!;
+  return (
+    <section>
+      <h2>Símbolos</h2>
+      <div className="catalog" role="radiogroup" aria-label="Símbolo">
+        {MARK_KINDS.map((x) => (
+          <button key={x.id} role="radio" aria-checked={d.markKind === x.id} className="cat" onClick={() => ed.pickMark(x.id)}>
+            <svg className="stairchip" viewBox="0 0 24 24" aria-hidden="true"><path d={MARK_ICON[x.id]} /></svg>{x.name}
+          </button>
+        ))}
+      </div>
+      {d.markKind === "nivel" && <div className="props">
+        <label htmlFor="mk-tag" className="full">Prefijo</label>
+        <select id="mk-tag" className="full" value={LEVEL_TAGS.some(([t]) => t === d.markLabel) ? d.markLabel : ""} onChange={(e) => { d.markLabel = e.target.value; ed.emit(); }}>
+          {LEVEL_TAGS.map(([t, n]) => <option key={t} value={t}>{t} · {n}</option>)}
+        </select>
+      </div>}
+      {d.markKind === "detalle" && <div className="props">
+        <label htmlFor="mk-sheet" className="full">Lámina del detalle</label>
+        <input id="mk-sheet" className="full" type="text" placeholder="p. ej. ARQ-05" defaultValue={d.detailSheet}
+          onBlur={(e) => { d.detailSheet = e.target.value.trim(); ed.emit(); }} />
+      </div>}
+      <p className="hint">{k.hint}</p>
+      <p className="hint">Comandos: NV nivel, LD llamada de detalle, NT nota. En cortes y fachadas los niveles salen solos.</p>
+    </section>
+  );
+}
+
+const MARK_ICON = {
+  nivel: "M2 8h20v8H2zM5 12h14",
+  detalle: "M14 13a7 7 0 1 1 0.01 0M7 13h14M2 3l6 4",
+  nota: "M3 20l9-9h9M3 20l1-4M3 20l4-1",
+} as const;
+
 /** Iconos de planta de cada tipo de escalera. */
 const STAIR_ICON: Record<StairKind, string> = {
   recta: "M8 2h8v20H8zM8 6h8M8 10h8M8 14h8M8 18h8",
@@ -683,6 +746,7 @@ export function Sidebar({ ed, onFocusCommand, onClose }: { ed: Editor; onFocusCo
       {onClose && <button className="btn sideclose" onClick={onClose}>Cerrar</button>}
       {ed.tool === "deck" && <DeckTools ed={ed} />}
       {ed.tool === "stair" && <StairTools ed={ed} />}
+      {ed.tool === "mark" && <MarkTools ed={ed} />}
       {ed.tool === "column" && <section>
         <h2>Columnas</h2>
         <NumberField id="col-w" label="Sección (m)" value={ed.defaults.colW} min={0.15} onCommit={(v) => { ed.defaults.colW = v; ed.emit(); }} />

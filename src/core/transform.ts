@@ -2,7 +2,7 @@ import type { Pt } from "./geometry";
 import { mapLines } from "./hatch";
 import { nextId, type Model } from "./model";
 
-export type ElementType = "wall" | "opening" | "line" | "dim" | "room" | "slab" | "roof" | "stair" | "deck" | "column" | "furniture" | "section" | "text" | "fixture" | "run" | "underlay" | "hatch";
+export type ElementType = "wall" | "opening" | "line" | "dim" | "room" | "slab" | "roof" | "stair" | "deck" | "column" | "furniture" | "section" | "text" | "mark" | "fixture" | "run" | "underlay" | "hatch";
 export interface ElementRef { type: ElementType; id: number }
 
 type Seg = { x1: number; y1: number; x2: number; y2: number };
@@ -45,7 +45,7 @@ function applySeg(s: Seg, t: Xform) {
 }
 
 const listOf = (m: Model, type: ElementType) =>
-  ({ wall: m.walls, opening: m.openings, line: m.lines, dim: m.dims, room: m.rooms, slab: m.slabs, roof: m.roofs, stair: m.stairs, deck: m.decks, column: m.columns, furniture: m.furniture, section: m.sections, text: m.texts, fixture: m.fixtures, run: m.runs, underlay: m.underlays, hatch: m.hatches })[type] as { id: number }[];
+  ({ wall: m.walls, opening: m.openings, line: m.lines, dim: m.dims, room: m.rooms, slab: m.slabs, roof: m.roofs, stair: m.stairs, deck: m.decks, column: m.columns, furniture: m.furniture, section: m.sections, text: m.texts, mark: m.marks, fixture: m.fixtures, run: m.runs, underlay: m.underlays, hatch: m.hatches })[type] as { id: number }[];
 
 export function findElement(m: Model, r: ElementRef) {
   return listOf(m, r.type).find((o) => o.id === r.id) ?? null;
@@ -66,6 +66,16 @@ export function transformElements(m: Model, refs: ElementRef[], t: Xform, copy: 
     if (copy) el.id = nextId(m);
     if (r.type === "room") { const p = t.map(el); el.x = p.x; el.y = p.y; if (copy) el.name = `${el.name} (copia)`; }
     // el texto solo cambia de sitio (reflejado seguiría teniendo que leerse); al girar, gira con el dibujo
+    // los símbolos se llevan por sus puntos y siguen leyéndose derechos; la zona del detalle escala con el dibujo
+    else if (r.type === "mark") {
+      const p = t.map(el);
+      if (el.ax !== undefined) {
+        const a = { x: el.ax, y: el.ay }, q = t.map(a);
+        if (el.r) { const e = t.map({ x: a.x + el.r, y: a.y }); el.r = Math.hypot(e.x - q.x, e.y - q.y); }
+        el.ax = q.x; el.ay = q.y;
+      }
+      el.x = p.x; el.y = p.y;
+    }
     else if (r.type === "text") { const p = t.map(el); el.x = p.x; el.y = p.y; if (t.rot) el.rot = ((el.rot + t.rot) % 360 + 360) % 360; }
     // cubiertas y decks son rectángulos alineados: giran por cuartos de vuelta; con otro ángulo se lleva su centro
     else if (r.type === "roof" || r.type === "deck") {
@@ -153,6 +163,8 @@ export function deleteElements(m: Model, refs: ElementRef[]) {
   m.sections = m.sections.filter((r) => !secs.has(r.id));
   const texts = ids("text");
   m.texts = m.texts.filter((r) => !texts.has(r.id));
+  const marks = ids("mark");
+  m.marks = m.marks.filter((r) => !marks.has(r.id));
   const fx = ids("fixture"), runs = ids("run");
   m.fixtures = m.fixtures.filter((r) => !fx.has(r.id));
   m.runs = m.runs.filter((r) => !runs.has(r.id));

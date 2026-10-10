@@ -4,11 +4,12 @@ import { bounds, sheetBounds, dimOffset, dir, distSeg, dimGeom, fits, loc, onSla
 import { IDEAL_TREAD, POST_R, shortTread, sizedByTread, stairGeom, stairLabel, stairLenFor, stairSteps, stairTypeName } from "../core/stairs";
 import {
   attachWalls, liftBuriedRoofs, cloneModel, emptyProject, newLevel, nextId, nextSectionName, normalizeProject, sampleProject, type Level, type Project, type ProjectInfo,
-  type Deck, type DeckKind, type Dim, type LayerId, type Model, type RoofKind, type RunSystem, type Stair, type StairKind, type Wall,
+  type Deck, type DeckKind, type Dim, type LayerId, type MarkKind, type Model, type RoofKind, type RunSystem, type Stair, type StairKind, type Wall,
 } from "../core/model";
 import { autoDims } from "../core/autodim";
 import { axes } from "../core/mxStruct";
-import { fmtArea, fmtLen, fmtSmall, imperial, parseLen, setUnitSystem, FT, IN, type UnitSystem } from "../core/units";
+import { fmtArea, fmtElev, fmtLen, fmtSmall, imperial, parseLen, setUnitSystem, FT, IN, type UnitSystem } from "../core/units";
+import { levelText, MARK_KINDS, markHit, markPts, nextDetailNum } from "../core/marks";
 import type { CadImportResult } from "../core/cadImport";
 import { parseDxf } from "../core/dxfImport";
 import { parseProjectFile, projectFileName, readProjectImages, serializeProject } from "../core/projectFile";
@@ -23,14 +24,14 @@ import { computeRooms, RC, roomAt, type RoomGrid } from "../core/rooms";
 import { hatchArea, hatchPattern, inHatch, maskLoops, IMPORTED } from "../core/hatch";
 import { deleteElements, reflection, rotation, scaling, screenAngle, transformElements, translation, type Xform } from "../core/transform";
 
-export type Tool = "select" | "wall" | "door" | "window" | "line" | "dim" | "room" | "move" | "copy" | "mirror" | "rotate" | "scale" | "array" | "trim" | "extend" | "break" | "offset" | "slab" | "roof" | "stair" | "deck" | "column" | "furniture" | "section" | "hole" | "text" | "fixture" | "run" | "calibrate" | "hatch";
+export type Tool = "select" | "wall" | "door" | "window" | "line" | "dim" | "room" | "move" | "copy" | "mirror" | "rotate" | "scale" | "array" | "trim" | "extend" | "break" | "offset" | "slab" | "roof" | "stair" | "deck" | "column" | "furniture" | "section" | "hole" | "text" | "mark" | "fixture" | "run" | "calibrate" | "hatch";
 /** Herramientas que actúan pulsando directamente sobre un muro o una línea. */
 const PICK_TOOLS: Tool[] = ["trim", "extend", "break", "offset"];
 /** Herramientas que actúan sobre la selección actual. */
 const MODIFY_TOOLS: Tool[] = ["move", "copy", "mirror", "rotate", "scale", "array"];
 const MODIFY_NAME: Partial<Record<Tool, string>> = { move: "Mover", copy: "Copiar", mirror: "Simetría", rotate: "Girar", scale: "Escala", array: "Matriz" };
 const fmtNum = (v: number) => String(Math.round(v * 1000) / 1000);
-export type SelType = "wall" | "opening" | "line" | "dim" | "room" | "slab" | "roof" | "stair" | "deck" | "column" | "furniture" | "section" | "text" | "fixture" | "run" | "underlay" | "hatch";
+export type SelType = "wall" | "opening" | "line" | "dim" | "room" | "slab" | "roof" | "stair" | "deck" | "column" | "furniture" | "section" | "text" | "mark" | "fixture" | "run" | "underlay" | "hatch";
 export interface Selection { type: SelType; id: number }
 export interface SnapPt extends Pt { kind: "end" | "mid" | null }
 export interface OpeningCandidate { w: Wall; t: number; ok: boolean }
@@ -67,6 +68,10 @@ const COMMANDS: Record<string, Tool> = {
   SB: "hatch", SOMBREA: "hatch", SOMBREADO: "hatch", RAYADO: "hatch", TRAMA: "hatch",
   TU: "run", TUBERIA: "run", "TUBERÍA": "run", CANALIZACION: "run", "CANALIZACIÓN": "run",
 };
+/** Comandos de los símbolos de anotación. */
+const MARK_COMMANDS: Record<string, MarkKind> = {
+  NV: "nivel", NIVEL: "nivel", LD: "detalle", LLAMADA: "detalle", DETALLE: "detalle", NT: "nota", NOTA: "nota",
+};
 /** Comandos que abren la biblioteca de instalaciones de una disciplina. */
 const DISC_COMMANDS: Record<string, Discipline> = {
   EL: "elec", ELECTRICIDAD: "elec", PL: "plum", PLOMERIA: "plum", "PLOMERÍA": "plum", FO: "plum", FONTANERIA: "plum", "FONTANERÍA": "plum",
@@ -101,7 +106,7 @@ export class Editor {
   set model(m: Model) { this.project.levels[this.active] = { ...this.model, ...m }; }
   rooms: RoomGrid | null = null;
   vis: Record<LayerId, boolean> = { muros: true, puertas: true, ventanas: true, cotas: true, anot: true, hab: true, losas: true, cubiertas: true, escaleras: true, decks: true, columnas: true, mobiliario: true, secciones: true, electricidad: true, plomeria: true, calcos: true, sombreados: true, ejes: true };
-  defaults = { ...METRIC_DEFAULTS, roofKind: "gable" as RoofKind, furnKind: "bed2", furnRot: 0, mepKind: "enchufe", mepRot: 0, runSys: "af" as RunSystem, hatchPattern: "diagonal", hatchScale: 1, hatchAngle: 0, hatchMode: "room" as "room" | "poly", doorStyle: "single", winStyle: "fixed", deckKind: "wood" as DeckKind, colW: 0.3, stairKind: "recta" as StairKind, stairTurn: 1 as 1 | -1 };
+  defaults = { ...METRIC_DEFAULTS, roofKind: "gable" as RoofKind, furnKind: "bed2", furnRot: 0, mepKind: "enchufe", mepRot: 0, runSys: "af" as RunSystem, hatchPattern: "diagonal", hatchScale: 1, hatchAngle: 0, hatchMode: "room" as "room" | "poly", doorStyle: "single", winStyle: "fixed", deckKind: "wood" as DeckKind, colW: 0.3, stairKind: "recta" as StairKind, stairTurn: 1 as 1 | -1, markKind: "nivel" as MarkKind, markLabel: "N.P.T.", detailSheet: "" };
   tool: Tool = "select";
   /** Elementos seleccionados. */
   sels: Selection[] = [];
@@ -130,6 +135,8 @@ export class Editor {
   grip: GripDrag | null = null;
   /** Punto donde se insertará el texto que se está escribiendo en la línea de comandos */
   textAt: Pt | null = null;
+  /** Nota con flecha a la espera de su texto: punta de la flecha y arranque del texto */
+  noteAt: { a: Pt; p: Pt } | null = null;
   message = "Bienvenido. Se ha cargado una vivienda de ejemplo.";
 
   private history: string[] = [];
@@ -323,10 +330,10 @@ export class Editor {
   // ---------- consultas ----------
   wallById(id: number) { return this.model.walls.find((w) => w.id === id); }
   isSelected(type: SelType, id: number) { return this.sels.some((s) => s.type === type && s.id === id); }
-  selObj(): (Seg & { id: number }) | Model["openings"][number] | Model["rooms"][number] | Model["slabs"][number] | Model["roofs"][number] | Model["stairs"][number] | Model["decks"][number] | Model["columns"][number] | Model["furniture"][number] | Model["sections"][number] | Model["texts"][number] | Model["fixtures"][number] | Model["runs"][number] | Model["underlays"][number] | Model["hatches"][number] | null {
+  selObj(): (Seg & { id: number }) | Model["openings"][number] | Model["rooms"][number] | Model["slabs"][number] | Model["roofs"][number] | Model["stairs"][number] | Model["decks"][number] | Model["columns"][number] | Model["furniture"][number] | Model["sections"][number] | Model["texts"][number] | Model["marks"][number] | Model["fixtures"][number] | Model["runs"][number] | Model["underlays"][number] | Model["hatches"][number] | null {
     if (!this.sel) return null;
     const m = this.model;
-    const list = { wall: m.walls, line: m.lines, dim: m.dims, opening: m.openings, room: m.rooms, slab: m.slabs, roof: m.roofs, stair: m.stairs, deck: m.decks, column: m.columns, furniture: m.furniture, section: m.sections, text: m.texts, fixture: m.fixtures, run: m.runs, underlay: m.underlays, hatch: m.hatches }[this.sel.type] as { id: number }[];
+    const list = { wall: m.walls, line: m.lines, dim: m.dims, opening: m.openings, room: m.rooms, slab: m.slabs, roof: m.roofs, stair: m.stairs, deck: m.decks, column: m.columns, furniture: m.furniture, section: m.sections, text: m.texts, mark: m.marks, fixture: m.fixtures, run: m.runs, underlay: m.underlays, hatch: m.hatches }[this.sel.type] as { id: number }[];
     return (list.find((o) => o.id === this.sel!.id) as never) ?? null;
   }
   grips(): { k: 0 | 1 | "mid"; x: number; y: number }[] {
@@ -359,6 +366,9 @@ export class Editor {
       case "deck": return n ? "DECK  Esquina opuesta:" : `DECK  Primera esquina (${deckType(d.deckKind).name.toLowerCase()}):`;
       case "stair": return d.stairKind === "caracol" ? (n ? "ESCALERA  Radio exterior:" : "ESCALERA  Centro del caracol:") : n ? (sizedByTread(d.stairKind) ? "ESCALERA  Dirección de subida:" : "ESCALERA  Punto de llegada (o longitud):") : `ESCALERA  ${stairTypeName(d.stairKind)}: punto de arranque (ancho ${fmtLen(d.stairW)}):`;
       case "text": return this.textAt ? "TEXTO  Escribe el texto y pulsa Intro [Esc cancela]:" : `TEXTO  Punto de inserción (altura ${fmtLen(d.textSize)}):`;
+      case "mark": return d.markKind === "nivel" ? `NIVEL  Punto del rótulo (${d.markLabel} ${fmtElev(this.model.elev)}):`
+        : d.markKind === "detalle" ? (n === 0 ? "LLAMADA DE DETALLE  Centro de la zona que se detalla:" : n === 1 ? "LLAMADA DE DETALLE  Radio de la zona:" : "LLAMADA DE DETALLE  Posición del globo:")
+        : this.noteAt ? "NOTA  Escribe el texto y pulsa Intro [Esc cancela]:" : n ? "NOTA  Punto donde va el texto:" : "NOTA  Punta de la flecha (lo que se señala):";
       case "hole": return n ? "HUECO  Esquina opuesta del hueco:" : "HUECO EN LOSA  Primera esquina del hueco (dentro de una losa):";
       case "section": return n ? "SECCIÓN  Punto final de la línea de corte (se mira a su izquierda):" : "SECCIÓN  Primer punto de la línea de corte:";
       case "fixture": return `${mepDef(d.mepKind).disc === "elec" ? "ELECTRICIDAD" : "PLOMERÍA"}  Haz clic para colocar ${mepDef(d.mepKind).label.toLowerCase()}${mepDef(d.mepKind).wall ? " (se pega al muro más cercano)" : ""} [R gira, Esc termina]:`;
@@ -394,7 +404,7 @@ export class Editor {
     return {
       muros: m.walls.length, puertas: m.openings.filter((o) => o.kind === "door").length,
       ventanas: m.openings.filter((o) => o.kind === "window").length,
-      cotas: m.dims.length, anot: m.lines.length + m.texts.length, hab: m.rooms.length, losas: m.slabs.length,
+      cotas: m.dims.length, anot: m.lines.length + m.texts.length + m.marks.length, hab: m.rooms.length, losas: m.slabs.length,
       cubiertas: m.roofs.length, escaleras: m.stairs.length, decks: m.decks.length, columnas: m.columns.length, mobiliario: m.furniture.length, secciones: m.sections.length,
       electricidad: m.fixtures.filter((f) => mepDef(f.kind).disc === "elec").length + m.runs.filter((r) => r.system === "elec").length,
       plomeria: m.fixtures.filter((f) => mepDef(f.kind).disc === "plum").length + m.runs.filter((r) => r.system !== "elec").length,
@@ -438,7 +448,7 @@ export class Editor {
     if (MODIFY_TOOLS.includes(t) && this.sels.every((s) => s.type === "opening")) {
       this.message = "Las puertas y ventanas se mueven con su muro. Selecciona el muro."; t = "select";
     }
-    this.tool = t; this.draft = null; this.openCand = null; this.box = null; this.offsetTarget = null; this.breakFrom = null; this.textAt = null;
+    this.tool = t; this.draft = null; this.openCand = null; this.box = null; this.offsetTarget = null; this.breakFrom = null; this.textAt = null; this.noteAt = null;
     if (t === "calibrate") {
       // sin selección, se calibra el único calco del nivel
       if (!this.sels.length && this.model.underlays.length === 1) this.sels = [{ type: "underlay", id: this.model.underlays[0].id }];
@@ -488,6 +498,7 @@ export class Editor {
       const bx = textBox(t);
       if (crossing ? bx.some((p) => inside(p.x, p.y)) : bx.every((p) => inside(p.x, p.y))) found.push({ type: "text", id: t.id });
     }
+    if (this.vis.anot) for (const mk of m.marks) if (markPts(mk).every((q) => inside(q.x, q.y)) || (crossing && inside(mk.x, mk.y))) found.push({ type: "mark", id: mk.id });
     if (this.vis.cotas) for (const d of m.dims) if (segHit(d)) found.push({ type: "dim", id: d.id });
     if (this.vis.calcos) for (const u of m.underlays) if (inside(u.x, u.y) && inside(u.x + u.w, u.y + u.h)) found.push({ type: "underlay", id: u.id });
     if (this.vis.hab) for (const r of m.rooms) {
@@ -554,7 +565,7 @@ export class Editor {
       if (r) return r;
     }
     let x = wx, y = wy;
-    const orth = from && this.ortho && this.tool !== "roof" && this.tool !== "hole" && (this.tool !== "dim" || this.draft?.pts.length === 1);
+    const orth = from && this.ortho && this.tool !== "roof" && this.tool !== "hole" && this.tool !== "mark" && (this.tool !== "dim" || this.draft?.pts.length === 1);
     if (orth) { if (Math.abs(x - from!.x) > Math.abs(y - from!.y)) y = from!.y; else x = from!.x; }
     // en métrico se redondea a 10 cm; en pies y pulgadas, a la pulgada
     const g = imperial() ? (v: number) => Math.round(v / IN) * IN : (v: number) => Math.round(v * 10) / 10;
@@ -578,6 +589,7 @@ export class Editor {
     if (this.vis.muros) for (const w of m.walls) { const r = distSeg(wx, wy, w.x1, w.y1, w.x2, w.y2); if (r.d < w.thick / 2 + tol) take(r.d, { type: "wall", id: w.id }); }
     if (this.vis.anot) for (const t of m.texts) if (pointInPolygon({ x: wx, y: wy }, textBox(t))) take(0.02, { type: "text", id: t.id });
     if (this.vis.anot) for (const l of m.lines) { const r = distSeg(wx, wy, l.x1, l.y1, l.x2, l.y2); if (r.d < tol) take(r.d, { type: "line", id: l.id }); }
+    if (this.vis.anot) for (const mk of m.marks) { const d = markHit(mk, m.elev, { x: wx, y: wy }, this.view.scale); if (d < Infinity) take(d, { type: "mark", id: mk.id }); }
     if (this.vis.cotas) for (const d of m.dims) { const g = dimGeom(d), r = distSeg(wx, wy, g.a.x, g.a.y, g.b.x, g.b.y); if (r.d < tol * 2) take(r.d, { type: "dim", id: d.id }); }
     if (this.vis.secciones) for (const se of m.sections) { const r = distSeg(wx, wy, se.x1, se.y1, se.x2, se.y2); if (r.d < tol) take(r.d, { type: "section", id: se.id }); }
     if (this.vis.escaleras) for (const st of m.stairs) { const r = distSeg(wx, wy, st.x1, st.y1, st.x2, st.y2); if (r.d < st.width / 2 || pointInPolygon({ x: wx, y: wy }, stairGeom(st).outline)) take(Math.min(r.d, st.width / 2) + 0.2, { type: "stair", id: st.id }); }
@@ -722,6 +734,7 @@ export class Editor {
       this.changed();
       return;
     }
+    if (this.tool === "mark") { this.placeMark(p); return; }
     if (this.tool === "text") { this.textAt = p; this.message = "Escribe el texto en la línea de comandos y pulsa Intro."; this.emit(); return; }
     if (this.tool === "hole") {
       if (!this.draft) { this.draft = { pts: [p] }; this.emit(); return; }
@@ -829,6 +842,8 @@ export class Editor {
     } else result = transformElements(this.model, this.sels, xf, copy);
     // cada sección copiada lleva su propia letra
     if (copy) for (const r of result) if (r.type === "section") { const se = this.model.sections.find((x) => x.id === r.id); if (se) se.name = nextSectionName(this.project); }
+    // y cada llamada de detalle copiada, su propio número
+    if (copy) for (const r of result) if (r.type === "mark") { const mk = this.model.marks.find((x) => x.id === r.id); if (mk?.kind === "detalle") mk.label = nextDetailNum(this.project); }
     const n = this.sels.filter((r) => r.type !== "opening").length, el = `${n} elemento${n > 1 ? "s" : ""}`;
     if (tool === "copy") {
       this.message = `${result.length} copia${result.length > 1 ? "s" : ""} creada${result.length > 1 ? "s" : ""}. Haz clic para otra copia o Esc para terminar.`;
@@ -1325,6 +1340,7 @@ export class Editor {
   escape() {
     if (this.pendingModify) { this.pendingModify = null; this.log("Comando cancelado."); return; }
     if (this.textAt) { this.textAt = null; this.log("Texto cancelado."); return; }
+    if (this.noteAt) { this.noteAt = null; this.log("Nota cancelada."); return; }
     if (MODIFY_TOOLS.includes(this.tool)) { this.setTool("select"); return; }
     if (this.tool === "offset" && this.offsetTarget) { this.offsetTarget = null; this.emit(); return; }
     if (this.tool === "break" && this.breakFrom) { this.breakFrom = null; this.log("Partir cancelado."); return; }
@@ -1346,6 +1362,17 @@ export class Editor {
       this.changed();
       return;
     }
+    if (this.tool === "mark" && this.noteAt) {
+      const txt = raw.trim();
+      if (!txt) { this.noteAt = null; this.log("Nota cancelada."); return; }
+      const m = this.model, { a, p } = this.noteAt, id = nextId(m);
+      this.snapshot();
+      m.marks.push({ id, kind: "nota", x: p.x, y: p.y, ax: a.x, ay: a.y, label: txt });
+      this.noteAt = null;
+      this.message = "Nota añadida. Haz clic para otra o Esc para terminar.";
+      this.changed();
+      return;
+    }
     const s = raw.trim().toUpperCase().replace(/\s+/g, "");
     if (!s) {
       if (this.tool === "break" && this.breakFrom) { this.doBreak(null); return; }
@@ -1358,6 +1385,7 @@ export class Editor {
     }
     if (s === "CAL" || s === "CALIBRAR") { this.lastCmd = s; this.setTool("calibrate"); if (this.tool === "calibrate") this.log("Calibrar: marca dos puntos de una medida conocida."); return; }
     if (s === "AC" || s === "ACOTAR") { this.lastCmd = s; this.autoDimension(); return; }
+    if (MARK_COMMANDS[s]) { this.lastCmd = s; this.pickMark(MARK_COMMANDS[s]); return; }
     if (DISC_COMMANDS[s]) { this.lastCmd = s; this.pickDiscipline(DISC_COMMANDS[s]); return; }
     if (COMMANDS[s]) { this.lastCmd = s; this.setTool(COMMANDS[s]); if (this.tool === COMMANDS[s]) this.log(`Comando: ${s}`); return; }
     if (s === "B" || s === "BORRAR") return this.deleteSel();
@@ -1629,6 +1657,48 @@ export class Editor {
     if (kind === "door") { d.doorStyle = st.id; d.doorW = nice(st.w); d.doorH = nice(st.h); }
     else { d.winStyle = st.id; d.winW = nice(st.w); d.winH = nice(st.h); d.sill = st.sill === undefined ? d.sill : nice(st.sill); }
     this.emit();
+  }
+
+  /** Herramienta de símbolos con el tipo elegido. */
+  pickMark(kind: MarkKind) {
+    this.setTool("mark");
+    this.defaults.markKind = kind;
+    this.message = MARK_KINDS.find((k) => k.id === kind)!.hint;
+    this.emit();
+  }
+
+  /** Clic con la herramienta de símbolos: el nivel va de un clic; el detalle de tres y la nota de dos más el texto. */
+  private placeMark(p: Pt) {
+    const m = this.model, d = this.defaults;
+    if (d.markKind === "nivel") {
+      this.snapshot();
+      const id = nextId(m);
+      m.marks.push({ id, kind: "nivel", x: p.x, y: p.y, label: d.markLabel, dz: 0 });
+      this.message = `Nivel ${levelText(m.marks[m.marks.length - 1], m.elev)} colocado. Haz clic para otro o Esc para terminar.`;
+      this.changed();
+      return;
+    }
+    if (this.noteAt) { this.log("Escribe el texto de la nota y pulsa Intro."); return; }
+    const pts = [...(this.draft?.pts ?? []), p];
+    if (pts.length > 1 && Math.hypot(p.x - pts[pts.length - 2].x, p.y - pts[pts.length - 2].y) < 1e-3) return;
+    if (d.markKind === "nota") {
+      if (pts.length < 2) { this.draft = { pts }; this.emit(); return; }
+      this.noteAt = { a: pts[0], p };
+      this.draft = null;
+      this.message = "Escribe el texto de la nota en la línea de comandos y pulsa Intro.";
+      this.emit();
+      return;
+    }
+    if (pts.length < 3) { this.draft = { pts }; this.emit(); return; }
+    const [c, e] = pts, r = Math.hypot(e.x - c.x, e.y - c.y);
+    if (r < 0.1) { this.draft = null; this.log("La zona del detalle es demasiado chica: vuelve a marcar el centro y el radio."); return; }
+    this.snapshot();
+    const id = nextId(m), num = nextDetailNum(this.project);
+    m.marks.push({ id, kind: "detalle", x: p.x, y: p.y, ax: c.x, ay: c.y, r, label: num, sheet: d.detailSheet });
+    this.sels = [{ type: "mark", id }];
+    this.draft = null;
+    this.message = `Llamada de detalle ${num} creada. Escribe en Propiedades la lámina donde va el detalle.`;
+    this.changed();
   }
 
   /** Invierte el sentido de una sección: se ve el otro lado del corte. */
