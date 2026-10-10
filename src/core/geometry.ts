@@ -249,6 +249,22 @@ export interface RoofGeom {
  * Geometría de una cubierta rectangular. La cumbrera va siempre en la dirección larga.
  * A dos aguas cae hacia los lados largos; a cuatro aguas, hacia los cuatro lados.
  */
+/** Pretil de azotea por omisión: altura sobre la losa y grueso (tabique con su aplanado). */
+export const PARAPET = { h: 0.6, t: 0.15 };
+
+/**
+ * Pretil de una azotea: contorno exterior (el borde de la losa, con su volado) e interior, cota de arranque
+ * (lecho alto de la losa, sobre la cota del nivel) y altura. null si la cubierta no es plana o no lleva pretil.
+ */
+export function parapet(r: Roof) {
+  if (r.kind !== "flat") return null;
+  const h = r.parapet ?? PARAPET.h, t = PARAPET.t, outer = roofGeom(r).outline;
+  const x0 = outer[0].x, y0 = outer[0].y, x1 = outer[2].x, y1 = outer[2].y;
+  if (h < 0.01 || x1 - x0 < 3 * t || y1 - y0 < 3 * t) return null;
+  const inner = [{ x: x0 + t, y: y0 + t }, { x: x1 - t, y: y0 + t }, { x: x1 - t, y: y1 - t }, { x: x0 + t, y: y1 - t }];
+  return { h, t, outer, inner, z: r.base + r.thick };
+}
+
 export function roofGeom(r: Roof): RoofGeom {
   const o = r.overhang;
   const x0 = Math.min(r.x1, r.x2) - o, x1 = Math.max(r.x1, r.x2) + o;

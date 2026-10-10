@@ -95,6 +95,8 @@ export interface Roof {
   thick: number;
   /** Material de cubierta (finishes.ts); sin él, teja cerámica en las inclinadas */
   finish?: string;
+  /** Azotea: altura del pretil sobre el lecho alto de la losa (sin dato, 0,60 m; 0 sin pretil) */
+  parapet?: number;
 }
 
 /** Forma de la escalera (ver core/stairs.ts). */

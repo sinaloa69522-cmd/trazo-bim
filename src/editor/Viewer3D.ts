@@ -2,9 +2,9 @@ import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { furnitureSolids, furnitureToPlan } from "../core/furniture";
 import { discOfSystem, mepDef, systemDef } from "../core/mep";
-import { bounds, dir, loc, pieces, roofGeom, solidPts, wallEnds, type P3 } from "../core/geometry";
+import { bounds, dir, loc, parapet, pieces, roofGeom, solidPts, wallEnds, type P3, type Pt } from "../core/geometry";
 import { stairGeom } from "../core/stairs";
-import type { Level, Opening, Wall } from "../core/model";
+import type { Level, Opening, Roof, Wall } from "../core/model";
 import { openingStyle } from "../core/openingStyles";
 import { finish, gableWall, outward, roofFinish, type Finish } from "../core/finishes";
 import { finishTile } from "./finishTextures";
@@ -45,6 +45,10 @@ export class Viewer3D {
     gable: new THREE.MeshStandardMaterial({ color: 0xece9e2, roughness: 0.92, side: THREE.DoubleSide, shadowSide: THREE.FrontSide }),
     stair: new THREE.MeshStandardMaterial({ color: 0xd8d2c6, roughness: 0.9 }),
     furn: new THREE.MeshStandardMaterial({ color: 0xc7b299, roughness: 0.85 }),
+    /** Azotea sin material elegido: impermeabilizante elastomérico rojo óxido */
+    azotea: new THREE.MeshStandardMaterial({ color: 0xa65a42, roughness: 0.85, side: THREE.DoubleSide, shadowSide: THREE.FrontSide }),
+    /** Remate del pretil y gárgolas: concreto */
+    coping: new THREE.MeshStandardMaterial({ color: 0xb9b5ad, roughness: 0.9 }),
     edge: new THREE.LineBasicMaterial({ color: 0x2b3330, transparent: true, opacity: 0.55 }),
   };
 
@@ -191,7 +195,8 @@ export class Viewer3D {
   }
 
   constructor(private host: HTMLElement, private ed: Editor, private background: () => string) {
-    this.ren = new THREE.WebGLRenderer({ antialias: true });
+    // profundidad logarítmica: sin ella, caras a pocos centímetros (losa y muro, pretil y chaflán) parpadean de lejos
+    this.ren = new THREE.WebGLRenderer({ antialias: true, logarithmicDepthBuffer: true });
     this.ren.setPixelRatio(Math.min(2, devicePixelRatio || 1));
     this.ren.shadowMap.enabled = true;
     this.ren.shadowMap.type = THREE.PCFSoftShadowMap;
@@ -375,6 +380,50 @@ export class Viewer3D {
       this.group.add(ed);
       return true;
     };
+    /** Prisma de base en planta (con huecos) que baja `depth` desde la cota y; mats: [cara de arriba, de abajo, cantos]. */
+    const plate = (outer: Pt[], holes: Pt[][], depth: number, y: number, mats: THREE.Material | THREE.Material[]) => {
+      const shape = new THREE.Shape(outer.map((p) => new THREE.Vector2(p.x, p.y)));
+      for (const h of holes) shape.holes.push(new THREE.Path(h.map((p) => new THREE.Vector2(p.x, p.y))));
+      const g = new THREE.ExtrudeGeometry(shape, { depth, bevelEnabled: false });
+      if (Array.isArray(mats)) {
+        const lids = g.groups[0].count, half = lids / 2;
+        g.clearGroups();
+        g.addGroup(0, half, 0); g.addGroup(half, half, 1); g.addGroup(lids, g.attributes.position.count - lids, 2);
+      }
+      const mesh = new THREE.Mesh(g, mats);
+      mesh.rotation.x = Math.PI / 2; // (x, y) de la planta pasa a (x, z); la extrusión baja
+      mesh.position.y = y;
+      mesh.castShadow = mesh.receiveShadow = true;
+      this.group.add(mesh);
+      const e = new THREE.LineSegments(new THREE.EdgesGeometry(g), this.mat.edge);
+      e.rotation.copy(mesh.rotation); e.position.copy(mesh.position);
+      this.group.add(e);
+    };
+    /**
+     * Azotea: losa maciza con su espesor (frente y plafón aplanados), impermeabilizante arriba, pretil con remate de
+     * concreto, chaflán en el encuentro con el pretil y gárgolas en el lado de atrás.
+     */
+    const azotea = (r: Roof, sel: boolean) => {
+      const g = roofGeom(r), rf = roofFinish(r), zr = r.base + r.thick, top = base + zr;
+      const skin = sel ? this.mat.roofSel : rf ? this.finishMat(rf) : this.mat.azotea, plaster = sel ? this.mat.roofSel : this.mat.wall;
+      plate(g.outline, [], r.thick, top, [skin, plaster, plaster]);
+      const pp = parapet(r);
+      if (!pp) return;
+      plate(pp.outer, [pp.inner], pp.h, top + pp.h, plaster);
+      const grow = (q: Pt[], d: number) => { const [a, , c] = q; return [{ x: a.x - d, y: a.y - d }, { x: c.x + d, y: a.y - d }, { x: c.x + d, y: c.y + d }, { x: a.x - d, y: c.y + d }]; };
+      plate(grow(pp.outer, 0.025), [grow(pp.inner, 0.025)], 0.05, top + pp.h + 0.05, sel ? this.mat.roofSel : this.mat.coping);
+      // chaflán de 10 cm: cuatro faldones a 45° que se cortan a inglete en las esquinas
+      const c = Math.min(0.1, pp.h / 2), lo = grow(pp.inner, -c), hi = pp.inner;
+      polys(hi.map((_, i) => { const j = (i + 1) % 4; return [{ ...lo[i], z: zr }, { ...lo[j], z: zr }, { ...hi[j], z: zr + c }, { ...hi[i], z: zr + c }]; }), skin);
+      // gárgolas en el lado de atrás (y menor en planta): salen 30 cm del paño del pretil, al ras de la azotea
+      const [o0, , o2] = pp.outer, len = pp.t + 0.3;
+      for (const k of [0.25, 0.75]) {
+        const gg = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.1, len), sel ? this.mat.roofSel : this.mat.coping);
+        gg.position.set(o0.x + (o2.x - o0.x) * k, top + 0.05, o0.y + pp.t - len / 2);
+        gg.castShadow = true;
+        this.group.add(gg);
+      }
+    };
     const b = projectBounds(this.ed);
     const real = this.realistic && !this.ed.framing, gl = gradeLevel(project), cx = (b.x0 + b.x1) / 2, cz = (b.y0 + b.y1) / 2;
     const floor = new THREE.Mesh(new THREE.BoxGeometry(b.x1 - b.x0, 0.1, b.y1 - b.y0), real ? pavingMaterial(this.ren, b.x1 - b.x0, b.y1 - b.y0) : this.mat.floor);
@@ -417,6 +466,7 @@ export class Viewer3D {
         this.group.add(e);
       }
       if (vis.cubiertas) for (const r of m.roofs) {
+        if (r.kind === "flat") { azotea(r, isSel("roof", r.id)); continue; }
         const g = roofGeom(r);
         const rf = roofFinish(r);
         polys(g.faces, isSel("roof", r.id) ? this.mat.roofSel : rf ? this.finishMat(rf) : this.mat.roof);

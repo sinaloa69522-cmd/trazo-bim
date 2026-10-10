@@ -68,7 +68,7 @@ export function drawElevation(ctx: CanvasRenderingContext2D, el: Elevation, ox: 
     if (name) ctx.fillText(name, x0 + 5, y + 7);
   };
   for (const l of el.levels) mark(l.elev, us ? fmtElev(l.elev) : `N.P.T. ${fmtElev(l.elev)}`, l.name);
-  for (const t of el.tops ?? []) mark(t.elev, `${us ? (t.tag === "N.L.A." ? "T.O. ROOF" : "RIDGE") : t.tag} ${fmtElev(t.elev)}`, "");
+  for (const t of el.tops ?? []) mark(t.elev, `${us ? (t.tag === "N.L.A." ? "T.O. ROOF" : t.tag === "Pretil" ? "T.O. PARAPET" : "RIDGE") : t.tag} ${fmtElev(t.elev)}`, "");
   const below = Math.max(oy, gy);
   let rows = 0;
   if (opts.dims) rows = chainDims(ctx, el, X, Y, below);

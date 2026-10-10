@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { wallEnds } from "../geometry";
+import { parapet, wallEnds } from "../geometry";
 import { emptyModel, type Wall } from "../model";
 
 const W = (id: number, x1: number, y1: number, x2: number, y2: number, thick = 0.2) => ({ id, x1, y1, x2, y2, thick, height: 2.7 }) as Wall;
@@ -25,5 +25,20 @@ describe("muros a inglete en 3D", () => {
     expect(wallEnds(m, m.walls[0])[1]).toEqual([4, 4]);
     m.walls.push(W(3, 4, 0, 4, 3));
     expect(wallEnds(m, m.walls[0])[1]).toBeNull();
+  });
+});
+
+describe("pretil de azotea", () => {
+  const r = { id: 1, x1: 0, y1: 0, x2: 10, y2: 7, kind: "flat" as const, pitch: 0, overhang: 0.2, base: 2.7, thick: 0.15 };
+  it("va sobre el borde de la losa con su volado, 0,60 m por omisión", () => {
+    const p = parapet(r)!;
+    expect(p.h).toBe(0.6);
+    expect(p.z).toBeCloseTo(2.85);
+    expect(p.outer[0]).toEqual({ x: -0.2, y: -0.2 });
+    expect(p.inner[0].x).toBeCloseTo(-0.05);
+  });
+  it("no hay pretil en cubiertas inclinadas ni con altura 0", () => {
+    expect(parapet({ ...r, kind: "gable" })).toBeNull();
+    expect(parapet({ ...r, parapet: 0 })).toBeNull();
   });
 });
