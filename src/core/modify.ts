@@ -56,13 +56,23 @@ export function trim(m: Model, r: Linear, click: Pt): boolean {
   const keep: [number, number][] = [];
   if (lo > EPS) keep.push([0, lo]);
   if (hi < 1 - EPS) keep.push([hi, 1]);
+  keepPieces(m, r, s, keep);
+  return true;
+}
+
+/**
+ * Deja del muro o línea solo los tramos indicados (en parámetros 0..1). El primero conserva el elemento
+ * original y los demás son copias. Los huecos que no caben enteros en un tramo desaparecen.
+ * Devuelve cuántos huecos se han perdido, o -1 si no quedaba ningún tramo y se ha borrado el elemento.
+ */
+function keepPieces(m: Model, r: Linear, s: Wall | Line, keep: [number, number][]): number {
   const orig = { ...s }, L = Math.hypot(orig.x2 - orig.x1, orig.y2 - orig.y1);
   const ops = r.type === "wall" ? m.openings.filter((o) => o.wallId === s.id) : [];
 
   if (!keep.length) {
     if (r.type === "wall") { m.walls = m.walls.filter((w) => w !== s); m.openings = m.openings.filter((o) => o.wallId !== s.id); }
     else m.lines = m.lines.filter((l) => l !== s);
-    return true;
+    return -1;
   }
   const kept = new Set<number>();
   keep.forEach(([a, b], i) => {
@@ -79,7 +89,30 @@ export function trim(m: Model, r: Linear, click: Pt): boolean {
     }
   });
   if (ops.length) m.openings = m.openings.filter((o) => !ops.includes(o) || kept.has(o.id));
-  return true;
+  return ops.length - kept.size;
+}
+
+/**
+ * Partir (BREAK): quita el tramo entre los dos puntos (proyectados sobre el elemento).
+ * Sin segundo punto, o con los dos en el mismo sitio, lo divide en dos ahí mismo sin quitar nada.
+ * Devuelve los huecos perdidos (-1 si el elemento ha desaparecido entero) o null si no hay nada que partir.
+ */
+export function breakLinear(m: Model, r: Linear, p1: Pt, p2: Pt | null): number | null {
+  const s = getSeg(m, r);
+  if (!s) return null;
+  const L = Math.hypot(s.x2 - s.x1, s.y2 - s.y1);
+  const c = (t: number) => Math.max(0, Math.min(1, t));
+  const t1 = c(project(s, p1)), t2 = p2 ? c(project(s, p2)) : t1;
+  const lo = Math.min(t1, t2), hi = Math.max(t1, t2);
+  if ((hi - lo) * L < 1e-3) {
+    // partir en un punto: hace falta que caiga dentro, no en un extremo
+    if (t1 * L < 0.01 || (1 - t1) * L < 0.01) return null;
+    return keepPieces(m, r, s, [[0, t1], [t1, 1]]);
+  }
+  const keep: [number, number][] = [];
+  if (lo * L > 0.01) keep.push([0, lo]);
+  if ((1 - hi) * L > 0.01) keep.push([hi, 1]);
+  return keepPieces(m, r, s, keep);
 }
 
 /**

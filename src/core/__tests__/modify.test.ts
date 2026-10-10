@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { Editor } from "../../editor/Editor";
-import { extend, offset, trim } from "../modify";
+import { breakLinear, extend, offset, trim } from "../modify";
 import { emptyModel, sampleModel } from "../model";
 
 describe("recortar", () => {
@@ -73,5 +73,43 @@ describe("desfase", () => {
     const copy = ed.model.walls[ed.model.walls.length - 1];
     expect(copy).toMatchObject({ x1: 0, y1: -2.5, x2: 10, y2: -2.5 });
     expect(ed.model.openings.some((o) => o.wallId === copy.id)).toBe(false);
+  });
+});
+
+describe("partir", () => {
+  it("quita el tramo entre dos puntos y deja las ventanas donde estaban", () => {
+    const m = sampleModel(), top = m.walls[0], n = m.walls.length;
+    expect(breakLinear(m, { type: "wall", id: top.id }, { x: 4, y: 0.1 }, { x: 5, y: -0.1 })).toBe(0);
+    expect(m.walls).toHaveLength(n + 1);
+    const segs = m.walls.filter((w) => w.y1 === 0 && w.y2 === 0).map((w) => [w.x1, w.x2]).sort((a, b) => a[0] - b[0]);
+    expect(segs).toEqual([[0, 4], [5, 10]]);
+    expect(m.openings.filter((o) => o.wallId === top.id || o.wallId === m.walls[n].id)).toHaveLength(2);
+  });
+
+  it("con un solo punto divide en dos sin quitar nada", () => {
+    const m = emptyModel();
+    m.lines.push({ id: 1, x1: 0, y1: 0, x2: 6, y2: 0 });
+    expect(breakLinear(m, { type: "line", id: 1 }, { x: 2.5, y: 0 }, null)).toBe(0);
+    expect(m.lines.map((l) => [l.x1, l.x2])).toEqual([[0, 2.5], [2.5, 6]]);
+    expect(breakLinear(m, { type: "line", id: 1 }, { x: 0, y: 0 }, null)).toBeNull();
+  });
+
+  it("si el corte cae en una ventana, la ventana se quita y lo avisa", () => {
+    const m = sampleModel(), top = m.walls[0];
+    expect(breakLinear(m, { type: "wall", id: top.id }, { x: 2.8, y: 0 }, null)).toBe(1);
+  });
+
+  it("desde el editor: PA, clic en el muro y clic en el segundo punto", () => {
+    const ed = new Editor();
+    const n = ed.model.walls.length, click = (x: number, y: number) => { const s = ed.toS(x, y); ed.pointerMove(s.x, s.y); ed.pointerDown(s.x, s.y); };
+    ed.runCommand("PA");
+    expect(ed.tool).toBe("break");
+    click(4, 0); expect(ed.breakFrom).not.toBeNull();
+    click(5, 0);
+    expect(ed.model.walls).toHaveLength(n + 1);
+    ed.undo();
+    expect(ed.model.walls).toHaveLength(n);
+    click(4, 0); ed.runCommand("");
+    expect(ed.model.walls).toHaveLength(n + 1);
   });
 });

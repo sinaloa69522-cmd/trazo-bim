@@ -14,7 +14,7 @@ import { parseDxf } from "../core/dxfImport";
 import { parseProjectFile, projectFileName, readProjectImages, serializeProject } from "../core/projectFile";
 import { FURNITURE, furnitureDef, furnitureOutline } from "../core/furniture";
 import { autoRoute, discOfSystem, isElectric, MEP, mepDef, mepOf, runLength, sanitaryPoints, systemDef, type Discipline } from "../core/mep";
-import { extend, offset, trim, type Linear } from "../core/modify";
+import { breakLinear, extend, offset, trim, type Linear } from "../core/modify";
 import { GENERIC, wallType } from "../core/wallTypes";
 import { finish } from "../core/finishes";
 import { openingStyle } from "../core/openingStyles";
@@ -23,9 +23,9 @@ import { computeRooms, RC, roomAt, type RoomGrid } from "../core/rooms";
 import { hatchArea, hatchPattern, inHatch, maskLoops, IMPORTED } from "../core/hatch";
 import { deleteElements, reflection, rotation, scaling, screenAngle, transformElements, translation, type Xform } from "../core/transform";
 
-export type Tool = "select" | "wall" | "door" | "window" | "line" | "dim" | "room" | "move" | "copy" | "mirror" | "rotate" | "scale" | "array" | "trim" | "extend" | "offset" | "slab" | "roof" | "stair" | "deck" | "column" | "furniture" | "section" | "hole" | "text" | "fixture" | "run" | "calibrate" | "hatch";
+export type Tool = "select" | "wall" | "door" | "window" | "line" | "dim" | "room" | "move" | "copy" | "mirror" | "rotate" | "scale" | "array" | "trim" | "extend" | "break" | "offset" | "slab" | "roof" | "stair" | "deck" | "column" | "furniture" | "section" | "hole" | "text" | "fixture" | "run" | "calibrate" | "hatch";
 /** Herramientas que actúan pulsando directamente sobre un muro o una línea. */
-const PICK_TOOLS: Tool[] = ["trim", "extend", "offset"];
+const PICK_TOOLS: Tool[] = ["trim", "extend", "break", "offset"];
 /** Herramientas que actúan sobre la selección actual. */
 const MODIFY_TOOLS: Tool[] = ["move", "copy", "mirror", "rotate", "scale", "array"];
 const MODIFY_NAME: Partial<Record<Tool, string>> = { move: "Mover", copy: "Copiar", mirror: "Simetría", rotate: "Girar", scale: "Escala", array: "Matriz" };
@@ -61,7 +61,7 @@ const COMMANDS: Record<string, Tool> = {
   H: "room", HAB: "room", HABITACION: "room", "HABITACIÓN": "room",
   MO: "move", MOVER: "move", MOVE: "move", CO: "copy", COPIA: "copy", COPIAR: "copy", COPY: "copy", SI: "mirror", SIMETRIA: "mirror", "SIMETRÍA": "mirror", MI: "mirror", MIRROR: "mirror",
   RO: "rotate", GI: "rotate", ROTAR: "rotate", ROTATE: "rotate", ESC: "scale", ESCALA: "scale", SC: "scale", SCALE: "scale", MA: "array", MATRIZ: "array", AR: "array", ARRAY: "array",
-  LO: "slab", LOSA: "slab", TR: "trim", RECORTAR: "trim", AL: "extend", ALARGAR: "extend", DE: "offset", DESFASE: "offset", EQ: "offset", EQUIDISTANCIA: "offset",
+  LO: "slab", LOSA: "slab", TR: "trim", RECORTAR: "trim", AL: "extend", ALARGAR: "extend", PA: "break", PARTIR: "break", BR: "break", BREAK: "break", DE: "offset", DESFASE: "offset", EQ: "offset", EQUIDISTANCIA: "offset",
   CU: "roof", CUBIERTA: "roof", TEJADO: "roof", ES: "stair", ESCALERA: "stair", DK: "deck", DECK: "deck", PORCHE: "deck", CL: "column", COL: "column", COLUMNA: "column", MB: "furniture", MOBILIARIO: "furniture", MUEBLE: "furniture",
   HL: "hole", HUECO: "hole", TX: "text", TEXTO: "text", SE: "section", SECCION: "section", "SECCIÓN": "section", CORTE: "section",
   SB: "hatch", SOMBREA: "hatch", SOMBREADO: "hatch", RAYADO: "hatch", TRAMA: "hatch",
@@ -115,6 +115,8 @@ export class Editor {
   /** Herramienta de modificar elegida sin selección: se elige y se confirma con Enter */
   pendingModify: Tool | null = null;
   offsetTarget: Linear | null = null;
+  /** Partir: elemento elegido y primer punto de corte */
+  breakFrom: { r: Linear; p: Pt } | null = null;
   /** Ventana de selección en curso, en coordenadas del dibujo. */
   box: { a: Pt; b: Pt } | null = null;
   ortho = true;
@@ -367,6 +369,9 @@ export class Editor {
       case "furniture": return `MOBILIARIO  Haz clic para colocar ${furnitureDef(d.furnKind).label.toLowerCase()} [R gira 90°, Esc termina]:`;
       case "trim": return "RECORTAR  Haz clic en el tramo de muro o línea que quieres quitar:";
       case "extend": return "ALARGAR  Haz clic cerca del extremo que quieres alargar:";
+      case "break": return this.breakFrom
+        ? "PARTIR  Segundo punto (se quita el tramo entre los dos) [Enter parte en el primero]:"
+        : "PARTIR  Haz clic en el muro o línea, en el primer punto de corte:";
       case "calibrate": return n === 0 ? "CALIBRAR  Primer punto de una medida conocida:" : n === 1 ? "CALIBRAR  Segundo punto de la medida:" : `CALIBRAR  Mide ${imperial() ? fmtLen(this.calibDist()) : `${this.calibDist().toFixed(3)} m`} en el dibujo. Escribe la medida real${imperial() ? " (12'6\")" : " en metros"} y Enter:`;
       case "offset": return this.offsetTarget
         ? "DESFASE  Haz clic en el lado donde va la copia:"
@@ -433,7 +438,7 @@ export class Editor {
     if (MODIFY_TOOLS.includes(t) && this.sels.every((s) => s.type === "opening")) {
       this.message = "Las puertas y ventanas se mueven con su muro. Selecciona el muro."; t = "select";
     }
-    this.tool = t; this.draft = null; this.openCand = null; this.box = null; this.offsetTarget = null; this.textAt = null;
+    this.tool = t; this.draft = null; this.openCand = null; this.box = null; this.offsetTarget = null; this.breakFrom = null; this.textAt = null;
     if (t === "calibrate") {
       // sin selección, se calibra el único calco del nivel
       if (!this.sels.length && this.model.underlays.length === 1) this.sels = [{ type: "underlay", id: this.model.underlays[0].id }];
@@ -1225,8 +1230,10 @@ export class Editor {
       this.changed();
       return;
     }
+    if (this.tool === "break" && this.breakFrom) { this.doBreak(this.snap ?? p); return; }
     const target = this.pickLinear(p.x, p.y);
     if (!target) { this.log("Haz clic sobre un muro o una línea."); return; }
+    if (this.tool === "break") { this.breakFrom = { r: target, p: this.snap ?? p }; this.hover = target; this.emit(); return; }
     if (this.tool === "offset") { this.offsetTarget = target; this.hover = target; this.emit(); return; }
     this.snapshot();
     const ok = this.tool === "trim" ? trim(this.model, target, p) : extend(this.model, target, p);
@@ -1237,6 +1244,20 @@ export class Editor {
     }
     this.sels = [];
     this.message = this.tool === "trim" ? "Tramo recortado." : "Elemento alargado.";
+    this.changed();
+  }
+
+  /** Segundo punto de Partir; sin él, parte en el primero. */
+  private doBreak(p2: Pt | null) {
+    const b = this.breakFrom!;
+    this.breakFrom = null;
+    this.snapshot();
+    const lost = breakLinear(this.model, b.r, b.p, p2);
+    if (lost === null) { this.history.pop(); this.log("Ese punto es un extremo: no hay nada que partir."); return; }
+    this.sels = [];
+    const what = b.r.type === "wall" ? "Muro" : "Línea";
+    this.message = lost < 0 ? `${what} quitado entero.` : `${what} partido${p2 && Math.hypot(p2.x - b.p.x, p2.y - b.p.y) > 1e-3 ? ", sin el tramo entre los dos puntos" : " en dos"}.` +
+      (lost > 0 ? ` ${lost === 1 ? "Un hueco quedaba" : `${lost} huecos quedaban`} en el corte y se ha quitado.` : "");
     this.changed();
   }
 
@@ -1261,6 +1282,7 @@ export class Editor {
     if (this.textAt) { this.textAt = null; this.log("Texto cancelado."); return; }
     if (MODIFY_TOOLS.includes(this.tool)) { this.setTool("select"); return; }
     if (this.tool === "offset" && this.offsetTarget) { this.offsetTarget = null; this.emit(); return; }
+    if (this.tool === "break" && this.breakFrom) { this.breakFrom = null; this.log("Partir cancelado."); return; }
     if (this.draft) this.finishDraft();
     else if (this.tool !== "select") this.setTool("select");
     else this.select(null);
@@ -1281,6 +1303,7 @@ export class Editor {
     }
     const s = raw.trim().toUpperCase().replace(/\s+/g, "");
     if (!s) {
+      if (this.tool === "break" && this.breakFrom) { this.doBreak(null); return; }
       if (this.pendingModify && this.tool === "select") { if (this.sels.length) this.setTool(this.pendingModify); else this.log("Selecciona al menos un elemento, o Esc para cancelar."); return; }
       if (this.draft && this.tool === "slab") { this.closeSlab(); return; }
       if (this.draft && this.tool === "hatch") { this.closeHatch(); return; }
@@ -1346,7 +1369,11 @@ export class Editor {
     if (this.grip) { this.dragGrip(w); return; }
     this.snap = null; this.hover = null; this.openCand = null;
     if (this.tool === "select") this.hover = this.pick(w.x, w.y);
-    else if (PICK_TOOLS.includes(this.tool)) this.hover = this.offsetTarget ?? this.pickLinear(w.x, w.y);
+    else if (PICK_TOOLS.includes(this.tool)) {
+      this.hover = this.offsetTarget ?? this.breakFrom?.r ?? this.pickLinear(w.x, w.y);
+      // los puntos de Partir se enganchan a extremos, intersecciones y cuadrícula
+      if (this.tool === "break" && this.hover) this.snap = this.snapPoint(w.x, w.y);
+    }
     else if (this.tool === "door" || this.tool === "window") this.openCand = this.openingCandidate(w.x, w.y);
     else this.snap = this.snapPoint(w.x, w.y);
     this.emit();
