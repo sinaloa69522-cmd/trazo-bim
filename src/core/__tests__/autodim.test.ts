@@ -44,7 +44,8 @@ describe("acotado automático de fachadas", () => {
 
   it("rehacer sustituye solo las automáticas y conserva las del usuario", () => {
     const ed = new Editor();
-    const own = ed.model.dims.length;
+    ed.model.dims.push({ id: 9999, x1: 2, y1: 2, x2: 4, y2: 2, off: 0.3 });
+    const own = ed.model.dims.filter((d) => !d.auto).length;
     ed.autoDimension();
     const n = ed.model.dims.length;
     expect(n).toBe(own + dims.length);
@@ -54,5 +55,19 @@ describe("acotado automático de fachadas", () => {
     expect(ed.model.dims.length).toBe(own);
     ed.undo();
     expect(ed.model.dims.length).toBe(n);
+  });
+
+  it("al dibujar se acota solo, y se deja de acotar al quitarlas", () => {
+    const ed = new Editor();
+    ed.project.levels[0].walls = []; ed.project.levels[0].dims = []; ed.project.levels[0].openings = [];
+    ed.runCommand("M");
+    for (const c of ["0;0", "8;0", "8;6", "0;6", "0;0"]) ed.runCommand(c);
+    const auto = ed.model.dims.filter((d) => d.auto).length;
+    expect(auto).toBeGreaterThanOrEqual(4);
+    ed.clearAutoDims();
+    ed.runCommand("M"); ed.runCommand("4;0"); ed.runCommand("4;6");
+    expect(ed.model.dims.filter((d) => d.auto).length).toBe(0);
+    ed.setLiveDims(true);
+    expect(ed.model.dims.filter((d) => d.auto).length).toBeGreaterThanOrEqual(4);
   });
 });

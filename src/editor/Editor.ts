@@ -1,12 +1,13 @@
 import type { MemberKind } from "../core/framing";
 import { deckGeom, deckType, fitDecks } from "../core/decks";
-import { bounds, dimOffset, dir, distSeg, dimGeom, fits, loc, onSlab, pointInPolygon, polygonArea, roofGeom, textBox, type Pt } from "../core/geometry";
+import { bounds, sheetBounds, dimOffset, dir, distSeg, dimGeom, fits, loc, onSlab, pointInPolygon, polygonArea, roofGeom, textBox, type Pt } from "../core/geometry";
 import { IDEAL_TREAD, POST_R, shortTread, sizedByTread, stairGeom, stairLabel, stairLenFor, stairSteps, stairTypeName } from "../core/stairs";
 import {
   attachWalls, liftBuriedRoofs, cloneModel, emptyProject, newLevel, nextId, nextSectionName, normalizeProject, sampleProject, type Level, type Project, type ProjectInfo,
-  type Deck, type DeckKind, type LayerId, type Model, type RoofKind, type RunSystem, type Stair, type StairKind, type Wall,
+  type Deck, type DeckKind, type Dim, type LayerId, type Model, type RoofKind, type RunSystem, type Stair, type StairKind, type Wall,
 } from "../core/model";
 import { autoDims } from "../core/autodim";
+import { axes } from "../core/mxStruct";
 import { fmtArea, fmtLen, fmtSmall, imperial, parseLen, setUnitSystem, FT, IN, type UnitSystem } from "../core/units";
 import type { CadImportResult } from "../core/cadImport";
 import { parseDxf } from "../core/dxfImport";
@@ -99,7 +100,7 @@ export class Editor {
   get model(): Level { return this.project.levels[this.active]; }
   set model(m: Model) { this.project.levels[this.active] = { ...this.model, ...m }; }
   rooms: RoomGrid | null = null;
-  vis: Record<LayerId, boolean> = { muros: true, puertas: true, ventanas: true, cotas: true, anot: true, hab: true, losas: true, cubiertas: true, escaleras: true, decks: true, columnas: true, mobiliario: true, secciones: true, electricidad: true, plomeria: true, calcos: true, sombreados: true };
+  vis: Record<LayerId, boolean> = { muros: true, puertas: true, ventanas: true, cotas: true, anot: true, hab: true, losas: true, cubiertas: true, escaleras: true, decks: true, columnas: true, mobiliario: true, secciones: true, electricidad: true, plomeria: true, calcos: true, sombreados: true, ejes: true };
   defaults = { ...METRIC_DEFAULTS, roofKind: "gable" as RoofKind, furnKind: "bed2", furnRot: 0, mepKind: "enchufe", mepRot: 0, runSys: "af" as RunSystem, hatchPattern: "diagonal", hatchScale: 1, hatchAngle: 0, hatchMode: "room" as "room" | "poly", doorStyle: "single", winStyle: "fixed", deckKind: "wood" as DeckKind, colW: 0.3, stairKind: "recta" as StairKind, stairTurn: 1 as 1 | -1 };
   tool: Tool = "select";
   /** Elementos seleccionados. */
@@ -159,6 +160,7 @@ export class Editor {
     // una cubierta que ha quedado dentro de la planta de arriba sube a coronarla
     if (liftBuriedRoofs(this.project)) this.message += " La cubierta ha subido a la planta de arriba.";
     fitDecks(this.project);
+    if (this.project.autoDims !== false) this.refreshAutoDims();
     this.rooms = computeRooms(this.model);
     this.save();
     this.modelListeners.forEach((f) => f());
@@ -391,7 +393,7 @@ export class Editor {
       cubiertas: m.roofs.length, escaleras: m.stairs.length, decks: m.decks.length, columnas: m.columns.length, mobiliario: m.furniture.length, secciones: m.sections.length,
       electricidad: m.fixtures.filter((f) => mepDef(f.kind).disc === "elec").length + m.runs.filter((r) => r.system === "elec").length,
       plomeria: m.fixtures.filter((f) => mepDef(f.kind).disc === "plum").length + m.runs.filter((r) => r.system !== "elec").length,
-      calcos: m.underlays.length, sombreados: m.hatches.length,
+      calcos: m.underlays.length, sombreados: m.hatches.length, ejes: (({ x, y }) => x.length + y.length)(axes(m)),
     };
   }
 
@@ -403,6 +405,11 @@ export class Editor {
     // los calcos también cuentan al encuadrar en pantalla (en las láminas no se dibujan)
     // sin los restos sueltos lejanos que traen algunos DWG, que harían ver el plano diminuto
     const b = bounds(this.model, this.vis.calcos ? this.model.underlays.flatMap((u) => [{ x: u.x, y: u.y }, { x: u.x + u.w, y: u.y + u.h }]) : [], true);
+    // los globos de los ejes quedan fuera del dibujo, arriba y a la izquierda
+    if (this.vis.ejes && this.model.walls.length) {
+      const a = sheetBounds(this.model);
+      b.x0 = Math.min(b.x0, a.x0 - 2); b.y0 = Math.min(b.y0, a.y0 - 2); b.x1 = Math.max(b.x1, a.x1); b.y1 = Math.max(b.y1, a.y1);
+    }
     const s = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, Math.min(width / (b.x1 - b.x0), height / (b.y1 - b.y0))));
     this.view.scale = s;
     this.view.ox = width / 2 - ((b.x0 + b.x1) / 2) * s;
@@ -999,6 +1006,29 @@ export class Editor {
   /** Lista de piezas de la biblioteca. */
   get furnitureCatalog() { return FURNITURE; }
 
+  /** Cotas de fachada que se rehacen solas en cada cambio (se desactivan con Quitar cotas automáticas). */
+  get liveDims() { return this.project.autoDims !== false; }
+  setLiveDims(on: boolean) {
+    this.edit(() => {
+      this.project.autoDims = on;
+      if (!on) for (const l of this.project.levels) l.dims = l.dims.filter((d) => !d.auto);
+    });
+    this.message = on ? "Las cotas de fachada se ponen y se rehacen solas mientras dibujas." : "Cotas automáticas desactivadas. Las tuyas se conservan.";
+  }
+
+  /** Rehace las cotas automáticas de cada nivel si han cambiado sus muros o huecos. */
+  private refreshAutoDims() {
+    for (const m of this.project.levels) {
+      const want = autoDims(m), have = m.dims.filter((d) => d.auto);
+      const key = (d: Omit<Dim, "id">) => [d.x1, d.y1, d.x2, d.y2, d.off].map((v) => v.toFixed(3)).join(",");
+      if (want.length === have.length && want.every((d, i) => key(d) === key(have[i]))) continue;
+      const gone = new Set(have.map((d) => d.id));
+      m.dims = m.dims.filter((d) => !d.auto);
+      for (const d of want) m.dims.push({ id: nextId(m), ...d });
+      if (m === this.model) this.sels = this.sels.filter((x) => !(x.type === "dim" && gone.has(x.id)));
+    }
+  }
+
   /** Acota las fachadas del nivel: sustituye las cotas automáticas anteriores y respeta las dibujadas a mano. */
   autoDimension() {
     const m = this.model, dims = autoDims(m);
@@ -1009,6 +1039,7 @@ export class Editor {
     m.dims = m.dims.filter((d) => !d.auto);
     for (const d of dims) m.dims.push({ id: nextId(m), ...d });
     this.vis.cotas = true;
+    this.project.autoDims = true;
     this.message = `${dims.length} cotas exteriores en cadena (huecos, muros y total)${removed ? ", sustituyendo las automáticas anteriores" : ""}. Las tuyas se conservan.`;
     this.changed();
   }
@@ -1021,7 +1052,9 @@ export class Editor {
     const gone = new Set(m.dims.filter((d) => d.auto).map((d) => d.id));
     m.dims = m.dims.filter((d) => !d.auto);
     this.sels = this.sels.filter((x) => !(x.type === "dim" && gone.has(x.id)));
-    this.message = `${n} cotas automáticas quitadas.`;
+    // si no, volverían en el siguiente cambio
+    this.project.autoDims = false;
+    this.message = `${n} cotas automáticas quitadas. Ya no se ponen solas; vuelve a activarlas en la herramienta Cota.`;
     this.changed();
   }
 

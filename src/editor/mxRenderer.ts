@@ -10,19 +10,25 @@ const INK = "#111111";
 
 export type MxPlan = "mxcim" | "mxest";
 
-/** Ejes con su globo arriba y a la izquierda, línea de trazo y punto y cotas entre ejes. */
-export function drawAxes(ctx: CanvasRenderingContext2D, ed: Editor) {
-  const lv = ed.model, ax = axes(lv), b = sheetBounds(lv), m = 1.1, R = 7;
+/**
+ * Ejes con su globo arriba y a la izquierda, línea de trazo y punto y cotas entre ejes.
+ * En pantalla (k > 1) va más grueso y con los colores de la interfaz.
+ */
+export function drawAxes(ctx: CanvasRenderingContext2D, ed: Editor, o: { ink?: string; bg?: string; k?: number } = {}) {
+  const ink = o.ink ?? INK, bg = o.bg ?? "#fff", k = o.k ?? 1;
+  const lv = ed.model, ax = axes(lv);
+  if (!ax.x.length && !ax.y.length) return;
+  const b = sheetBounds(lv), m = 1.1, R = 7 * k;
   const top = ed.toS(0, b.y0 - m).y, left = ed.toS(b.x0 - m, 0).x, bottom = ed.toS(0, b.y1 + 0.4).y, right = ed.toS(b.x1 + 0.4, 0).x;
   ctx.save();
-  ctx.lineWidth = 0.45; ctx.strokeStyle = INK; ctx.setLineDash([12, 3, 2, 3]);
+  ctx.lineWidth = 0.45 * k; ctx.strokeStyle = ink; ctx.setLineDash([12 * k, 3 * k, 2 * k, 3 * k]);
   ctx.beginPath();
   for (const a of ax.x) { const x = ed.toS(a.v, 0).x; ctx.moveTo(x, top + R); ctx.lineTo(x, bottom); }
   for (const a of ax.y) { const y = ed.toS(0, a.v).y; ctx.moveTo(left + R, y); ctx.lineTo(right, y); }
   ctx.stroke(); ctx.setLineDash([]);
   const bubble = (x: number, y: number, s: string) => {
-    ctx.beginPath(); ctx.arc(x, y, R, 0, Math.PI * 2); ctx.fillStyle = "#fff"; ctx.fill(); ctx.lineWidth = 0.7; ctx.stroke();
-    label(ctx, s, x, y, 8);
+    ctx.beginPath(); ctx.arc(x, y, R, 0, Math.PI * 2); ctx.fillStyle = bg; ctx.fill(); ctx.lineWidth = 0.7 * k; ctx.stroke();
+    label(ctx, s, x, y, 8 * k, "center", 0, ink, bg);
   };
   for (const a of ax.x) bubble(ed.toS(a.v, 0).x, top, a.name);
   for (const a of ax.y) bubble(left, ed.toS(0, a.v).y, a.name);
@@ -30,13 +36,13 @@ export function drawAxes(ctx: CanvasRenderingContext2D, ed: Editor) {
   const dimRow = (vs: number[], horiz: boolean) => {
     for (let i = 0; i + 1 < vs.length; i++) {
       const p = horiz ? ed.toS(vs[i], 0).x : ed.toS(0, vs[i]).y, q = horiz ? ed.toS(vs[i + 1], 0).x : ed.toS(0, vs[i + 1]).y;
-      const at = horiz ? top + R + 9 : left + R + 9;
+      const at = horiz ? top + R + 9 * k : left + R + 9 * k, t2 = 2 * k;
       ctx.beginPath();
-      if (horiz) { ctx.moveTo(p, at); ctx.lineTo(q, at); for (const r of [p, q]) { ctx.moveTo(r - 2, at + 2); ctx.lineTo(r + 2, at - 2); } }
-      else { ctx.moveTo(at, p); ctx.lineTo(at, q); for (const r of [p, q]) { ctx.moveTo(at - 2, r + 2); ctx.lineTo(at + 2, r - 2); } }
-      ctx.lineWidth = 0.45; ctx.stroke();
+      if (horiz) { ctx.moveTo(p, at); ctx.lineTo(q, at); for (const r of [p, q]) { ctx.moveTo(r - t2, at + t2); ctx.lineTo(r + t2, at - t2); } }
+      else { ctx.moveTo(at, p); ctx.lineTo(at, q); for (const r of [p, q]) { ctx.moveTo(at - t2, r + t2); ctx.lineTo(at + t2, r - t2); } }
+      ctx.lineWidth = 0.45 * k; ctx.stroke();
       const t = fmtDim(vs[i + 1] - vs[i]);
-      if (horiz) label(ctx, t, (p + q) / 2, at - 5, 7); else label(ctx, t, at - 5, (p + q) / 2, 7, "center", -Math.PI / 2);
+      if (horiz) label(ctx, t, (p + q) / 2, at - 5 * k, 7 * k, "center", 0, ink, bg); else label(ctx, t, at - 5 * k, (p + q) / 2, 7 * k, "center", -Math.PI / 2, ink, bg);
     }
   };
   dimRow(ax.x.map((a) => a.v), true);
