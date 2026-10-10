@@ -64,6 +64,7 @@ button,input,select,textarea{font:inherit;color:inherit}
 .props .ro{font-family:var(--f-mono);font-size:12px;text-align:right;font-variant-numeric:tabular-nums}
 .props .full{grid-column:1/-1}
 .props label.check{display:flex;align-items:center;gap:8px;color:var(--fg)}
+.side label.check{display:flex;align-items:center;gap:8px;color:var(--fg);font-size:12px;margin:6px 0}
 .props label.check input{width:auto}
 .kind{font-family:var(--f-display);font-weight:600;font-size:15px;margin:0 0 8px}
 .stats{display:grid;grid-template-columns:1fr auto;gap:4px 10px;font-variant-numeric:tabular-nums}

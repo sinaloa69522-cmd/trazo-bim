@@ -2,6 +2,7 @@ import { fmtArea, fmtDim, fmtLen, imperial, FT, IN } from "../core/units";
 import { deckGeom, deckType } from "../core/decks";
 import { dimGeom, dimOffset, dir, loc, pieces, roofGeom, textBox, type Pt } from "../core/geometry";
 import { stairGeom } from "../core/stairs";
+import { drawAxes } from "./mxRenderer";
 import { furnitureStrokes, type Stroke } from "../core/furniture";
 import { discOfSystem, fixtureStrokes, fixtureTextAt, mepDef, systemDef, type SymStroke } from "../core/mep";
 import type { Column, Deck, Dim, Fixture, HatchRegion, Model, Roof, Run, Section, Stair, Wall } from "../core/model";
@@ -307,6 +308,8 @@ export function drawPlan(ctx: CanvasRenderingContext2D, ed: Editor, C: PlanColor
     ctx.strokeStyle = op.kind === "door" ? C.door : C.window; ctx.lineWidth = 0.8; ctx.strokeRect(s.x - tw / 2, s.y - 7, tw, 13);
     ctx.fillStyle = C.fg; ctx.fillText(mk, s.x, s.y + 3); ctx.textAlign = "left";
   }
+  // ejes con sus globos y cotas entre ejes, como en las láminas estructurales
+  if (ed.vis.ejes && m.walls.length) drawAxes(ctx, ed, P ? {} : { ink: C.anno, bg: C["plan-bg"], k: 1.35 });
   if (P) return;
 
   // pinzamientos

@@ -13,12 +13,12 @@ const INK = "#111111";
 const SANS = (px: number, w = 600) => `${w} ${px}px 'IBM Plex Sans Condensed', 'Arial Narrow', sans-serif`;
 
 /** Texto con un halo blanco para que se lea sobre las líneas. */
-export function label(ctx: CanvasRenderingContext2D, s: string, x: number, y: number, px = 8, align: CanvasTextAlign = "center", rot = 0) {
+export function label(ctx: CanvasRenderingContext2D, s: string, x: number, y: number, px = 8, align: CanvasTextAlign = "center", rot = 0, ink = INK, halo = "#fff") {
   ctx.save();
   ctx.translate(x, y); ctx.rotate(rot);
   ctx.font = SANS(px); ctx.textAlign = align; ctx.textBaseline = "middle";
-  ctx.lineWidth = 3; ctx.strokeStyle = "#fff"; ctx.lineJoin = "round"; ctx.strokeText(s, 0, 0);
-  ctx.fillStyle = INK; ctx.fillText(s, 0, 0);
+  ctx.lineWidth = 3; ctx.strokeStyle = halo; ctx.lineJoin = "round"; ctx.strokeText(s, 0, 0);
+  ctx.fillStyle = ink; ctx.fillText(s, 0, 0);
   ctx.restore();
 }
 

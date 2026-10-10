@@ -6,6 +6,7 @@ import type { PatLine } from "./hatch";
 import type { FoundationKind } from "./foundation";
 import { autoRoute, mepDef, sanitaryPoints } from "./mep";
 import { typeForThick } from "./wallTypes";
+import { autoDims } from "./autodim";
 
 export interface Wall {
   id: number;
@@ -286,11 +287,13 @@ export interface Project {
   units?: UnitSystem;
   /** Tipo de cimentación (foundation.ts); sin valor: losa sobre terreno con zapatas */
   foundation?: FoundationKind;
+  /** false: las cotas de fachada no se rehacen solas al dibujar */
+  autoDims?: boolean;
 }
 
 export const defaultInfo = (): ProjectInfo => ({ name: "Vivienda unifamiliar", author: "", client: "", date: new Date().toISOString().slice(0, 10) });
 
-export type LayerId = "muros" | "puertas" | "ventanas" | "cotas" | "anot" | "hab" | "losas" | "cubiertas" | "escaleras" | "decks" | "columnas" | "mobiliario" | "secciones" | "electricidad" | "plomeria" | "calcos" | "sombreados";
+export type LayerId = "muros" | "puertas" | "ventanas" | "cotas" | "anot" | "hab" | "losas" | "cubiertas" | "escaleras" | "decks" | "columnas" | "mobiliario" | "secciones" | "electricidad" | "plomeria" | "calcos" | "sombreados" | "ejes";
 
 export interface Layer {
   id: LayerId;
@@ -306,6 +309,7 @@ export const LAYERS: Layer[] = [
   { id: "puertas", name: "A-PUERTAS", label: "Puertas", tok: "--door" },
   { id: "ventanas", name: "A-VENTANAS", label: "Ventanas", tok: "--window" },
   { id: "cotas", name: "A-COTAS", label: "Cotas", tok: "--dim" },
+  { id: "ejes", name: "A-EJES", label: "Ejes", tok: "--anno" },
   { id: "anot", name: "A-ANOTACION", label: "Anotación", tok: "--anno" },
   { id: "hab", name: "A-HABITACIONES", label: "Habitaciones", tok: "--accent" },
   { id: "sombreados", name: "A-SOMBREADOS", label: "Sombreados", tok: "--anno" },
@@ -408,11 +412,8 @@ export function sampleModel(): Model {
   O(c, 0.82, "door", 1.0); O(c, 0.3, "window", 2.0);
   O(d, 0.27, "window", 1.0); O(b, 0.5, "window", 1.5);
   O(e, 0.72, "door", 0.8); O(f, 0.62, "door", 0.8);
-  m.dims.push(
-    { id: nextId(m), x1: 0, y1: 0, x2: 10, y2: 0, off: -0.9 },
-    { id: nextId(m), x1: 10, y1: 0, x2: 10, y2: 7, off: -0.9 },
-    { id: nextId(m), x1: 0, y1: 0, x2: 6, y2: 0, off: -0.45 },
-  );
+  // las cotas de fachada las pone el acotado automático
+  m.dims.push(...autoDims(m).map((d) => ({ id: nextId(m), ...d })));
   m.lines.push({ id: nextId(m), x1: -1.2, y1: 8.4, x2: 11.2, y2: 8.4 });
   m.rooms.push(
     { id: nextId(m), x: 3, y: 2, name: "Dormitorio" },

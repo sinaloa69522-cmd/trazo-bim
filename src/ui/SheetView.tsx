@@ -123,14 +123,14 @@ function autoScaleOf(ed: Editor, content: Content, level: number) {
 /** Base de las láminas de estructura e instalaciones: solo muros. */
 const ONLY_WALLS: Partial<Record<LayerId, boolean>> = {
   puertas: false, ventanas: false, cotas: false, anot: false, hab: false, losas: false, cubiertas: false, escaleras: false,
-  mobiliario: false, secciones: false, electricidad: false, plomeria: false, calcos: false, sombreados: false,
+  mobiliario: false, secciones: false, electricidad: false, plomeria: false, calcos: false, sombreados: false, ejes: false,
 };
 
 /** Capas que se ven en cada plano: la arquitectura no lleva instalaciones y cada instalación solo la suya. */
 const PLAN_LAYERS: Partial<Record<Content, Partial<Record<LayerId, boolean>>>> = {
   plan: { electricidad: false, plomeria: false },
-  elec: { plomeria: false, electricidad: true, cotas: false, mobiliario: false, losas: false, cubiertas: false, secciones: false },
-  plum: { electricidad: false, plomeria: true, cotas: false, losas: false, cubiertas: false, secciones: false },
+  elec: { ejes: false, plomeria: false, electricidad: true, cotas: false, mobiliario: false, losas: false, cubiertas: false, secciones: false },
+  plum: { ejes: false, electricidad: false, plomeria: true, cotas: false, losas: false, cubiertas: false, secciones: false },
   site: { ...ONLY_WALLS, cubiertas: true },
   found: { ...ONLY_WALLS, cotas: true },
   floorfr: { ...ONLY_WALLS, puertas: true, ventanas: true },
@@ -139,8 +139,8 @@ const PLAN_LAYERS: Partial<Record<Content, Partial<Record<LayerId, boolean>>>> =
   hvac: { ...ONLY_WALLS, puertas: true, ventanas: true, hab: true },
   mxcim: ONLY_WALLS,
   mxest: { ...ONLY_WALLS, escaleras: true },
-  hid: { electricidad: false, plomeria: true, cotas: false, losas: false, cubiertas: false, secciones: false },
-  san: { electricidad: false, plomeria: true, cotas: false, losas: false, cubiertas: false, secciones: false },
+  hid: { ejes: false, electricidad: false, plomeria: true, cotas: false, losas: false, cubiertas: false, secciones: false },
+  san: { ejes: false, electricidad: false, plomeria: true, cotas: false, losas: false, cubiertas: false, secciones: false },
 };
 
 function withVis(ed: Editor, patch: Partial<Record<LayerId, boolean>> | undefined, fn: () => void) {

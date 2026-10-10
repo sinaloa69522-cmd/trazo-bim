@@ -666,6 +666,7 @@ function DimTools({ ed }: { ed: Editor }) {
     <section>
       <h2>Cotas</h2>
       <p className="hint">Clic en dos puntos y un tercero para separar la cota del dibujo.</p>
+      <label className="check"><input type="checkbox" checked={ed.liveDims} onChange={(e) => ed.setLiveDims(e.target.checked)} /> Cotas de fachada automáticas al dibujar</label>
       <button className="btn primary wide" onClick={() => ed.autoDimension()} title="Comando AC">
         {auto ? "Rehacer cotas de fachada" : "Acotar fachadas"}
       </button>
