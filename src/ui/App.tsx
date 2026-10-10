@@ -38,6 +38,7 @@ const TOOLS: { tool: Tool; label: string; key: string; icon: JSX.Element; disc?:
   { tool: "fixture", disc: "plum", label: "Plomería", key: "PL", icon: <path d="M8 2C6 5 4.5 7 4.5 9.5a3.5 3.5 0 0 0 7 0C11.5 7 10 5 8 2z" /> },
   { tool: "run", label: "Tubería", key: "TU", icon: <path d="M2 4h6v8h6M2 4v0M14 12v0" /> },
   { tool: "trim", label: "Recortar", key: "TR", icon: <><path d="M2 8h12M8 2v12" /><path d="M10.5 5.5l3-3" strokeDasharray="1.5 1.5" /></> },
+  { tool: "break", label: "Partir", key: "PA", icon: <><path d="M2 8h4.5M9.5 8H14" /><path d="M6.5 5.5v5M9.5 5.5v5" /></> },
   { tool: "extend", label: "Alargar", key: "AL", icon: <><path d="M13 2v12M2 8h7" /><path d="M9 8h4" strokeDasharray="1.5 1.5" /><path d="M7.5 6.5L9.5 8l-2 1.5" /></> },
   { tool: "offset", label: "Desfase", key: "DE", icon: <path d="M2 5h12M2 11h12" /> },
   { tool: "move", label: "Mover", key: "MO", icon: <path d="M8 1.5v13M1.5 8h13M8 1.5l-2 2M8 1.5l2 2M8 14.5l-2-2M8 14.5l2-2M1.5 8l2-2M1.5 8l2 2M14.5 8l-2-2M14.5 8l-2 2" /> },
@@ -50,7 +51,7 @@ const TOOLS: { tool: Tool; label: string; key: string; icon: JSX.Element; disc?:
 
 const CATALOG_TOOLS: Tool[] = ["furniture", "fixture", "run", "hatch"];
 /** Herramientas de modificar, en su propio grupo de la barra. */
-const EDIT_TOOLS: Tool[] = ["move", "copy", "rotate", "mirror", "scale", "array", "trim", "extend", "offset"];
+const EDIT_TOOLS: Tool[] = ["move", "copy", "rotate", "mirror", "scale", "array", "trim", "break", "extend", "offset"];
 
 /** Descarga un texto como archivo. */
 function download(name: string, text: string, type = "application/json") {

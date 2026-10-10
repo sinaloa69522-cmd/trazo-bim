@@ -464,6 +464,18 @@ export function drawPlan(ctx: CanvasRenderingContext2D, ed: Editor, C: PlanColor
       ctx.globalAlpha = 1;
     }
   }
+  // partir: el tramo que se va a quitar, del primer punto al cursor
+  if (ed.tool === "break" && ed.breakFrom) {
+    const t = ed.breakFrom.r, o = t.type === "wall" ? ed.wallById(t.id) : m.lines.find((l) => l.id === t.id);
+    if (o) {
+      const { ux, uy, L } = dir(o), on = (q: Pt) => Math.max(0, Math.min(L, (q.x - o.x1) * ux + (q.y - o.y1) * uy));
+      const a = loc(o, on(ed.breakFrom.p), 0), b = loc(o, on(ed.snap ?? ed.mouse), 0);
+      const w = t.type === "wall" ? Math.max(3, (o as Wall).thick * ed.view.scale + 2) : 3;
+      if (Math.hypot(b.x - a.x, b.y - a.y) > 1e-3) { ctx.globalAlpha = 0.6; seg(a, b, C.danger, w, [6, 4]); ctx.globalAlpha = 1; }
+      const s = toS(a.x, a.y);
+      ctx.strokeStyle = C.danger; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(s.x - 6, s.y - 6); ctx.lineTo(s.x + 6, s.y + 6); ctx.moveTo(s.x + 6, s.y - 6); ctx.lineTo(s.x - 6, s.y + 6); ctx.stroke();
+    }
+  }
   if (ed.openCand && ed.mouse.in) {
     const { w, t, ok } = ed.openCand, { L } = dir(w), width = ed.tool === "door" ? ed.defaults.doorW : ed.defaults.winW, h = w.thick / 2;
     ctx.globalAlpha = 0.55; poly(quad(w, t * L - width / 2, t * L + width / 2, -h - 0.03, h + 0.03), ok ? C.accent : C.danger); ctx.globalAlpha = 1;
