@@ -420,9 +420,9 @@ function Properties({ ed, onFocusCommand }: { ed: Editor; onFocusCommand: () => 
         {ro.map(([k, v]) => <Fragment key={k}><label>{k}</label><span className="ro">{v}</span></Fragment>)}
         {body}
         {n > 0 && ed.sels.some((x) => x.type !== "opening") && (
-          <div className="full" style={{ display: "flex", gap: 6 }}>
-            {([["move", "Mover"], ["copy", "Copiar"], ["mirror", "Simetría"]] as const).map(([t, label]) => (
-              <button key={t} className="btn" style={{ flex: 1 }} onClick={() => { ed.setTool(t); onFocusCommand(); }}>{label}</button>
+          <div className="full" style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+            {([["move", "Mover"], ["copy", "Copiar"], ["rotate", "Girar"], ["mirror", "Simetría"], ["scale", "Escala"], ["array", "Matriz"]] as const).map(([t, label]) => (
+              <button key={t} className="btn" style={{ flex: "1 0 30%" }} onClick={() => { ed.setTool(t); onFocusCommand(); }}>{label}</button>
             ))}
           </div>
         )}
