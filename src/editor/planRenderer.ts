@@ -132,8 +132,8 @@ export function drawPlan(ctx: CanvasRenderingContext2D, ed: Editor, C: PlanColor
     ctx.beginPath();
     k.pts.forEach((q, j) => { const s = toS(q.x, q.y); if (j) ctx.lineTo(s.x, s.y); else ctx.moveTo(s.x, s.y); });
     if (k.closed) ctx.closePath();
-    if (fill && i === 0 && k.closed) { ctx.fillStyle = fill; ctx.fill(); }
-    ctx.strokeStyle = col; ctx.lineWidth = lw; ctx.stroke();
+    if (fill && i === 0 && k.closed && !k.dash) { ctx.fillStyle = fill; ctx.fill(); }
+    ctx.strokeStyle = col; ctx.lineWidth = lw; ctx.setLineDash(k.dash ? [5, 3] : []); ctx.stroke(); ctx.setLineDash([]);
   });
 
   // calcos: imágenes de referencia bajo todo lo demás (solo en pantalla, no en las láminas)
@@ -437,7 +437,7 @@ export function drawPlan(ctx: CanvasRenderingContext2D, ed: Editor, C: PlanColor
   // pieza de mobiliario que se va a colocar
   if (ed.tool === "furniture" && ed.mouse.in) {
     ctx.globalAlpha = 0.7;
-    strokes(furnitureStrokes({ kind: ed.defaults.furnKind, x: p.x, y: p.y, rot: ed.defaults.furnRot }), C.accent, 1.2);
+    strokes(furnitureStrokes({ kind: ed.defaults.furnKind, ...ed.furnitureCandidate(p) }), C.accent, 1.2);
     ctx.globalAlpha = 1;
   }
   if (ed.tool === "column" && ed.mouse.in) {
