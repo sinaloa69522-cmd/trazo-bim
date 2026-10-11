@@ -93,7 +93,7 @@ export function budget(p: Project, s: BudgetSettings = defaultBudget()): Budget 
   // cubiertas: superficie real del faldón (en planta / cos de la pendiente)
   let tile = 0, flat = 0;
   for (const l of lv) for (const r of l.roofs) {
-    const a = polygonArea(roofGeom(r).outline);
+    const a = polygonArea(roofGeom(r).outline) - (r.holes ?? []).reduce((t, h) => t + polygonArea(h), 0);
     if (r.kind === "flat") flat += a; else tile += a / Math.cos((Math.min(75, r.pitch) * Math.PI) / 180);
   }
   add("03.01", "Cubierta inclinada de teja cerámica sobre losa", "m²", tile, 1100);

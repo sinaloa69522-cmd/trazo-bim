@@ -673,6 +673,11 @@ function drawRoof(ctx: CanvasRenderingContext2D, ed: Editor, r: Roof, col: strin
   ctx.setLineDash([10, 5]); path(ctx, ed, g.outline, true); ctx.setLineDash([]);
   ctx.lineWidth = Math.max(1, lw - 0.5);
   for (const [a, b] of g.ridges) path(ctx, ed, [a, b]);
+  // huecos de la azotea: contorno continuo y aspa, como los de las losas
+  for (const h of r.holes ?? []) {
+    path(ctx, ed, h, true);
+    if (h.length === 4) { path(ctx, ed, [h[0], h[2]]); path(ctx, ed, [h[1], h[3]]); }
+  }
 }
 
 /** Escalera en planta: peldaños y descansos, poste del caracol y línea de huella con la flecha de subida. */

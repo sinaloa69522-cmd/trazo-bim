@@ -97,6 +97,8 @@ export interface Roof {
   finish?: string;
   /** Azotea: altura del pretil sobre el lecho alto de la losa (sin dato, 0,60 m; 0 sin pretil) */
   parapet?: number;
+  /** Azotea: huecos (cubo de escalera, tragaluz), polígonos en planta */
+  holes?: { x: number; y: number }[][];
 }
 
 /** Forma de la escalera (ver core/stairs.ts). */
