@@ -406,7 +406,7 @@ export class Viewer3D {
     const azotea = (r: Roof, sel: boolean) => {
       const g = roofGeom(r), rf = roofFinish(r), zr = r.base + r.thick, top = base + zr;
       const skin = sel ? this.mat.roofSel : rf ? this.finishMat(rf) : this.mat.azotea, plaster = sel ? this.mat.roofSel : this.mat.wall;
-      plate(g.outline, [], r.thick, top, [skin, plaster, plaster]);
+      plate(g.outline, r.holes ?? [], r.thick, top, [skin, plaster, plaster]);
       const pp = parapet(r);
       if (!pp) return;
       plate(pp.outer, [pp.inner], pp.h, top + pp.h, plaster);

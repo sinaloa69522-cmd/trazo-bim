@@ -168,14 +168,16 @@ function project(p: Project, fr: Frame): Elevation {
       // canto del alero
       const zt = e + g.faces[0][0].z;
       tops.push(r.kind === "flat" ? { tag: "N.L.A.", elev: zt } : { tag: "Cumbrera", elev: e + Math.max(...g.faces.flatMap((f) => f.map((q) => q.z))) });
-      prism(g.outline, zt - r.thick, zt, "roof", false);
+      prism(g.outline, zt - r.thick, zt, "roof", false, r.kind === "flat" ? r.holes ?? [] : []);
       // pretil de la azotea: anillo de muro sobre el borde de la losa, cortado en los cortes
       const pp = parapet(r);
       if (pp) { prism(pp.outer, e + pp.z, e + pp.z + pp.h, "wall", true, [pp.inner]); tops.push({ tag: "Pretil", elev: e + pp.z + pp.h }); }
       if (!fr.cut) continue;
       // faldones cortados: la línea de corte sobre la cara superior, con el espesor medido en vertical
       const lift = r.kind === "flat" ? r.thick : r.thick / Math.cos((Math.max(0, Math.min(75, r.pitch)) * Math.PI) / 180);
-      for (const f of g.faces) {
+      // azotea con huecos: la losa cortada solo donde hay losa
+      if (r.kind === "flat" && r.holes?.length) { for (const [ua, ub] of cutSpans(g.outline, r.holes)) rect(ua, ub, zt - lift, zt); }
+      else for (const f of g.faces) {
         const seg = cutPolygon(f.map((q) => ({ ...q, z: e + q.z })), ahead, view);
         if (seg) { const [A, B] = seg; faces.push({ pts: [A, B, { u: B.u, z: B.z - lift }, { u: A.u, z: A.z - lift }], depth: 0, kind: "cut", cut: true }); }
       }

@@ -26,6 +26,9 @@ import { hatchArea, hatchPattern, inHatch, maskLoops, IMPORTED } from "../core/h
 import { DEFAULT_SNAPS, resolveSnap, snapGeometry, SNAP_MODES, SNAP_NAME, type SnapKind, type SnapPt } from "./snaps";
 import { deleteElements, reflection, rotation, scaling, screenAngle, transformElements, translation, type Xform } from "../core/transform";
 
+/** Centro (promedio de vértices) de un polígono. */
+const centroid = (r: Pt[]) => ({ x: r.reduce((s, q) => s + q.x, 0) / r.length, y: r.reduce((s, q) => s + q.y, 0) / r.length });
+
 export type Tool = "select" | "wall" | "door" | "window" | "line" | "dim" | "room" | "move" | "copy" | "mirror" | "rotate" | "scale" | "array" | "trim" | "extend" | "break" | "offset" | "slab" | "roof" | "stair" | "deck" | "column" | "furniture" | "section" | "hole" | "text" | "mark" | "fixture" | "run" | "calibrate" | "hatch";
 /** Herramientas que actúan pulsando directamente sobre un muro o una línea. */
 const PICK_TOOLS: Tool[] = ["trim", "extend", "break", "offset"];
@@ -325,6 +328,16 @@ export class Editor {
     // la copia no lleva cubiertas (se mueven abajo) ni secciones (cortan todo el edificio)
     const content = copy ? { ...cloneModel(this.model), roofs: [], sections: [] } : undefined;
     const lv = newLevel(n === 1 ? "Planta 1" : `Planta ${n}`, elev, content);
+    // la planta nueva vacía arranca sobre su losa de entrepiso (el contorno de las losas de abajo),
+    // con el hueco ya abierto sobre cada escalera que sube a ella
+    if (!copy) {
+      const below = this.project.levels.find((l) => Math.abs(l.elev - top) < 1e-6)!;
+      for (const sl of below.slabs) lv.slabs.push({ id: nextId(lv), pts: sl.pts.map((q) => ({ ...q })), thick: sl.thick, holes: [] });
+      for (const st of below.stairs) {
+        const o = stairGeom(st).outline, sl = lv.slabs.find((x) => onSlab(centroid(o), x));
+        if (sl) sl.holes.push(o.map((q) => ({ ...q })));
+      }
+    }
     // la cubierta de la planta más alta sube al nivel nuevo, vacío o copia, para seguir coronando el edificio
     const src = this.project.levels.find((l) => Math.abs(l.elev - top) < 1e-6)!, moved = src.roofs.length;
     if (moved) { lv.roofs = src.roofs; src.roofs = []; }
@@ -332,7 +345,8 @@ export class Editor {
     this.project.levels.sort((a, b) => a.elev - b.elev);
     this.active = this.project.levels.indexOf(lv);
     this.sels = [];
-    this.message = copy ? `${lv.name} creada como copia, a ${fmtLen(elev)}.${moved ? " La cubierta ha subido a la nueva planta." : ""}` : `${lv.name} creada a ${fmtLen(elev)}. El nivel de abajo se ve en gris como referencia.${moved ? " La cubierta ha subido a la nueva planta." : ""}`;
+    const slabNote = !copy && lv.slabs.length ? ` Lleva su losa de entrepiso${lv.slabs.some((x) => x.holes.length) ? ", con el hueco de la escalera abierto" : ""}.` : "";
+    this.message = copy ? `${lv.name} creada como copia, a ${fmtLen(elev)}.${moved ? " La cubierta ha subido a la nueva planta." : ""}` : `${lv.name} creada a ${fmtLen(elev)}. El nivel de abajo se ve en gris como referencia.${slabNote}${moved ? " La cubierta ha subido a la nueva planta." : ""}`;
     this.changed();
   }
   renameLevel(name: string) { this.edit(() => { this.model.name = name; }); }
@@ -397,7 +411,7 @@ export class Editor {
       case "mark": return d.markKind === "nivel" ? `NIVEL  Punto del rótulo (${d.markLabel} ${fmtElev(this.model.elev)}):`
         : d.markKind === "detalle" ? (n === 0 ? "LLAMADA DE DETALLE  Centro de la zona que se detalla:" : n === 1 ? "LLAMADA DE DETALLE  Radio de la zona:" : "LLAMADA DE DETALLE  Posición del globo:")
         : this.noteAt ? "NOTA  Escribe el texto y pulsa Intro [Esc cancela]:" : n ? "NOTA  Punto donde va el texto:" : "NOTA  Punta de la flecha (lo que se señala):";
-      case "hole": return n ? "HUECO  Esquina opuesta del hueco:" : "HUECO EN LOSA  Primera esquina del hueco (dentro de una losa):";
+      case "hole": return n ? "HUECO  Esquina opuesta del hueco:" : "HUECO EN LOSA  Primera esquina (sobre una escalera, el hueco va a la losa o azotea de arriba):";
       case "section": return n ? "SECCIÓN  Punto final de la línea de corte (se mira a su izquierda):" : "SECCIÓN  Primer punto de la línea de corte:";
       case "fixture": return `${mepDef(d.mepKind).disc === "elec" ? "ELECTRICIDAD" : "PLOMERÍA"}  Haz clic para colocar ${mepDef(d.mepKind).label.toLowerCase()}${mepDef(d.mepKind).wall ? " (se pega al muro más cercano)" : ""} [R gira, Esc termina]:`;
       case "hatch": return n
@@ -785,7 +799,7 @@ export class Editor {
       const a = this.draft.pts[0];
       if (Math.abs(p.x - a.x) < 0.1 || Math.abs(p.y - a.y) < 0.1) { this.log("El hueco necesita un rectángulo: elige la esquina opuesta."); return; }
       const rect = [a, { x: p.x, y: a.y }, p, { x: a.x, y: p.y }].map((q) => ({ x: q.x, y: q.y }));
-      if (!this.addHole(m, rect)) { this.log("Dibuja el hueco dentro de una losa de este nivel."); return; }
+      if (!this.placeHole(rect)) return;
       this.draft = null;
       this.changed();
       return;
@@ -1615,7 +1629,7 @@ export class Editor {
    * Guarda deshacer y deja la losa seleccionada; quien llama debe avisar del cambio.
    */
   private addHole(lv: Level, ring: Pt[]): boolean {
-    const c = { x: ring.reduce((s, q) => s + q.x, 0) / ring.length, y: ring.reduce((s, q) => s + q.y, 0) / ring.length };
+    const c = centroid(ring);
     const sl = lv.slabs.find((x) => onSlab(c, x));
     if (!sl) return false;
     this.snapshot();
@@ -1623,6 +1637,40 @@ export class Editor {
     if (lv === this.model) this.sels = [{ type: "slab", id: sl.id }];
     this.message = `Hueco de ${fmtArea(polygonArea(ring))} abierto en la losa${lv === this.model ? "" : ` de ${lv.name}`}.`;
     return true;
+  }
+
+  /** Abre el hueco en la azotea (cubierta plana) del nivel activo que lo contiene. */
+  private addRoofHole(ring: Pt[]): boolean {
+    const c = centroid(ring);
+    const r = this.model.roofs.find((x) => x.kind === "flat" && pointInPolygon(c, roofGeom(x).outline) && !(x.holes ?? []).some((h) => pointInPolygon(c, h)));
+    if (!r) return false;
+    this.snapshot();
+    r.holes = [...(r.holes ?? []), ring];
+    this.sels = [{ type: "roof", id: r.id }];
+    this.message = `Hueco de ${fmtArea(polygonArea(ring))} abierto en la azotea.`;
+    return true;
+  }
+
+  /**
+   * Herramienta Hueco: sobre una escalera del nivel activo el hueco es para que suba, así que va en la losa del
+   * nivel de arriba o, si no hay, en la azotea; si no, en la losa del nivel activo (o en su azotea).
+   * Devuelve false y deja dicho por qué si no encuentra dónde abrirlo; quien llama debe avisar del cambio.
+   */
+  private placeHole(ring: Pt[]): boolean {
+    const c = centroid(ring), up = this.levelAbove();
+    const overStair = this.model.stairs.some((st) => { const o = stairGeom(st).outline; return pointInPolygon(c, o) || pointInPolygon(centroid(o), ring); });
+    if (overStair) {
+      if (up && this.addHole(up, ring)) return true;
+      if (this.addRoofHole(ring)) return true;
+      this.log(up ? `${up.name} no tiene losa sobre la escalera: dibújala con la herramienta Losa en ese nivel y vuelve a abrir el hueco.`
+        : "No hay losa ni azotea sobre la escalera: crea el nivel de arriba (Nuevo nivel) o una cubierta plana encima.");
+      return false;
+    }
+    if (this.addHole(this.model, ring) || this.addRoofHole(ring)) return true;
+    this.log(this.model.slabs.length || this.model.roofs.some((r) => r.kind === "flat")
+      ? "Dibuja el hueco dentro de una losa o azotea de este nivel."
+      : `${this.model.name} no tiene losa: dibújala con la herramienta Losa (o crea el nivel como copia del de abajo) y luego abre el hueco.`);
+    return false;
   }
 
   /** Nivel inmediatamente por encima del activo, si lo hay. */
@@ -1676,14 +1724,21 @@ export class Editor {
   openAboveStair(id: number) {
     const st = this.model.stairs.find((x) => x.id === id), up = this.levelAbove();
     if (!st) return;
-    if (!up) { this.log("No hay ningún nivel por encima. Crea uno con Nuevo nivel."); return; }
     const ring = stairGeom(st).outline;
-    if (!this.addHole(up, ring)) { this.log(`${up.name} no tiene ninguna losa sobre la escalera.`); return; }
+    if (!(up && this.addHole(up, ring)) && !this.addRoofHole(ring)) {
+      this.log(up ? `${up.name} no tiene ninguna losa sobre la escalera.` : "No hay ningún nivel por encima ni azotea sobre la escalera. Crea uno con Nuevo nivel.");
+      return;
+    }
     this.changed();
   }
 
-  /** Quita todos los huecos de una losa. */
-  clearHoles(id: number) {
+  /** Quita todos los huecos de una losa (o de una azotea, si el id es de una cubierta). */
+  clearHoles(id: number, roof = false) {
+    if (roof) {
+      const r = this.model.roofs.find((x) => x.id === id);
+      if (r?.holes?.length) this.edit(() => { r.holes = []; });
+      return;
+    }
     const sl = this.model.slabs.find((x) => x.id === id);
     if (sl?.holes.length) this.edit(() => { sl.holes = []; });
   }

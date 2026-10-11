@@ -216,7 +216,7 @@ function Properties({ ed, onFocusCommand }: { ed: Editor; onFocusCommand: () => 
   } else if (sel && o && sel.type === "roof") {
     const r = o as Model["roofs"][number], g = roofGeom(r);
     title = `Cubierta ${ROOF_LABEL[r.kind].toLowerCase()}`;
-    ro.push(["Superficie en planta", `${fmtArea(polygonArea(g.outline))}`], ["Altura cumbrera", `${fmtLen(g.top)}`]);
+    ro.push(["Superficie en planta", `${fmtArea(polygonArea(g.outline))}`], ...(r.holes?.length ? [["Huecos", String(r.holes.length)] as [string, string]] : []), ["Altura cumbrera", `${fmtLen(g.top)}`]);
     body = <>
       <RoofKindField id={`${key}-k`} value={r.kind} onChange={(k) => ed.edit(() => { r.kind = k; })} />
       {r.kind !== "flat" && <NumberField id={`${key}-p`} label="Pendiente (°)" value={r.pitch} min={1} step={1} digits={0} onCommit={(v) => ed.edit(() => { r.pitch = Math.min(75, v); })} />}
@@ -225,6 +225,7 @@ function Properties({ ed, onFocusCommand }: { ed: Editor; onFocusCommand: () => 
       <NumberField id={`${key}-b`} label="Arranque (m)" value={r.base} min={0} onCommit={(v) => ed.edit(() => { r.base = v; })} />
       <FinishPicker label="Material de cubierta" list={ROOFINGS} value={r.finish} none={r.kind === "flat" ? "Sin definir" : "Teja cerámica (por defecto)"}
         onChange={(f) => ed.setFinish([r.id], f, "roof")} />
+      {(r.holes?.length ?? 0) > 0 && <button className="btn full" onClick={() => ed.clearHoles(r.id, true)}>Quitar huecos</button>}
       {ed.levelAbove() && <button className="btn full" onClick={() => ed.moveRoofUp(r.id)} title="La cubierta pasa a coronar el nivel de encima">Subir al nivel de arriba</button>}
     </>;
   } else if (sel && o && sel.type === "stair") {
