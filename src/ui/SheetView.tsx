@@ -24,6 +24,8 @@ import { SymbolIcon, SystemIcon } from "./MepIcons";
 import { MX_KINDS, MX_TITLES, MxFoundationDetails, MxNotes, MxSide, MxStructDetails, type MxKind } from "./MxSheets";
 import { MX_EXTRA_SIDE, MxArchDetails, MxCoverBody, MxExtraSide, MxInstDetails, MxNotesBody, MxStructDetails2 } from "./MxExtra";
 import { drawMxOverlay } from "../editor/mxRenderer";
+import { clipToRoofs, drawRoofPlan } from "../editor/roofRenderer";
+import { roofLevel } from "../core/roofPlan";
 import { SiteEditor } from "./SiteMap";
 import { FinishSym, mepEn, NorthArrow, SheetLegend } from "./SheetLegend";
 
@@ -71,7 +73,7 @@ export function fitElevScale(els: Elevation[], stacked = false) {
 /** plan, elec y plum son plantas de un nivel; fach son dos fachadas (part 0: sur y norte, 1: este y oeste). */
 export type Content = "plan" | "elec" | "plum" | "elev" | "fach" | "sec" | PermitKind | MxKind;
 const PERMIT_PLANS: Content[] = ["site", "found", "floorfr", "wallfr", "rooffr", "hvac"];
-const MX_PLANS: Content[] = ["mxcim", "mxest", "hid", "san"];
+const MX_PLANS: Content[] = ["mxazo", "mxcim", "mxest", "hid", "san"];
 const isPlan = (c: Content) => c === "plan" || c === "elec" || c === "plum" || PERMIT_PLANS.includes(c) || MX_PLANS.includes(c);
 /** Láminas que van siempre con la planta baja. */
 const groundOnly = (c: Content) => c === "site" || c === "found" || c === "mxcim";
@@ -147,6 +149,7 @@ const PLAN_LAYERS: Partial<Record<Content, Partial<Record<LayerId, boolean>>>> =
   hvac: { ...ONLY_WALLS, puertas: true, ventanas: true, hab: true },
   mxcim: ONLY_WALLS,
   mxest: { ...ONLY_WALLS, escaleras: true },
+  mxazo: { ...ONLY_WALLS, escaleras: true },
   hid: { ejes: false, electricidad: false, plomeria: true, cotas: false, losas: false, cubiertas: false, secciones: false },
   san: { ejes: false, electricidad: false, plomeria: true, cotas: false, losas: false, cubiertas: false, secciones: false },
 };
@@ -233,7 +236,12 @@ function Sheet({ ed, content, level, scale, zoom = 1, set, os = OVERSAMPLE }: { 
       ed.view.ox = W / 2 - ((b.x0 + b.x1) / 2) * s;
       ed.view.oy = H / 2 - ((b.y0 + b.y1) / 2) * s;
       if (content === "plan") drawPlan(ctx, ed, PAPER, W, H, { print: true, marks: levelMarks(p, level) });
-      else if (content === "mxcim" || content === "mxest") {
+      else if (content === "mxazo") {
+        ctx.save(); clipToRoofs(ctx, ed);
+        drawPlan(ctx, ed, LIGHT, W, H, { print: true });
+        ctx.restore();
+        drawRoofPlan(ctx, ed, W, H);
+      } else if (content === "mxcim" || content === "mxest") {
         drawPlan(ctx, ed, LIGHT, W, H, { print: true, roomLabelDy: 0.9 });
         drawMxOverlay(ctx, ed, content);
       } else if (content === "hid" || content === "san") {
@@ -269,7 +277,7 @@ function Sheet({ ed, content, level, scale, zoom = 1, set, os = OVERSAMPLE }: { 
       <div className="viewtitle" style={{ left: `${planBox().x + 6}mm`, top: `${planBox().y + planBox().h + 1}mm` }}>
         <span className="vt-n">{isText(content) ? planName.toUpperCase() : content === "elev" ? t("ALZADOS", "EXTERIOR ELEVATIONS") : content === "fach" ? views.map((v) => v.label).join(t(" y ", " & ")).toUpperCase() : content === "sec" ? t("SECCIONES", "BUILDING SECTIONS") : content === "site" ? planName.toUpperCase() : planName ? `${lv.name} · ${planName}`.toUpperCase() : lv.name.toUpperCase()}</span>
         {!isText(content) && <>
-          <span className="vt-s">{t("E ", "SCALE: ")}{scaleLabel(scale)}{isPlan(content) && content !== "site" && ` · ${t("cota", "F.F.")} ${fmtElev(lv.elev)}`}</span>
+          <span className="vt-s">{t("E ", "SCALE: ")}{scaleLabel(scale)}{isPlan(content) && content !== "site" && content !== "mxazo" && ` · ${t("cota", "F.F.")} ${fmtElev(lv.elev)}`}</span>
           <ScaleBar den={scale} />
         </>}
       </div>
@@ -377,6 +385,7 @@ export function mxSet(ed: Editor): PermitEntry[] {
   add("fach", 0, "ARQ", fs, "Fachadas sur y norte"); add("fach", 1, "ARQ", fs, "Fachadas este y oeste");
   if (allSections(ed.project).length) add("sec", 0, "ARQ", autoScaleOf(ed, "sec", 0));
   add("elev", 0, "ARQ", autoScaleOf(ed, "elev", 0));
+  add("mxazo", roofLevel(ed.project), "ARQ", planScale);
   add("mxarq", 0, "ARQ", 10);
   add("mxcim", 0, "EST");
   lvs.forEach((_, i) => add("mxest", i, "EST", planScale, lvTitle("mxest", i)));
@@ -412,7 +421,7 @@ function entryTitle(ed: Editor, c: Content, level: number) {
     case "fach": return level ? "Fachadas este y oeste" : "Fachadas sur y norte";
     case "elev": return "Alzados";
     case "sec": return "Secciones";
-    default: return MX_TITLES[c] ? `${MX_TITLES[c]}${groundOnly(c) || TEXT_SHEETS.includes(c) ? "" : lv}` : SHEET_TITLES[c].es;
+    default: return MX_TITLES[c] ? `${MX_TITLES[c]}${groundOnly(c) || c === "mxazo" || TEXT_SHEETS.includes(c) ? "" : lv}` : SHEET_TITLES[c].es;
   }
 }
 
@@ -436,7 +445,7 @@ export function SheetView({ ed }: { ed: Editor }) {
   const [pdf, setPdf] = useState<{ done: number; total: number } | null>(null);
   const pdfHost = useRef<HTMLDivElement>(null);
   const secs = allSections(ed.project);
-  const levelFor = (c: Content) => (c === "fach" ? part : TEXT_SHEETS.includes(c) || groundOnly(c) ? 0 : Math.min(lvl ?? ed.active, ed.project.levels.length - 1));
+  const levelFor = (c: Content) => (c === "fach" ? part : c === "mxazo" ? roofLevel(ed.project) : TEXT_SHEETS.includes(c) || groundOnly(c) ? 0 : Math.min(lvl ?? ed.active, ed.project.levels.length - 1));
   const autoScale = autoScaleOf(ed, content, levelFor(content));
   const scale = den ?? autoScale;
   const info = ed.project.info;
@@ -580,7 +589,7 @@ export function SheetView({ ed }: { ed: Editor }) {
     if (!x) return;
     if (all) { host.current?.querySelector(`[data-sheet="${i}"]`)?.scrollIntoView({ block: "start" }); return; }
     setContent(x.content);
-    if (x.content === "fach") setPart(x.level); else if (!TEXT_SHEETS.includes(x.content) && !groundOnly(x.content)) setLvl(x.level);
+    if (x.content === "fach") setPart(x.level); else if (!TEXT_SHEETS.includes(x.content) && !groundOnly(x.content) && x.content !== "mxazo") setLvl(x.level);
     setDen(null);
     if (host.current) host.current.scrollTop = 0;
   };

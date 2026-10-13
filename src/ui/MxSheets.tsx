@@ -1,19 +1,20 @@
 // Juego ejecutivo en metros al estilo de México: títulos, columna lateral (cuadros, simbología y notas)
 // de cada lámina y las dos láminas de detalles estructurales dibujadas en SVG (medidas en cm).
-import type { ReactNode } from "react";
+import { Fragment, type ReactNode } from "react";
 import { foundationType } from "../core/foundation";
 import { furnitureDef } from "../core/furniture";
 import { mepDef } from "../core/mep";
-import type { Project } from "../core/model";
+import type { Level, Project } from "../core/model";
 import { beams, CADENAS, castillos, columnSpec, K1, padFootings, padSize, slabPanels, stripFootings, stripSize } from "../core/mxStruct";
+import { roofSummary } from "../core/roofPlan";
 import { circuitSchedule, mepSchedule, runSchedule } from "../core/schedules";
-import { fmtDim } from "../core/units";
+import { fmtDim, fmtElev } from "../core/units";
 import type { Editor } from "../editor/Editor";
 import { SymbolIcon, SystemIcon } from "./MepIcons";
 import { box, Ln, map, Note, Shape, type Frame, type XY } from "./PermitSheets";
 
-export type MxKind = "mxport" | "mxnotas" | "mxcim" | "mxest" | "mxdet1" | "mxdet2" | "mxdet3" | "mxarq" | "hid" | "san" | "mxinst";
-export const MX_KINDS: MxKind[] = ["mxport", "mxnotas", "mxcim", "mxest", "mxdet1", "mxdet2", "mxdet3", "mxarq", "hid", "san", "mxinst"];
+export type MxKind = "mxport" | "mxnotas" | "mxazo" | "mxcim" | "mxest" | "mxdet1" | "mxdet2" | "mxdet3" | "mxarq" | "hid" | "san" | "mxinst";
+export const MX_KINDS: MxKind[] = ["mxport", "mxnotas", "mxazo", "mxcim", "mxest", "mxdet1", "mxdet2", "mxdet3", "mxarq", "hid", "san", "mxinst"];
 export const MX_TEXT = ["mxport", "mxnotas", "mxdet1", "mxdet2", "mxdet3", "mxarq", "mxinst"];
 
 /** Título de cada lámina del juego en metros (también las de arquitectura e instalación eléctrica). */
@@ -21,6 +22,7 @@ export const MX_TITLES: Record<string, string> = {
   mxport: "Portada e índice de planos",
   mxnotas: "Notas generales y abreviaturas",
   plan: "Planta arquitectónica",
+  mxazo: "Planta de azotea",
   fach: "Fachadas",
   sec: "Cortes arquitectónicos",
   elev: "Elevaciones",
@@ -61,6 +63,14 @@ export const NOTES: Record<string, string[]> = {
   elev: [
     "Alzados de las cuatro fachadas con sus niveles en metros.",
     "Vanos de puertas y ventanas según la tabla de carpintería y cancelería.",
+  ],
+  mxazo: [
+    "Cotas en metros; niveles sobre el N.P.T. ±0.00. N.L.A.: lecho alto de losa; N.T.P.: tope de pretil.",
+    "Relleno de tezontle con pendiente del 2 % hacia las gárgolas, entortado cemento-arena 1:5 de 3 cm.",
+    "Impermeabilizante con malla de refuerzo; sube 30 cm por el pretil sobre chaflán de 10 × 10 cm.",
+    "Pretil de block de 15 cm con castillos a cada 3 m como máximo y dala de remate de 15 × 10 cm.",
+    "Gárgolas y bajadas pluviales de PVC Ø 100 mm, una por cada 100 m² de azotea como mínimo.",
+    "Cubo de escalera: cadena perimetral en el hueco; protegerlo con barandal o cubrirlo con domo.",
   ],
   mxcim: [
     "Cotas en metros; secciones y armados en cm.",
@@ -129,6 +139,70 @@ export const Notes = ({ items, start }: { items: string[]; start?: number }) => 
 export function MxNotes({ content }: { content: string }) {
   const n = NOTES[content];
   return n ? <><h4>Notas</h4><Notes items={n} /></> : null;
+}
+
+// ---------- planta de azotea ----------
+
+const ROOF_SYMS: [string, ReactNode][] = [
+  ["Pretil con chaflán", <Sym><rect x={1} y={0.8} width={12} height={1.6} fill="#d4d4d4" stroke="#111" strokeWidth={0.2} /><line x1={1} y1={3.2} x2={13} y2={3.2} stroke="#111" strokeWidth={0.12} /></Sym>],
+  ["Hueco en losa (cubo de escalera)", <Sym><rect x={4} y={0.5} width={6} height={4} fill="#fff" stroke="#111" strokeWidth={0.35} /><path d="M4 .5l6 4M10 .5l-6 4" stroke="#111" strokeWidth={0.15} /></Sym>],
+  ["Pendiente hacia la gárgola", <Sym><path d="M1.5 2.5h11M12.5 2.5l-1.6-1M12.5 2.5l-1.6 1" stroke="#111" strokeWidth={0.25} fill="none" /><circle cx={1.5} cy={2.5} r={0.5} fill="#111" /></Sym>],
+  ["Parteaguas", <Sym><line x1={1} y1={2.5} x2={13} y2={2.5} stroke="#111" strokeWidth={0.2} strokeDasharray="2.5 .6 .5 .6" /></Sym>],
+  ["Gárgola y bajada pluvial", <Sym><rect x={6.2} y={0.5} width={1.6} height={4} fill="#111" /></Sym>],
+  ["Nivel (N.L.A., N.T.P.)", <Sym><path d="M3 4L1.6 1.8h2.8z" fill="#fff" stroke="#111" strokeWidth={0.2} /><line x1={1.6} y1={1.8} x2={13} y2={1.8} stroke="#111" strokeWidth={0.2} /></Sym>],
+];
+
+/** Corte del pretil, sin escala: losa, relleno con pendiente, chaflán, impermeabilizante, pretil y dala de remate. */
+function ParapetDetail({ h, t, e }: { h: number; t: number; e: number }) {
+  const H = Math.round(h * 100), T = Math.round(t * 100), E = Math.round(e * 100);
+  // pretil de 40 unidades de alto y 10 de ancho; losa de 8; todo a la misma escala aproximada
+  const x0 = 44, w = 10, top = 10, base = 54, s = 0.4;
+  const tx = (x: number, y: number, str: string, a: "start" | "end" = "start") => <text x={x} y={y} fontSize={3.6} textAnchor={a}>{str}</text>;
+  const lead = (x1: number, y1: number, x2: number, y2: number) => <path d={`M${x1} ${y1}L${x2} ${y2}`} stroke="#111" strokeWidth={0.2} fill="none" />;
+  return <svg width="100%" style={{ maxHeight: "44mm" }} viewBox="0 0 100 68" aria-label="Detalle de pretil">
+    <defs><pattern id="pretil-hatch" width="2.4" height="2.4" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="2.4" stroke="#888" strokeWidth={0.35} /></pattern></defs>
+    <rect x={4} y={base} width={x0 + w - 4} height={E * s + 2} fill="#e4e4e4" stroke="#111" strokeWidth={0.45} />
+    <rect x={x0} y={top + 4} width={w} height={base - top - 4} fill="url(#pretil-hatch)" stroke="#111" strokeWidth={0.45} />
+    <rect x={x0 - 1.5} y={top} width={w + 3} height={4} fill="#cfcfcf" stroke="#111" strokeWidth={0.45} />
+    <path d={`M4 ${base}L${x0} ${base}L${x0} ${base - 5}L4 ${base - 2.5}Z`} fill="#f2ece2" stroke="#111" strokeWidth={0.3} />
+    <path d={`M${x0} ${base - 5}L${x0 - 5} ${base - 4.7}L${x0} ${base - 10}Z`} fill="#bbb" stroke="#111" strokeWidth={0.3} />
+    <path d={`M4 ${base - 3}L${x0 - 5.3} ${base - 5.2}L${x0 - 0.5} ${base - 10.3}L${x0 - 0.5} ${base - 22}`} fill="none" stroke="#111" strokeWidth={0.8} />
+    {tx(x0 + w + 4, top + 3, "Dala de remate")}
+    {tx(x0 + w + 4, top + 7.5, "15 × 10 cm")}
+    {tx(x0 + w + 4, top + 20, `Pretil ${T} cm`)}
+    {tx(x0 + w + 4, top + 24.5, `h = ${H} cm`)}
+    {tx(x0 + w + 4, base + 4, `Losa ${E} cm`)}
+    {lead(x0 - 0.5, base - 20, 30, 18)}{tx(29, 17, "Impermeabilizante,", "end")}{tx(29, 21.5, "sube 30 cm", "end")}
+    {lead(x0 - 3, base - 7, 30, 31)}{tx(29, 32, "Chaflán 10 × 10", "end")}
+    {tx(4, base - 6, "Relleno P = 2 %")}
+    {tx(4, base + E * s + 7, "N.L.A.")}
+  </svg>;
+}
+
+function RoofSide({ lv }: { lv: Level }) {
+  const roofs = lv.roofs, flat = roofs.filter((r) => r.kind === "flat");
+  const rows = flat.map((r) => roofSummary(lv, r)), pp = rows.find((s) => s.parapet)?.parapet;
+  return <div className="tables">
+    <h4>Cuadro de azotea</h4>
+    {rows.length ? <table><tbody>
+      {rows.map((s, i) => <Fragment key={i}>
+        {rows.length > 1 && <tr><td colSpan={2}><b>Azotea {i + 1}</b></td></tr>}
+        <tr><td>Medidas exteriores</td><td className="r">{fmtDim(s.w)} × {fmtDim(s.d)} m</td></tr>
+        <tr><td>Superficie a impermeabilizar</td><td className="r">{s.net.toFixed(2)} m²</td></tr>
+        <tr><td>Losa maciza, espesor</td><td className="r">{Math.round(s.thick * 100)} cm</td></tr>
+        <tr><td>N.L.A. (lecho alto de losa)</td><td className="r">{fmtElev(s.nla)}</td></tr>
+        <tr><td>Pretil (espesor × altura)</td><td className="r">{s.parapet ? `${Math.round(s.parapet.t * 100)} cm × ${s.parapet.h.toFixed(2)} m` : "sin pretil"}</td></tr>
+        {s.coping != null && <tr><td>N.T.P. (tope de pretil)</td><td className="r">{fmtElev(s.coping)}</td></tr>}
+        {s.holes.map((h, j) => <tr key={j}><td>{h.stair ? "Cubo de escalera" : "Hueco en losa"}</td><td className="r">{fmtDim(h.w)} × {fmtDim(h.d)} m · {h.area.toFixed(2)} m²</td></tr>)}
+        {!s.holes.length && <tr><td>Huecos</td><td className="r">ninguno</td></tr>}
+        <tr><td>Pendiente / gárgolas</td><td className="r">2 % · {s.gargoyles.length || "—"}</td></tr>
+      </Fragment>)}
+    </tbody></table> : <p className="empty">{roofs.length ? "La cubierta de este nivel es inclinada: la planta muestra sus faldones y cumbreras." : "Este nivel no tiene azotea. Dibuja una cubierta plana con la herramienta Cubierta."}</p>}
+    <h4>Simbología</h4>
+    <table className="symleg"><tbody>{ROOF_SYMS.map(([n, s]) => <tr key={n}><td>{s}</td><td>{n}</td></tr>)}</tbody></table>
+    {pp && <><h4>Detalle de pretil</h4><ParapetDetail h={pp.h} t={pp.t} e={rows[0].thick} /></>}
+    <MxNotes content="mxazo" />
+  </div>;
 }
 
 // ---------- símbolos de estructura ----------
@@ -225,6 +299,7 @@ function Unifilar({ rows }: { rows: LoadRow[] }) {
 
 export function MxSide({ ed, content, level }: { ed: Editor; content: string; level: number }) {
   const p = ed.project, lv = p.levels[level];
+  if (content === "mxazo") return <RoofSide lv={lv} />;
   if (content === "mxcim") {
     const zs = stripFootings(p), pads = padFootings(p), c1 = stripSize(p, "ZC-1"), c2 = stripSize(p, "ZC-2"), za = padSize(p);
     const has = (m: string) => zs.some((z) => z.mark === m);
