@@ -6,6 +6,7 @@ import { bounds, dir, loc, parapet, pieces, roofGeom, solidPts, wallEnds, type P
 import { stairGeom } from "../core/stairs";
 import type { Level, Opening, Roof, Wall } from "../core/model";
 import { openingStyle } from "../core/openingStyles";
+import { dormerGeom } from "../core/dormers";
 import { finish, gableWall, outward, roofFinish, type Finish } from "../core/finishes";
 import { finishTile } from "./finishTextures";
 import { framing, MEMBER_COLOR, type Member } from "../core/framing";
@@ -472,6 +473,13 @@ export class Viewer3D {
         polys(g.faces, isSel("roof", r.id) ? this.mat.roofSel : rf ? this.finishMat(rf) : this.mat.roof);
         // cada hastial con el revestimiento del muro sobre el que se levanta
         for (const f of g.gables) { const fin = finish(gableWall(m.walls, f)?.finish); polys([f], fin ? this.finishMat(fin) : this.mat.gable); }
+        for (const dm of r.dormers ?? []) {
+          const dg = dormerGeom(r, dm);
+          if (!dg) continue;
+          polys(dg.roof, isSel("roof", r.id) ? this.mat.roofSel : rf ? this.finishMat(rf) : this.mat.roof);
+          polys(dg.walls, this.mat.gable);
+          polys(dg.glass, this.mat.glass);
+        }
       }
       if (vis.escaleras) for (const st of m.stairs) {
         const mat = isSel("stair", st.id) ? this.mat.sel : this.mat.stair;

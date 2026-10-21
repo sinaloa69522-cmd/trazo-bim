@@ -5,7 +5,7 @@ import { FURNITURE, FURNITURE_CATS, furnitureDef } from "../core/furniture";
 import { CIRCUITS, mepDef, mepOf, runLength, SYSTEMS, systemDef, type Discipline } from "../core/mep";
 import { SymbolIcon, SystemIcon } from "./MepIcons";
 import { GENERIC, WALL_TYPES, wallType, wallTypeLabel } from "../core/wallTypes";
-import { LAYERS, type Model, type RoofKind, type RunSystem, type StairKind } from "../core/model";
+import { LAYERS, type Dormer, type Model, type RoofKind, type RunSystem, type StairKind } from "../core/model";
 import { ROOF_LABEL, type Editor } from "../editor/Editor";
 import { fmtArea, fmtDim, fmtElev, fmtField, fmtLen, fmtSmall, imperial, lenUnit, parseLen } from "../core/units";
 import { finish, ROOFINGS, SIDINGS, type Finish } from "../core/finishes";
@@ -225,6 +225,20 @@ function Properties({ ed, onFocusCommand }: { ed: Editor; onFocusCommand: () => 
       <NumberField id={`${key}-b`} label="Arranque (m)" value={r.base} min={0} onCommit={(v) => ed.edit(() => { r.base = v; })} />
       <FinishPicker label="Material de cubierta" list={ROOFINGS} value={r.finish} none={r.kind === "flat" ? "Sin definir" : "Teja cerámica (por defecto)"}
         onChange={(f) => ed.setFinish([r.id], f, "roof")} />
+      {r.kind !== "flat" && (r.dormers ?? []).map((dm, i) => <Fragment key={dm.id}>
+        <p className="full sub">Buhardilla {i + 1}</p>
+        <label htmlFor={`${key}-dk${dm.id}`}>Techo</label>
+        <select id={`${key}-dk${dm.id}`} value={dm.kind} onChange={(e) => ed.setDormer(r.id, dm.id, { kind: e.target.value as Dormer["kind"] })}>
+          <option value="gable">A dos aguas</option>
+          <option value="shed">De un agua</option>
+        </select>
+        <NumberField id={`${key}-dw${dm.id}`} label="Ancho" len value={dm.w} min={0.6} onCommit={(v) => ed.setDormer(r.id, dm.id, { w: v })} />
+        <NumberField id={`${key}-dh${dm.id}`} label="Altura del frente" len value={dm.h} min={0.5} onCommit={(v) => ed.setDormer(r.id, dm.id, { h: v })} />
+        <NumberField id={`${key}-ds${dm.id}`} label="Retranqueo" len value={dm.set} min={0} onCommit={(v) => ed.setDormer(r.id, dm.id, { set: v })} />
+        <NumberField id={`${key}-du${dm.id}`} label="Desde el centro" len value={dm.u} min={-100} onCommit={(v) => ed.setDormer(r.id, dm.id, { u: v })} />
+        <button className="btn full" onClick={() => ed.removeDormer(r.id, dm.id)}>Quitar buhardilla {i + 1}</button>
+      </Fragment>)}
+      {r.kind !== "flat" && <button className="btn full" onClick={() => ed.setTool("dormer")} title="Haz clic en un faldón para poner una buhardilla (BU)">Agregar buhardilla</button>}
       {(r.holes?.length ?? 0) > 0 && <button className="btn full" onClick={() => ed.clearHoles(r.id, true)}>Quitar huecos</button>}
       {ed.levelAbove() && <button className="btn full" onClick={() => ed.moveRoofUp(r.id)} title="La cubierta pasa a coronar el nivel de encima">Subir al nivel de arriba</button>}
     </>;
@@ -460,6 +474,12 @@ function Properties({ ed, onFocusCommand }: { ed: Editor; onFocusCommand: () => 
       <RoofKindField id="def-rk" value={d.roofKind} onChange={(k) => { d.roofKind = k; ed.emit(); }} />
       <NumberField id="def-rp" label="Pendiente (°)" value={d.pitch} min={1} step={1} digits={0} onCommit={(v) => { d.pitch = Math.min(75, v); ed.emit(); }} />
       <NumberField id="def-tx" label="Altura texto" len value={d.textSize} min={0.02} onCommit={(v) => { d.textSize = v; ed.emit(); }} />
+      <label htmlFor="def-dk">Buhardilla nueva</label>
+      <select id="def-dk" value={d.dormerKind} onChange={(e) => { d.dormerKind = e.target.value as Dormer["kind"]; ed.emit(); }}>
+        <option value="gable">A dos aguas</option>
+        <option value="shed">De un agua</option>
+      </select>
+      <NumberField id="def-dw2" label="Ancho buhardilla" len value={d.dormerW} min={0.6} onCommit={(v) => { d.dormerW = v; ed.emit(); }} />
       <NumberField id="def-sw" label="Ancho escalera" len value={d.stairW} onCommit={(v) => { d.stairW = v; ed.emit(); }} />
     </>;
   }

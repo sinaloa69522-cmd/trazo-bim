@@ -29,6 +29,7 @@ const TOOLS: { tool: Tool; label: string; key: string; icon: JSX.Element; disc?:
   { tool: "hatch", label: "Sombreado", key: "SB", icon: <><rect x="2" y="2" width="12" height="12" /><path d="M2 8l6-6M2 14L14 2M8 14l6-6" /></> },
   { tool: "hole", label: "Hueco en losa", key: "HL", icon: <><path d="M2 5l6-3 6 3-6 3z" /><path d="M6 4.5l4 1.5M10 4.5l-4 1.5" /><path d="M2 5v3l6 3 6-3V5" /></> },
   { tool: "roof", label: "Cubierta", key: "CU", icon: <path d="M1.5 9L8 3.5 14.5 9M3.5 7.5V13h9V7.5" /> },
+  { tool: "dormer", label: "Buhardilla (dormer)", key: "BU", icon: <path d="M1 12L8 5l7 7M5.5 9.5V6.5L7.5 4.5l2 2v3M6.5 9.5V7.5h2v2" /> },
   { tool: "stair", label: "Escalera", key: "ES", icon: <path d="M2 14h3v-3h3V8h3V5h3V2" /> },
   { tool: "column", label: "Columna", key: "CL", icon: <path d="M5 2h6v12H5zM5 2l6 12M11 2L5 14" /> },
   { tool: "deck", label: "Deck/Porche", key: "DK", icon: <path d="M2 9h12M2 9v5M14 9v5M2 12h12M4 9V4h8v5M3 4h10" /> },

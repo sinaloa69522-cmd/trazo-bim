@@ -99,6 +99,27 @@ export interface Roof {
   parapet?: number;
   /** Azotea: huecos (cubo de escalera, tragaluz), polígonos en planta */
   holes?: { x: number; y: number }[][];
+  /** Cubierta inclinada: buhardillas (dormers) sobre los faldones largos */
+  dormers?: Dormer[];
+}
+
+/**
+ * Buhardilla sobre un faldón: ventana vertical con su techito. u es su centro a lo largo de la cumbrera,
+ * medido desde el centro de la cubierta (así se mueve con ella), y side el faldón (0: el de x o y menor;
+ * 1: el otro).
+ */
+export interface Dormer {
+  id: number;
+  u: number;
+  side: 0 | 1;
+  /** Ancho exterior */
+  w: number;
+  /** Altura del frente sobre el faldón */
+  h: number;
+  /** Retranqueo del frente desde el paño del muro, hacia la cumbrera */
+  set: number;
+  /** A dos aguas o de un agua (pendiente más suave que la del faldón) */
+  kind: "gable" | "shed";
 }
 
 /** Forma de la escalera (ver core/stairs.ts). */

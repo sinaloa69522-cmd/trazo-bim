@@ -1,6 +1,7 @@
 import type { Pt } from "./geometry";
 import { mapLines } from "./hatch";
-import { nextId, type Model } from "./model";
+import { dormerAt, dormerCenter } from "./dormers";
+import { nextId, type Dormer, type Model } from "./model";
 
 export type ElementType = "wall" | "opening" | "line" | "dim" | "room" | "slab" | "roof" | "stair" | "deck" | "column" | "furniture" | "section" | "text" | "mark" | "fixture" | "run" | "underlay" | "hatch";
 export interface ElementRef { type: ElementType; id: number }
@@ -88,7 +89,10 @@ export function transformElements(m: Model, refs: ElementRef[], t: Xform, copy: 
           const p0 = t.map(c), p1 = t.map({ x: c.x + dx, y: c.y + dy }), ux = p1.x - p0.x, uy = p1.y - p0.y;
           el.stairSide = Math.abs(ux) > Math.abs(uy) ? (ux > 0 ? 1 : 3) : (uy > 0 ? 2 : 0);
         }
+        // cada buhardilla sigue a su faldón: se lleva el centro de su frente y se vuelve a ubicar
+        const ds = r.type === "roof" ? (el.dormers ?? []).map((d: Dormer) => t.map(dormerCenter(el, d))) : [];
         el.x1 = Math.min(a.x, b.x); el.y1 = Math.min(a.y, b.y); el.x2 = Math.max(a.x, b.x); el.y2 = Math.max(a.y, b.y);
+        ds.forEach((p: Pt, i: number) => { const at = dormerAt(el, p); if (at) Object.assign(el.dormers[i], at); });
       } else {
         const c = t.map({ x: (el.x1 + el.x2) / 2, y: (el.y1 + el.y2) / 2 }), hw = Math.abs(el.x2 - el.x1) / 2, hh = Math.abs(el.y2 - el.y1) / 2;
         el.x1 = c.x - hw; el.x2 = c.x + hw; el.y1 = c.y - hh; el.y2 = c.y + hh;

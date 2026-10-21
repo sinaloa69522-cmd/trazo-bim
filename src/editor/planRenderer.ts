@@ -2,6 +2,7 @@ import type { SnapKind } from "./snaps";
 import { fmtArea, fmtDim, fmtLen, imperial, FT, IN } from "../core/units";
 import { deckGeom, deckType } from "../core/decks";
 import { dimGeom, dimOffset, dir, loc, pieces, roofGeom, textBox, type Pt } from "../core/geometry";
+import { dormerGeom } from "../core/dormers";
 import { stairGeom } from "../core/stairs";
 import { drawAxes } from "./mxRenderer";
 import { furnitureStrokes, type Stroke } from "../core/furniture";
@@ -474,6 +475,17 @@ export function drawPlan(ctx: CanvasRenderingContext2D, ed: Editor, C: PlanColor
     strokes(furnitureStrokes({ kind: ed.defaults.furnKind, ...ed.furnitureCandidate(p) }), C.accent, 1.2);
     ctx.globalAlpha = 1;
   }
+  // buhardilla que se va a colocar, sobre el faldón bajo el cursor
+  if (ed.tool === "dormer" && ed.mouse.in) {
+    const c = ed.dormerCandidate(p), dg = typeof c === "string" ? null : dormerGeom(c.roof, c.dormer);
+    if (dg) {
+      ctx.globalAlpha = 0.8; ctx.strokeStyle = C.accent; ctx.lineWidth = 1.5;
+      path(ctx, ed, dg.outline, true);
+      ctx.lineWidth = 1;
+      for (const [a, b] of dg.lines) path(ctx, ed, [a, b]);
+      ctx.globalAlpha = 1;
+    }
+  }
   if (ed.tool === "column" && ed.mouse.in) {
     ctx.globalAlpha = 0.6;
     drawColumn(ctx, ed, { id: 0, x: p.x, y: p.y, w: ed.defaults.colW, d: ed.defaults.colW }, C.accent, 1.2);
@@ -673,6 +685,16 @@ function drawRoof(ctx: CanvasRenderingContext2D, ed: Editor, r: Roof, col: strin
   ctx.setLineDash([10, 5]); path(ctx, ed, g.outline, true); ctx.setLineDash([]);
   ctx.lineWidth = Math.max(1, lw - 0.5);
   for (const [a, b] of g.ridges) path(ctx, ed, [a, b]);
+  // buhardillas: su techito (contorno, cumbrera y limahoyas) y el frente con la ventana
+  for (const dm of r.dormers ?? []) {
+    const dg = dormerGeom(r, dm);
+    if (!dg) continue;
+    path(ctx, ed, dg.outline, true);
+    for (const [a, b] of dg.lines) path(ctx, ed, [a, b]);
+    const w = dg.walls[0], gl = dg.glass[0];
+    if (gl) path(ctx, ed, [gl[0], gl[1]]);
+    else if (w) path(ctx, ed, [w[0], w[1]]);
+  }
   // huecos de la azotea: contorno continuo y aspa, como los de las losas
   for (const h of r.holes ?? []) {
     path(ctx, ed, h, true);
