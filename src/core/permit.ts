@@ -23,8 +23,49 @@ export function wallBox(m: Model) {
   return b;
 }
 
-/** Muro exterior o de carga: los de 2x6 y más gruesos. */
-export const isExterior = (w: Wall) => w.thick >= 0.15;
+// las listas de muros se editan en su sitio: la caché se valida con una huella de sus coordenadas
+const perimeterCache = new WeakMap<readonly Wall[], { sig: number; set: Set<number> }>();
+const wallsSig = (all: readonly Wall[]) => all.reduce((h, w, i) => h + (i + 1) * (w.id * 0.618 + w.x1 * 1.3 + w.y1 * 1.7 + w.x2 * 2.3 + w.y2 * 2.9 + w.thick * 3.1), all.length);
+/**
+ * Muros del contorno de la planta: los que tienen al menos un lado que da afuera, es decir, desde el que
+ * algún rayo sale sin cruzar otro muro. Así un muro de fachada delgado (2x4) también cuenta como exterior.
+ */
+export function perimeterWalls(all: readonly Wall[]): Set<number> {
+  const sig = wallsSig(all), hit = perimeterCache.get(all);
+  if (hit && hit.sig === sig) return hit.set;
+  // cada muro alargado medio espesor en sus extremos para cerrar las esquinas
+  const segs = all.map((w) => { const { L, ux, uy } = dir(w), e = w.thick / 2 + 0.02; return { id: w.id, ax: w.x1 - ux * e, ay: w.y1 - uy * e, bx: w.x1 + ux * (L + e), by: w.y1 + uy * (L + e) }; });
+  const escapes = (px: number, py: number, dx: number, dy: number, self: number) => !segs.some((s) => {
+    if (s.id === self) return false;
+    const ex = s.bx - s.ax, ey = s.by - s.ay, den = dx * ey - dy * ex;
+    if (Math.abs(den) < 1e-12) return false;
+    const t = ((s.ax - px) * ey - (s.ay - py) * ex) / den, u = ((s.ax - px) * dy - (s.ay - py) * dx) / den;
+    return t > 0 && u >= 0 && u <= 1;
+  });
+  const out = new Set<number>();
+  for (const w of all) {
+    const { L, ux, uy } = dir(w);
+    if (L < 1e-6) continue;
+    const nx = -uy, ny = ux, off = w.thick / 2 + 0.03;
+    found: for (const k of [0.5, 0.25, 0.75]) for (const sg of [1, -1]) {
+      const px = w.x1 + ux * L * k + nx * off * sg, py = w.y1 + uy * L * k + ny * off * sg;
+      for (let i = 0; i < 16; i++) {
+        const a = (i / 16) * Math.PI * 2, dx = Math.cos(a), dy = Math.sin(a);
+        // solo hacia ese lado del muro
+        if ((dx * nx + dy * ny) * sg <= 0.05) continue;
+        if (escapes(px, py, dx, dy, w.id)) { out.add(w.id); break found; }
+      }
+    }
+  }
+  perimeterCache.set(all, { sig, set: out });
+  return out;
+}
+
+/**
+ * Muro exterior o de carga: los de 2x6 y más gruesos y, si se dan los muros de la planta, los del contorno.
+ * Usado como filtro (`walls.filter(isExterior)`) recibe la lista sola.
+ */
+export const isExterior = (w: Wall, _i?: unknown, all?: readonly Wall[]) => w.thick >= 0.15 || (!!all && perimeterWalls(all).has(w.id));
 
 // ---------- cimentación ----------
 
@@ -34,7 +75,7 @@ export const FOOTING_TYPES = { F1: { width: 16 * IN, depth: 8 * IN }, F2: { widt
 
 export function footings(m: Model): Footing[] {
   return m.walls.map((w) => {
-    const mark = isExterior(w) ? "F1" : "F2", h = FOOTING_TYPES[mark].width / 2, { L } = dir(w);
+    const mark = isExterior(w, 0, m.walls) ? "F1" : "F2", h = FOOTING_TYPES[mark].width / 2, { L } = dir(w);
     return { mark, wall: w, poly: [loc(w, -h, -h), loc(w, L + h, -h), loc(w, L + h, h), loc(w, -h, h)] } as Footing;
   });
 }
@@ -130,7 +171,7 @@ export function headers(m: Model): { list: Header[]; types: { mark: string; size
   for (const o of m.openings) {
     const w = m.walls.find((x) => x.id === o.wallId);
     if (!w) continue;
-    const { L } = dir(w), c = o.t * L, size = isExterior(w) ? headerSize(o.width) : "(2) 2x6 FLAT";
+    const { L } = dir(w), c = o.t * L, size = isExterior(w, 0, m.walls) ? headerSize(o.width) : "(2) 2x6 FLAT";
     raw.push({ size, width: o.width, a: loc(w, c - o.width / 2, 0), b: loc(w, c + o.width / 2, 0), at: loc(w, c, w.thick / 2 + 0.35) });
   }
   const sizes = [...new Set(raw.sort((p, q) => p.width - q.width).map((h) => h.size))];

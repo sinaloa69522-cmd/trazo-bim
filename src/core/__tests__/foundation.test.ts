@@ -31,6 +31,20 @@ describe("tipos de cimentación", () => {
     expect(ms.some((m) => m.kind === "girder")).toBe(true);
   });
 
+  it("crawl space con muros delgados (2x4): muro de block corrido en el contorno y pilares solo dentro", () => {
+    const p = sampleProject(), lv = p.levels[0], w0 = lv.walls[0];
+    const mk = (id: number, x1: number, y1: number, x2: number, y2: number) => ({ ...w0, id, x1, y1, x2, y2, thick: 0.12 });
+    lv.walls = [mk(1, 0, 0, 10, 0), mk(2, 10, 0, 10, 8), mk(3, 10, 8, 0, 8), mk(4, 0, 8, 0, 0), mk(5, 5, 0, 5, 8)];
+    lv.openings = [];
+    const ms = foundation({ ...p, foundation: "crawl" }), fw = ms.filter((m) => m.kind === "foundation");
+    expect(fw).toHaveLength(4);
+    expect(fw.reduce((s, m) => s + Math.hypot(m.b.x - m.a.x, m.b.y - m.a.y), 0)).toBeGreaterThan(36);
+    // los pilares quedan en el muro interior (x = 5), no en el contorno
+    const piers = ms.filter((m) => m.kind === "pier");
+    expect(piers.length).toBeGreaterThan(0);
+    for (const m of piers) expect(Math.abs(m.a.x - 5)).toBeLessThan(1e-6);
+  });
+
   it("el tipo se conserva al normalizar el proyecto", () => {
     const p = normalizeProject(JSON.parse(JSON.stringify({ ...sampleProject(), foundation: "crawl" })));
     expect(p.foundation).toBe("crawl");

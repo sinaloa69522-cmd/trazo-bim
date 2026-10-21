@@ -87,7 +87,7 @@ export function stripFootings(p: Project): StripFooting[] {
   const lv = p.levels[0];
   if (!lv) return [];
   return lv.walls.filter((w) => w.thick >= 0.1 && dir(w).L > 0.3).map((w) => {
-    const mark = isExterior(w) ? "ZC-1" : "ZC-2", { B } = stripSize(p, mark), { L } = dir(w), h = B / 2;
+    const mark = isExterior(w, 0, lv.walls) ? "ZC-1" : "ZC-2", { B } = stripSize(p, mark), { L } = dir(w), h = B / 2;
     // se prolonga medio ancho en los extremos para cerrar las esquinas
     return { mark, wall: w, B, poly: [loc(w, -h, -h), loc(w, L + h, -h), loc(w, L + h, h), loc(w, -h, h)] };
   });
