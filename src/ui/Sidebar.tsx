@@ -5,7 +5,7 @@ import { FURNITURE, FURNITURE_CATS, furnitureDef } from "../core/furniture";
 import { CIRCUITS, mepDef, mepOf, runLength, SYSTEMS, systemDef, type Discipline } from "../core/mep";
 import { SymbolIcon, SystemIcon } from "./MepIcons";
 import { GENERIC, WALL_TYPES, wallType, wallTypeLabel } from "../core/wallTypes";
-import { LAYERS, type Dormer, type Model, type RoofKind, type RunSystem, type StairKind } from "../core/model";
+import { LAYERS, type Dormer, type DormerWindow, type Model, type RoofKind, type RunSystem, type StairKind } from "../core/model";
 import { ROOF_LABEL, type Editor } from "../editor/Editor";
 import { fmtArea, fmtDim, fmtElev, fmtField, fmtLen, fmtSmall, imperial, lenUnit, parseLen } from "../core/units";
 import { finish, ROOFINGS, SIDINGS, type Finish } from "../core/finishes";
@@ -113,6 +113,23 @@ function OpeningStylePicker({ label, list, value, onChange }: { label: string; l
         ))}
       </div>
     </div>
+  );
+}
+
+/** Ventana de una buhardilla: sí o no, ancho, alto y tipo. */
+function DormerWindowFields({ id, label, value, fresh, onChange }: { id: string; label: string; value: DormerWindow | null; fresh?: DormerWindow; onChange: (w: DormerWindow | null) => void }) {
+  return (
+    <>
+      <label className="check full"><input type="checkbox" checked={!!value} onChange={(e) => onChange(e.currentTarget.checked ? (fresh ?? { w: 0.8, h: 0.8, style: "fixed" }) : null)} /> {label}</label>
+      {value && <>
+        <NumberField id={`${id}-w`} label="Ancho ventana" len value={value.w} min={0.2} onCommit={(v) => onChange({ ...value, w: v })} />
+        <NumberField id={`${id}-h`} label="Alto ventana" len value={value.h} min={0.2} onCommit={(v) => onChange({ ...value, h: v })} />
+        <label htmlFor={`${id}-s`}>Tipo</label>
+        <select id={`${id}-s`} value={value.style} onChange={(e) => onChange({ ...value, style: e.target.value })}>
+          {WINDOW_STYLES.map((st) => <option key={st.id} value={st.id}>{st.name}</option>)}
+        </select>
+      </>}
+    </>
   );
 }
 
@@ -236,6 +253,10 @@ function Properties({ ed, onFocusCommand }: { ed: Editor; onFocusCommand: () => 
         <NumberField id={`${key}-dh${dm.id}`} label="Altura del frente" len value={dm.h} min={0.5} onCommit={(v) => ed.setDormer(r.id, dm.id, { h: v })} />
         <NumberField id={`${key}-ds${dm.id}`} label="Retranqueo" len value={dm.set} min={0} onCommit={(v) => ed.setDormer(r.id, dm.id, { set: v })} />
         <NumberField id={`${key}-du${dm.id}`} label="Desde el centro" len value={dm.u} min={-100} onCommit={(v) => ed.setDormer(r.id, dm.id, { u: v })} />
+        <DormerWindowFields id={`${key}-wf${dm.id}`} label="Ventana al frente" value={dm.win === undefined ? { w: dm.w - 0.4, h: dm.h, style: "fixed" } : dm.win}
+          onChange={(win) => ed.setDormer(r.id, dm.id, { win })} />
+        <DormerWindowFields id={`${key}-ws${dm.id}`} label="Ventanas en los costados" value={dm.sideWin ?? null} fresh={{ w: 0.5, h: 0.6, style: "fixed" }}
+          onChange={(sideWin) => ed.setDormer(r.id, dm.id, { sideWin })} />
         <button className="btn full" onClick={() => ed.removeDormer(r.id, dm.id)}>Quitar buhardilla {i + 1}</button>
       </Fragment>)}
       {r.kind !== "flat" && <button className="btn full" onClick={() => ed.setTool("dormer")} title="Haz clic en un faldón para poner una buhardilla (BU)">Agregar buhardilla</button>}

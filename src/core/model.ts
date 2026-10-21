@@ -120,7 +120,13 @@ export interface Dormer {
   set: number;
   /** A dos aguas o de un agua (pendiente más suave que la del faldón) */
   kind: "gable" | "shed";
+  /** Ventana del frente (sin dato: todo el ancho menos 40 cm; null: sin ventana) */
+  win?: DormerWindow | null;
+  /** Ventana en cada costado, junto al frente */
+  sideWin?: DormerWindow | null;
 }
+
+export interface DormerWindow { w: number; h: number; style: string }
 
 /** Forma de la escalera (ver core/stairs.ts). */
 export type StairKind = "recta" | "descanso" | "L" | "U" | "caracol";

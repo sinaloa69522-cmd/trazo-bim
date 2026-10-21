@@ -2,7 +2,7 @@
 // viguetas, cabios, limatesas y cumbrera, con los tamaños de predimensionado de permit.ts (tablas del IRC).
 import { dir, loc, roofGeom, type P3 } from "./geometry";
 import type { Dormer, Project, Roof, Wall } from "./model";
-import { dormerGeom } from "./dormers";
+import { dormerGeom, frontWindow, sideWindow } from "./dormers";
 import { deckFraming } from "./decks";
 import { foundation, foundationType, gradeLevel } from "./foundation";
 import { ceilingSystem, depthOf, floorJoistDepth, floorSystem, SUBFLOOR } from "./joists";
@@ -198,8 +198,8 @@ function dormerFrame(hl: Hole, S: (side: number, u: number, dv: number, z: numbe
   plate(S(side, u0, fv, zf + T / 2), S(side, u1, fv, zf + T / 2));
   plate(S(side, u0, fv, ze - T / 2), S(side, u1, fv, ze - T / 2)); plate(S(side, u0, fv, ze - 1.5 * T), S(side, u1, fv, ze - 1.5 * T));
   // ventana como en dormers.ts: ancho del frente menos 40 cm, antepecho de 15 cm y dintel 12 cm bajo el frente
-  const ww = Math.max(0.4, dm.w - 0.4), wa = um - ww / 2, wb = um + ww / 2, sill = zf + 0.15, head = ze - 0.12;
-  const win = head - sill > 0.3, hd = Math.min(depthOf("2x6"), Math.max(0.05, head - sill - 0.05));
+  const fw = frontWindow(dm, zf, ze), win = !!fw, ww = fw?.w ?? 0, wa = um - ww / 2, wb = um + ww / 2, sill = fw?.sill ?? 0, head = fw?.head ?? 0;
+  const hd = Math.min(depthOf("2x6"), Math.max(0.05, ze - 2 * T - head - 0.02));
   const us: number[] = [u0 + T / 2];
   for (let u = u0 + 16 * IN; u < u1 - T; u += 16 * IN) us.push(u);
   us.push(u1 - T / 2);
@@ -219,7 +219,18 @@ function dormerFrame(hl: Hole, S: (side: number, u: number, dv: number, z: numbe
   const alongV = { x: S(side, 0, 1, 0).x - S(side, 0, 0, 0).x, y: S(side, 0, 1, 0).y - S(side, 0, 0, 0).y };
   for (const u of [u0 + st / 2, u1 - st / 2]) {
     out.push({ kind: "plate", a: S(side, u, f, zTop(f) - T / 2), b: S(side, u, de, zTop(de) - T / 2), w: st, h: T, size: "2x4" });
-    for (let dv = f + 16 * IN; dv < de - 0.1; dv += 16 * IN) stud(S(side, u, dv, top(dv)), S(side, u, dv, zTop(dv) - T), alongV);
+    // ventana del costado: montantes a sus lados, dintel y antepecho; ningún montante cruza el vano
+    const sw = sideWindow(dm, zf, ze, tan);
+    for (let dv = f + 16 * IN; dv < de - 0.1; dv += 16 * IN) {
+      if (sw && dv > f + sw.t1 - dm.set - T && dv < f + sw.t2 - dm.set + T) continue;
+      stud(S(side, u, dv, top(dv)), S(side, u, dv, zTop(dv) - T), alongV);
+    }
+    if (sw) {
+      const a = f + sw.t1 - dm.set, c = f + sw.t2 - dm.set;
+      for (const dv of [a - T / 2, c + T / 2]) stud(S(side, u, dv, top(dv)), S(side, u, dv, zTop(dv) - T), alongV);
+      out.push({ kind: "header", a: S(side, u, a - T, sw.head + T), b: S(side, u, c + T, sw.head + T), w: st, h: 2 * T, size: "(2) 2x4" });
+      out.push({ kind: "plate", a: S(side, u, a, sw.sill - T / 2), b: S(side, u, c, sw.sill - T / 2), w: st, h: T, size: "2x4" });
+    }
   }
   // techito: a dos aguas, cumbrera y pares de cabios a 16" que en la limahoya mueren contra el faldón
   const rd = depthOf("2x6"), dr = 0.5 * rd / Math.cos(Math.atan(tan));

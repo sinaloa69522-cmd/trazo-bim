@@ -66,3 +66,23 @@ describe("buhardillas en la estructura", () => {
     expect(ms.filter((m) => m.kind === "stud" && Math.abs(at(m) - um) < dm.w / 2 && m.b.z > zf).length).toBeGreaterThan(3);
   });
 });
+
+describe("ventanas de las buhardillas", () => {
+  it("los muros tienen espesor y la herramienta Ventana pone la del frente y las de los costados", () => {
+    const { ed, r } = withDormer(), dm = r.dormers![0], A = roofAxes(r);
+    const g0 = dormerGeom(r, dm)!;
+    expect(g0.walls.length).toBeGreaterThan(20);
+    const um = (A.U0 + A.U1) / 2 + dm.u, at = (u: number, t: number) => (A.alongX ? { x: u, y: dm.side ? A.V1 - A.o - t : A.V0 + A.o + t } : { x: dm.side ? A.V1 - A.o - t : A.V0 + A.o + t, y: u });
+    ed.setTool("window");
+    ed.defaults.winW = 0.8; ed.defaults.winStyle = "casement2";
+    ed.placeOpening(at(um, dm.set + 0.05).x, at(um, dm.set + 0.05).y);
+    expect(dm.win).toMatchObject({ w: 0.8, style: "casement2" });
+    ed.defaults.winW = 0.5;
+    const s = at(um + dm.w / 2 - 0.1, dm.set + 0.6);
+    ed.placeOpening(s.x, s.y);
+    expect(dm.sideWin?.w).toBeCloseTo(0.5);
+    const g = dormerGeom(r, dm)!;
+    expect(g.glass).toHaveLength(3);
+    expect(g.styles).toEqual(["casement2", "casement2", "casement2"]);
+  });
+});
