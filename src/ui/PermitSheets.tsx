@@ -11,11 +11,11 @@ import { ABBREVIATIONS, CODES, DEFERRED, DESIGN_CRITERIA, GENERAL_NOTES, SCOPE, 
 import type { Editor } from "../editor/Editor";
 import { SheetLegend } from "./SheetLegend";
 
-export type PermitKind = "cover" | "notes" | "site" | "found" | "floorfr" | "wallfr" | "rooffr" | "details" | "details2" | "details3" | "hvac";
-export const PERMIT_KINDS: PermitKind[] = ["cover", "notes", "site", "found", "floorfr", "wallfr", "rooffr", "details", "details2", "details3", "hvac"];
+export type PermitKind = "cover" | "notes" | "site" | "found" | "floorfr" | "wallfr" | "rooffr" | "details" | "details2" | "details3" | "hvac" | "details4" | "details5" | "details6";
+export const PERMIT_KINDS: PermitKind[] = ["cover", "notes", "site", "found", "floorfr", "wallfr", "rooffr", "details", "details2", "details3", "hvac", "details4", "details5", "details6"];
 /** Láminas sin dibujo de planta: se maquetan en HTML/SVG. */
-export const TEXT_SHEETS = ["cover", "notes", "details", "details2", "details3", "mxdet1", "mxdet2", "mxdet3", "mxarq", "mxinst", "mxport", "mxnotas"];
-/** Láminas de detalles constructivos (A-501, A-502, A-503). */
+export const TEXT_SHEETS = ["cover", "notes", "details", "details2", "details3", "details4", "details5", "details6", "mxdet1", "mxdet2", "mxdet3", "mxarq", "mxinst", "mxport", "mxnotas", "mxdie", "mxdih", "mxdaa"];
+/** Láminas de detalles (A-501 a A-503 y los de instalaciones E-501, P-501, M-501). */
 export const isDetails = (c: string) => c.startsWith("details");
 
 /** Título de cada lámina en inglés (y en qué menú sale en español). */
@@ -37,6 +37,9 @@ export const SHEET_TITLES: Record<string, { en: string; es: string }> = {
   elec: { en: "Electrical Plan", es: "Electricidad" },
   plum: { en: "Plumbing Plan", es: "Plomería" },
   hvac: { en: "Mechanical (HVAC) Plan", es: "HVAC (aire acondicionado)" },
+  details4: { en: "Electrical Details", es: "Detalles de electricidad" },
+  details5: { en: "Plumbing Details", es: "Detalles de plomería" },
+  details6: { en: "Mechanical (HVAC) Details", es: "Detalles de aire acondicionado" },
 };
 
 export interface SetEntry { no: string; title: string }

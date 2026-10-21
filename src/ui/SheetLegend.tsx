@@ -238,6 +238,18 @@ const ROWS: Record<string, Row[]> = {
 ROWS.elev = ROWS.fach;
 ROWS.details2 = [ROWS.details[0], [S.cmu, "Bloque de concreto (CMU)", "CONCRETE MASONRY UNIT (CMU)"], ...ROWS.details.slice(1)];
 ROWS.details3 = [...ROWS.details];
+const pipe = (color: string, w = 0.6, dash?: string) => () => <Sym><path d="M1 2.5h12" stroke={color} strokeWidth={w} strokeDasharray={dash} /></Sym>;
+ROWS.details4 = [ROWS.details[0],
+  [pipe("#2f7d32", 0.5), "Conductor de puesta a tierra", "GROUNDING / BONDING CONDUCTOR"], [pipe("#555", 0.9), "Conduit / acometida", "CONDUIT / SERVICE CONDUCTORS"],
+  [pipe("#a0522d", 1.2), "Electrodo de tierra", "GROUNDING ELECTRODE"], [pipe("#1f5fbf", 0.9), "Tubería de agua", "METAL WATER PIPE"], [pipe("#c9a227", 0.9), "Tubería de gas", "GAS PIPE"],
+  ...ROWS.details.slice(1, 2), ROWS.details[ROWS.details.length - 1]];
+ROWS.details5 = [ROWS.details[0],
+  [pipe("#1f5fbf"), "Agua fría", "COLD WATER"], [pipe("#c4302b", 0.6, "1.4 .5 .3 .5"), "Agua caliente", "HOT WATER"], [pipe("#555", 1.1), "Drenaje y ventilación", "DRAIN, WASTE AND VENT"],
+  [() => <Sym><path d="M5.6 1.1v2.8L8.4 1.1v2.8z" fill={INK} stroke="none" /></Sym>, "Llave de paso", "SHUTOFF VALVE"],
+  ...ROWS.details.slice(1, 2), ROWS.details[ROWS.details.length - 1]];
+ROWS.details6 = [ROWS.details[0],
+  [pipe("#333", 1.1), "Línea de refrigeración", "REFRIGERANT LINE SET"], [pipe("#1f5fbf"), "Drenaje de condensados", "CONDENSATE DRAIN"], [pipe("#999", 1.4), "Ducto", "DUCT"],
+  [pipe("#555", 0.6, "1 .4"), "Alimentación eléctrica", "POWER WHIP"], ...ROWS.details.slice(1, 2), ROWS.details[ROWS.details.length - 1]];
 ROWS.notes = [...ROWS.notes.slice(0, 1), [S.cmu, "Bloque de concreto (CMU)", "CONCRETE MASONRY UNIT (CMU)"], ...ROWS.notes.slice(1)];
 
 /** Muestra de un acabado con el mismo despiece que su trama en los alzados (escala aprox. 1:50). */

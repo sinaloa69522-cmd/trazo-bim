@@ -19,6 +19,7 @@ import { areaNum, areaUnit, fmtDim, fmtElev, FT, imperial, lenUnit, scaleLabel, 
 import { drawPermitOverlay, type PermitPlan } from "../editor/permitRenderer";
 import { site } from "../core/permit";
 import { FoundationDetails, StairDetails } from "./PermitDetails";
+import { ElecDetails, MechDetails, PlumbDetails } from "./MepDetails";
 import { CoverBody, DetailsBody, isDetails, NotesBody, PERMIT_KINDS, PermitSide, SheetNotes, SHEET_TITLES, TEXT_SHEETS, type PermitKind } from "./PermitSheets";
 import { SymbolIcon, SystemIcon } from "./MepIcons";
 import { MX_KINDS, MX_TITLES, MxFoundationDetails, MxNotes, MxSide, MxStructDetails, type MxKind } from "./MxSheets";
@@ -272,6 +273,9 @@ function Sheet({ ed, content, level, scale, zoom = 1, set, os = OVERSAMPLE }: { 
       {content === "mxdet3" && <MxStructDetails2 box={planBox()} p={p} sheet={sheetNo} />}
       {content === "mxarq" && <MxArchDetails box={planBox()} sheet={sheetNo} />}
       {content === "mxinst" && <MxInstDetails box={planBox()} sheet={sheetNo} />}
+      {(content === "details4" || content === "mxdie") && <ElecDetails box={planBox()} sheet={sheetNo} en={content === "details4"} />}
+      {(content === "details5" || content === "mxdih") && <PlumbDetails box={planBox()} sheet={sheetNo} en={content === "details5"} />}
+      {(content === "details6" || content === "mxdaa") && <MechDetails box={planBox()} sheet={sheetNo} en={content === "details6"} />}
       {content === "mxport" && <MxCoverBody ed={ed} box={planBox()} />}
       {content === "mxnotas" && <MxNotesBody box={planBox()} />}
       <div className="viewtitle" style={{ left: `${planBox().x + 6}mm`, top: `${planBox().y + planBox().h + 1}mm` }}>
@@ -361,8 +365,11 @@ export function permitSet(ed: Editor): PermitEntry[] {
   if (allSections(ed.project).length) add("sec", 0, "A", 301, autoScaleOf(ed, "sec", 0));
   add("details", 0, "A", 501); add("details2", 0, "A", 501); add("details3", 0, "A", 501);
   lvs.forEach((_, i) => add("elec", i, "E", 101, planScale, lvTitle("elec", i)));
+  add("details4", 0, "E", 501);
   lvs.forEach((_, i) => add("plum", i, "P", 101, planScale, lvTitle("plum", i)));
+  add("details5", 0, "P", 501);
   lvs.forEach((_, i) => add("hvac", i, "M", 101, planScale, lvTitle("hvac", i)));
+  add("details6", 0, "M", 501);
   return out;
 }
 
@@ -394,6 +401,7 @@ export function mxSet(ed: Editor): PermitEntry[] {
   lvs.forEach((_, i) => add("hid", i, "IH", planScale, lvTitle("hid", i)));
   lvs.forEach((_, i) => add("san", i, "IS", planScale, lvTitle("san", i)));
   add("mxinst", 0, "DI", 20);
+  add("mxdie", 0, "DI", 20); add("mxdih", 0, "DI", 20); add("mxdaa", 0, "DI", 20);
   return out;
 }
 
