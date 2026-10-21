@@ -6,7 +6,7 @@ import {
   attachWalls, liftBuriedRoofs, cloneModel, emptyProject, newLevel, nextId, nextSectionName, normalizeProject, sampleProject, type Level, type Project, type ProjectInfo,
   type Deck, type DeckKind, type Dim, type Dormer, type LayerId, type MarkKind, type Model, type Roof, type RoofKind, type RunSystem, type Stair, type StairKind, type Wall,
 } from "../core/model";
-import { DORMER, dormerAt, dormerGeom } from "../core/dormers";
+import { DORMER, dormerAt, dormerGeom, frontWindow, roofAxes, sideWindow } from "../core/dormers";
 import { allAutoDims } from "../core/autodim";
 import { axes } from "../core/mxStruct";
 import { fmtArea, fmtElev, fmtLen, fmtSmall, imperial, parseLen, setUnitSystem, FT, IN, type UnitSystem } from "../core/units";
@@ -1053,6 +1053,7 @@ export class Editor {
   }
 
   placeOpening(wx: number, wy: number) {
+    if (this.tool === "window" && this.placeDormerWindow({ x: wx, y: wy })) return;
     const c = this.openingCandidate(wx, wy);
     if (!c) return;
     if (!c.ok) { this.log("No cabe ahí: se solapa con otro hueco o con el extremo del muro."); return; }
@@ -1762,12 +1763,49 @@ export class Editor {
     this.changed();
   }
 
+  /** Buhardilla bajo el punto y si el punto cae en su frente o en un costado. */
+  dormerHit(p: Pt): { roof: Roof; dormer: Dormer; face: "front" | "side" } | null {
+    for (const r of this.model.roofs) for (const dm of r.dormers ?? []) {
+      const g = dormerGeom(r, dm);
+      if (!g || !pointInPolygon(p, g.outline)) continue;
+      const A = roofAxes(r), at = dormerAt(r, p)!, v = A.alongX ? p.y : p.x, t = dm.side ? A.V1 - A.o - v : v - A.V0 - A.o;
+      const side = Math.abs(at.u - dm.u) > dm.w / 2 - 0.25 && t > dm.set + 0.25;
+      return { roof: r, dormer: dm, face: side ? "side" : "front" };
+    }
+    return null;
+  }
+
+  /** Con la herramienta Ventana sobre una buhardilla: pone la ventana nueva en su frente o en sus costados. */
+  placeDormerWindow(p: Pt) {
+    const hit = this.dormerHit(p);
+    if (!hit) return false;
+    const { roof: r, dormer: dm, face } = hit, d = this.defaults;
+    const patch: Partial<Dormer> = face === "front"
+      ? { win: { w: Math.min(d.winW, dm.w - 0.25), h: d.winH, style: d.winStyle } }
+      : { sideWin: { w: Math.min(d.winW, 0.6), h: Math.min(d.winH, 0.8), style: d.winStyle } };
+    const g = dormerGeom(r, { ...dm, ...patch });
+    const nd = { ...dm, ...patch }, fits = face === "side" ? sideWindow(nd, 0, dm.h, roofAxes(r).tan) : frontWindow(nd, 0, dm.h);
+    if (!g || !fits) {
+      this.log(face === "side" ? "En los costados de esta buhardilla no cabe una ventana: súbele la altura del frente." : "En el frente de esta buhardilla no cabe esa ventana.");
+      return true;
+    }
+    this.snapshot();
+    Object.assign(dm, patch);
+    this.sels = [{ type: "roof", id: r.id }];
+    this.message = face === "side" ? "Ventanas en los dos costados de la buhardilla. Ajusta su medida en Propiedades de la cubierta." : "Ventana del frente de la buhardilla cambiada. Ajusta su medida en Propiedades de la cubierta.";
+    this.changed();
+    return true;
+  }
+
   /** Cambia una buhardilla; si con el cambio ya no cabe, lo deja como estaba y avisa. */
   setDormer(roofId: number, id: number, patch: Partial<Dormer>) {
     const r = this.model.roofs.find((x) => x.id === roofId), dm = r?.dormers?.find((x) => x.id === id);
     if (!r || !dm) return;
     if (!dormerGeom(r, { ...dm, ...patch })) { this.log("Con esa medida la buhardilla no cabe en el faldón."); this.emit(); return; }
     this.edit(() => { Object.assign(dm, patch); });
+    const tan = roofAxes(r).tan;
+    if (dm.sideWin && !sideWindow(dm, 0, dm.h, tan)) this.log("La ventana de los costados no cabe: súbele la altura del frente o hazla más angosta.");
+    else if (dm.win && !frontWindow(dm, 0, dm.h)) this.log("La ventana del frente no cabe en esta buhardilla.");
   }
 
   removeDormer(roofId: number, id: number) {

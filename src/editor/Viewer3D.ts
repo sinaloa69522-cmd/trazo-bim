@@ -478,6 +478,7 @@ export class Viewer3D {
           if (!dg) continue;
           polys(dg.roof, isSel("roof", r.id) ? this.mat.roofSel : rf ? this.finishMat(rf) : this.mat.roof);
           polys(dg.walls, this.mat.gable);
+          polys(dg.frames, this.mat.frame);
           polys(dg.glass, this.mat.glass);
         }
       }

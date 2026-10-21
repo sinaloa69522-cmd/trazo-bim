@@ -173,7 +173,7 @@ function project(p: Project, fr: Frame): Elevation {
         const up = (f: P3[]) => f.map((q) => ({ ...q, z: e + q.z }));
         for (const f of dg.roof) face(up(f), "roof", 0, tile);
         for (const f of dg.walls) face(up(f), "wall", 0);
-        for (const f of dg.glass) face(up(f), "glass", 1e-3, undefined, { kind: "window", style: "fixed" });
+        dg.glass.forEach((f, i) => face(up(f), "glass", 1e-3, undefined, { kind: "window", style: dg.styles[i] }));
       }
       // canto del alero
       const zt = e + g.faces[0][0].z;
