@@ -19,6 +19,9 @@ import { IN } from "../core/units";
 /** Block de concreto (CMU) de la cimentación: piezas de 16" × 8" a hueso. */
 const CMU: Finish = { id: "cmu-foundation", name: "Block de concreto", en: "CMU", color: "#a9a69e", style: "brick", row: 8 * IN, len: 16 * IN, bond: true, vary: 0.05 };
 
+/** Muro o pilar de block (no de concreto) de la cimentación. */
+const isCmu = (m: Member) => (m.kind === "foundation" || m.kind === "pier") && !/CONC/.test(m.size);
+
 /** Caras (hacia fuera) de una pieza recta como prisma: la base en planta entre sus dos alturas. */
 function memberFaces(m: Member): P3[][] {
   const vertical = Math.abs(m.b.z - m.a.z) > 1e-6;
@@ -166,7 +169,7 @@ export class Viewer3D {
   }
 
   /** Vista de la estructura: solo las piezas de madera y las zapatas, sobre las losas en transparencia. */
-  private buildFraming() {
+  private buildFraming(polys: (ps: P3[][], mat: THREE.Material) => void) {
     const ghost = new THREE.MeshStandardMaterial({ color: 0xb9b6ae, transparent: true, opacity: 0.25, roughness: 1, depthWrite: false });
     for (const lv of this.ed.project.levels) for (const sl of lv.slabs) {
       if (sl.pts.length < 3) continue;
@@ -175,7 +178,10 @@ export class Viewer3D {
       mesh.rotation.x = Math.PI / 2; mesh.position.y = lv.elev;
       this.group.add(mesh);
     }
-    this.members(framing(this.ed.project).filter((m) => !this.ed.hiddenMembers.has(m.kind)));
+    // el muro y los pilares de block con su aparejo, como en la vista normal
+    const ms = framing(this.ed.project).filter((m) => !this.ed.hiddenMembers.has(m.kind)), cmu = this.finishMat(CMU);
+    this.members(ms.filter((m) => !isCmu(m)));
+    for (const m of ms.filter(isCmu)) polys(memberFaces(m), cmu);
   }
 
   /** Piezas como cajas orientadas: las verticales según su muro, las demás apuntando de a a b. */
@@ -465,13 +471,12 @@ export class Viewer3D {
     if (this.ed.framing) {
       const zs = foundation(project).flatMap((m) => [m.a.z - m.h / 2, m.b.z - m.h / 2]);
       floor.position.y = Math.min(-0.75, ...zs) - 0.1;
-      this.buildFraming(); this.dirty = true; return;
+      this.buildFraming(polys); this.dirty = true; return;
     }
     // la cimentación se ve donde asoma sobre el terreno (block del crawl space, pilares)
     // el muro y los pilares de block llevan su aparejo (hiladas de 8" y piezas de 16"); lo demás, su color
     if (vis.losas) {
       const fnd = foundation(project).filter((m) => ["footing", "foundation", "pier", "girder"].includes(m.kind));
-      const isCmu = (m: Member) => (m.kind === "foundation" || m.kind === "pier") && !/CONC/.test(m.size);
       this.members(fnd.filter((m) => !isCmu(m)));
       const cmu = this.finishMat(CMU);
       for (const m of fnd.filter(isCmu)) polys(memberFaces(m), cmu);
