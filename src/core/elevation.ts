@@ -1,6 +1,7 @@
 import { furnitureSolids, furnitureToPlan } from "./furniture";
 import { dir, endExt, loc, parapet, roofGeom, type Pt } from "./geometry";
 import { dormerGeom } from "./dormers";
+import { foundation, foundationType, gradeLevel } from "./foundation";
 import { stairGeom } from "./stairs";
 import { wallType, type Hatch } from "./wallTypes";
 import { finishName, gableWall, outward, roofFinish, finish as finishById, type Finish } from "./finishes";
@@ -34,6 +35,8 @@ export interface Elevation {
   levels: { name: string; elev: number }[];
   /** Coronación: lecho alto de las azoteas y cumbreras, con su propio símbolo de nivel */
   tops: { tag: "N.L.A." | "Cumbrera" | "Pretil"; elev: number }[];
+  /** Cota del terreno (0, salvo con piso de madera: crawl space, pilares o sótano, donde asoma la cimentación) */
+  grade: number;
 }
 
 type P3 = { x: number; y: number; z: number };
@@ -109,13 +112,34 @@ function project(p: Project, fr: Frame): Elevation {
     return out;
   };
   /** Prisma de base poligonal (en planta) entre dos alturas: caras laterales y, si se corta, su sección. */
-  const prism = (base: Pt[], z0: number, z1: number, kind: FaceKind, poche = true, holes: Pt[][] = []) => {
+  const prism = (base: Pt[], z0: number, z1: number, kind: FaceKind, poche = true, holes: Pt[][] = [], mat?: EFace["mat"]) => {
     for (const ring of [base, ...holes]) ring.forEach((a, i) => {
       const b = ring[(i + 1) % ring.length];
-      face([{ ...a, z: z0 }, { ...b, z: z0 }, { ...b, z: z1 }, { ...a, z: z1 }], kind);
+      face([{ ...a, z: z0 }, { ...b, z: z0 }, { ...b, z: z1 }, { ...a, z: z1 }], kind, 0, mat);
     });
     if (poche) for (const [ua, ub] of cutSpans(base, holes)) rect(ua, ub, z0, z1);
   };
+
+  // con piso de madera la cimentación asoma sobre el terreno: muro de block (o concreto), pilares, solera y viga de borde
+  const ft = foundationType(p), grade = ft.framedFloor ? gradeLevel(p) : 0;
+  if (ft.framedFloor) for (const m of foundation(p)) {
+    if (!["foundation", "pier", "sill", "rim", "girder"].includes(m.kind)) continue;
+    const vertical = Math.abs(m.b.z - m.a.z) > 1e-6, mat: EFace["mat"] = m.kind === "foundation" || m.kind === "pier"
+      ? (/CONC/.test(m.size) ? { hatch: "concrete", name: "Muro de concreto" } : { hatch: "block", name: "Block de concreto (CMU)" })
+      : undefined;
+    let base: Pt[], z0: number, z1: number;
+    if (vertical) {
+      const al = m.along ?? { x: 1, y: 0 }, n = { x: -al.y, y: al.x }, c = m.a, hw = m.w / 2, hh = m.h / 2;
+      base = [[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([i, j]) => ({ x: c.x + al.x * hw * i + n.x * hh * j, y: c.y + al.y * hw * i + n.y * hh * j }));
+      z0 = Math.min(m.a.z, m.b.z); z1 = Math.max(m.a.z, m.b.z);
+    } else {
+      const L = Math.hypot(m.b.x - m.a.x, m.b.y - m.a.y) || 1, n = { x: -(m.b.y - m.a.y) / L * m.w / 2, y: (m.b.x - m.a.x) / L * m.w / 2 };
+      base = [{ x: m.a.x + n.x, y: m.a.y + n.y }, { x: m.b.x + n.x, y: m.b.y + n.y }, { x: m.b.x - n.x, y: m.b.y - n.y }, { x: m.a.x - n.x, y: m.a.y - n.y }];
+      z0 = m.a.z - m.h / 2; z1 = m.a.z + m.h / 2;
+    }
+    if (z1 <= grade - 0.3 && !fr.cut) continue;
+    prism(base, z0, z1, m.kind === "girder" ? "slab" : "wall", true, [], mat);
+  }
 
   for (const lv of p.levels) {
     const e = lv.elev;
@@ -218,7 +242,7 @@ function project(p: Project, fr: Frame): Elevation {
   const seen = new Set<string>();
   // en un corte, la cumbrera que queda detrás del observador no se ve
   const top = tops.filter((t) => { const k = `${t.tag}${t.elev.toFixed(2)}`; if (seen.has(k) || t.elev > z1 + 0.01) return false; seen.add(k); return true; });
-  return { faces, u0, u1, z0: Math.min(z0, 0), z1, levels: p.levels.map((l) => ({ name: l.name, elev: l.elev })), tops: top };
+  return { faces, u0, u1, z0: Math.min(z0, grade), z1, levels: p.levels.map((l) => ({ name: l.name, elev: l.elev })), tops: top, grade };
 }
 
 /** Recorta un polígono 3D por el semiespacio f >= 0 (Sutherland–Hodgman). */

@@ -14,6 +14,28 @@ import { foundation, gradeLevel } from "../core/foundation";
 import { deckBoxes, type Box } from "../core/decks";
 import type { Editor } from "./Editor";
 import { grass, pavingMaterial, SKY, skyDome, skyEnvironment, tree, treeSpots } from "./scenery";
+import { IN } from "../core/units";
+
+/** Block de concreto (CMU) de la cimentación: piezas de 16" × 8" a hueso. */
+const CMU: Finish = { id: "cmu-foundation", name: "Block de concreto", en: "CMU", color: "#a9a69e", style: "brick", row: 8 * IN, len: 16 * IN, bond: true, vary: 0.05 };
+
+/** Caras (hacia fuera) de una pieza recta como prisma: la base en planta entre sus dos alturas. */
+function memberFaces(m: Member): P3[][] {
+  const vertical = Math.abs(m.b.z - m.a.z) > 1e-6;
+  let base: Pt[], z0: number, z1: number;
+  if (vertical) {
+    const al = m.along ?? { x: 1, y: 0 }, n = { x: -al.y, y: al.x }, hw = m.w / 2, hh = m.h / 2;
+    base = [[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([i, j]) => ({ x: m.a.x + al.x * hw * i + n.x * hh * j, y: m.a.y + al.y * hw * i + n.y * hh * j }));
+    z0 = Math.min(m.a.z, m.b.z); z1 = Math.max(m.a.z, m.b.z);
+  } else {
+    const L = Math.hypot(m.b.x - m.a.x, m.b.y - m.a.y) || 1, nx = (-(m.b.y - m.a.y) / L) * (m.w / 2), ny = ((m.b.x - m.a.x) / L) * (m.w / 2);
+    base = [{ x: m.a.x + nx, y: m.a.y + ny }, { x: m.b.x + nx, y: m.b.y + ny }, { x: m.b.x - nx, y: m.b.y - ny }, { x: m.a.x - nx, y: m.a.y - ny }];
+    z0 = m.a.z - m.h / 2; z1 = m.a.z + m.h / 2;
+  }
+  const out: P3[][] = base.map((a, i) => { const b = base[(i + 1) % 4]; return [{ ...a, z: z0 }, { ...b, z: z0 }, { ...b, z: z1 }, { ...a, z: z1 }]; });
+  out.push(base.map((q) => ({ ...q, z: z1 })), [...base].reverse().map((q) => ({ ...q, z: z0 })));
+  return out;
+}
 
 /** Modelo 3D generado a partir de la planta. Se reconstruye en cada cambio. */
 export class Viewer3D {
@@ -446,7 +468,14 @@ export class Viewer3D {
       this.buildFraming(); this.dirty = true; return;
     }
     // la cimentación se ve donde asoma sobre el terreno (block del crawl space, pilares)
-    if (vis.losas) this.members(foundation(project).filter((m) => ["footing", "foundation", "pier", "girder"].includes(m.kind)));
+    // el muro y los pilares de block llevan su aparejo (hiladas de 8" y piezas de 16"); lo demás, su color
+    if (vis.losas) {
+      const fnd = foundation(project).filter((m) => ["footing", "foundation", "pier", "girder"].includes(m.kind));
+      const isCmu = (m: Member) => (m.kind === "foundation" || m.kind === "pier") && !/CONC/.test(m.size);
+      this.members(fnd.filter((m) => !isCmu(m)));
+      const cmu = this.finishMat(CMU);
+      for (const m of fnd.filter(isCmu)) polys(memberFaces(m), cmu);
+    }
 
     project.levels.forEach((m, li) => {
       base = m.elev;

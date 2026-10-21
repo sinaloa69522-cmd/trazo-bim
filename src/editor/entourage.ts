@@ -36,8 +36,8 @@ export function placeEntourage(el: Elevation): EntItem[] {
   const out: EntItem[] = [], top = el.z1;
   // árboles detrás, asomando por los extremos y por encima de la cubierta
   const th = Math.min(9, top + 1.5, Math.max(4.5, top * 1.15));
-  if (W >= 6) out.push({ kind: "tree", u: el.u0 + 0.6, z: 0, h: th * 0.9, layer: "back" });
-  out.push({ kind: "tree", u: el.u1 - 0.6, z: 0, h: th, layer: "back" });
+  if (W >= 6) out.push({ kind: "tree", u: el.u0 + 0.6, z: el.grade ?? 0, h: th * 0.9, layer: "back" });
+  out.push({ kind: "tree", u: el.u1 - 0.6, z: el.grade ?? 0, h: th, layer: "back" });
 
   if (isCut(el)) {
     // en el corte, una persona en el local más ancho de cada planta
@@ -66,19 +66,19 @@ export function placeEntourage(el: Elevation): EntItem[] {
     const left = doorU > mid;
     const a = left ? el.u0 + 0.4 : el.u1 - 0.4 - CAR_L;
     car = { a, b: a + CAR_L };
-    out.push({ kind: "car", u: a + CAR_L / 2, z: 0, h: 1.45, flip: !left, layer: "front" });
+    out.push({ kind: "car", u: a + CAR_L / 2, z: el.grade ?? 0, h: 1.45, flip: !left, layer: "front" });
   }
   // nadie delante de una puerta ni pegado al auto
   const free = (u: number) => u > el.u0 + 0.4 && u < el.u1 - 0.4 && (!car || u < car.a - 0.5 || u > car.b + 0.5) &&
     doors.every((d) => u < d.u0 - 0.3 || u > d.u1 + 0.3);
   const pa = [doorU + (door ? (door.u1 - door.u0) / 2 + 0.45 : 0), doorU - (door ? (door.u1 - door.u0) / 2 + 0.45 : 0)].find(free);
-  if (pa !== undefined) out.push({ kind: "person", u: pa, z: 0, h: PERSON_H, variant: 0, flip: pa < doorU, layer: "front" });
+  if (pa !== undefined) out.push({ kind: "person", u: pa, z: el.grade ?? 0, h: PERSON_H, variant: 0, flip: pa < doorU, layer: "front" });
   const pb = [0.5, 0.4, 0.6, 0.25, 0.75, 0.15, 0.85].map((t) => el.u0 + W * t).find((u) => free(u) && (pa === undefined || Math.abs(u - pa) >= 2.2));
   if (pb !== undefined) {
-    out.push({ kind: "person", u: pb, z: 0, h: PERSON_H * 0.96, variant: 1, flip: true, layer: "front" });
+    out.push({ kind: "person", u: pb, z: el.grade ?? 0, h: PERSON_H * 0.96, variant: 1, flip: true, layer: "front" });
     // un niño de la mano si hay sitio
     const pc = [pb + 0.55, pb - 0.55].find((u) => free(u) && (pa === undefined || Math.abs(u - pa) >= 0.8));
-    if (pc !== undefined) out.push({ kind: "person", u: pc, z: 0, h: 1.1, variant: 2, flip: true, layer: "front" });
+    if (pc !== undefined) out.push({ kind: "person", u: pc, z: el.grade ?? 0, h: 1.1, variant: 2, flip: true, layer: "front" });
   }
   return out;
 }

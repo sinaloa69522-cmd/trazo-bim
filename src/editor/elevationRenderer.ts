@@ -47,7 +47,7 @@ export function drawElevation(ctx: CanvasRenderingContext2D, el: Elevation, ox: 
   // primero lo que se ve más allá; lo cortado va encima del terreno
   for (const f of el.faces) if (!f.cut) paint(f);
   // terreno: tapa lo que queda bajo la rasante y se marca con línea gruesa
-  const g0 = X(el.u0) - 0.8 * s, g1 = X(el.u1) + 0.8 * s, gy = Y(0);
+  const g0 = X(el.u0) - 0.8 * s, g1 = X(el.u1) + 0.8 * s, gy = Y(el.grade ?? 0);
   ctx.fillStyle = "#ffffff"; ctx.fillRect(g0, gy, g1 - g0, Math.max(0, Y(el.z0) - gy) + 2);
   for (const f of el.faces) if (f.cut) paint(f);
   // personas y auto delante, de pie sobre el terreno o el piso
