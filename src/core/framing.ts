@@ -44,7 +44,7 @@ export function framing(p: Project): Member[] {
     const frameH = (w: Wall) => (above && w.height > zb - e - 0.15 ? zb - e : w.height);
     // sobre la losa (sin piso de madera) la solera inferior de la planta baja es un sill plate tratado (P.T.)
     const onSlab = li === 0 && !foundationType(p).framedFloor;
-    for (const w of lv.walls) out.push(...wallFrame({ ...w, height: frameH(w) }, lv.openings.filter((o) => o.wallId === w.id), e, onSlab));
+    for (const w of lv.walls) out.push(...wallFrame({ ...w, height: frameH(w) }, lv.openings.filter((o) => o.wallId === w.id), e, onSlab, isExterior(w, 0, lv.walls)));
     // sobre la doble solera: el piso de la planta de arriba o, en la última planta, los ceiling joists
     const ceil = above ? [] : ceilingSystem(lv, e, frameH);
     out.push(...(above ? floorSystem(lv, zb, D) : ceil));
@@ -57,8 +57,8 @@ export function framing(p: Project): Member[] {
 }
 
 /** Entramado de un muro: solera inferior, doble solera superior, montantes a 16" y huecos con dintel. */
-function wallFrame(w: Wall, ops: { t: number; width: number; height: number; sill: number; kind: string }[], e: number, onSlab = false): Member[] {
-  const out: Member[] = [], { L, ux, uy } = dir(w), H = w.height, ext = isExterior(w);
+function wallFrame(w: Wall, ops: { t: number; width: number; height: number; sill: number; kind: string }[], e: number, onSlab = false, ext = isExterior(w)): Member[] {
+  const out: Member[] = [], { L, ux, uy } = dir(w), H = w.height;
   const D = Math.min(w.thick, ext ? 5.5 * IN : 3.5 * IN), size = ext ? "2x6" : "2x4", along = { x: ux, y: uy };
   const plate = (z: number) => out.push({ kind: "plate", a: { ...loc(w, 0, 0), z }, b: { ...loc(w, L, 0), z }, w: D, h: T, size });
   if (onSlab) out.push({ kind: "sill", a: { ...loc(w, 0, 0), z: e + T / 2 }, b: { ...loc(w, L, 0), z: e + T / 2 }, w: D, h: T, size: `P.T. ${size} SILL` });
@@ -100,7 +100,7 @@ function roofFrame(r: Roof, e: number, walls: Wall[], gableBase = 0): Member[] {
   // apoyo: la cara superior de la doble solera de los muros exteriores bajo la cubierta (si los hay), para que
   // los cabios queden siempre encima aunque el arranque de la cubierta no coincida con la altura de los muros
   const rx0 = Math.min(r.x1, r.x2) - 0.05, rx1 = Math.max(r.x1, r.x2) + 0.05, ry0 = Math.min(r.y1, r.y2) - 0.05, ry1 = Math.max(r.y1, r.y2) + 0.05;
-  const under = walls.filter((w) => isExterior(w) && [[w.x1, w.y1], [w.x2, w.y2]].every(([x, y]) => x >= rx0 && x <= rx1 && y >= ry0 && y <= ry1));
+  const under = walls.filter((w) => isExterior(w, 0, walls) && [[w.x1, w.y1], [w.x2, w.y2]].every(([x, y]) => x >= rx0 && x <= rx1 && y >= ry0 && y <= ry1));
   const seat = under.length ? Math.max(r.base, ...under.map((w) => w.height)) : r.base;
   // el talón del corte de asiento cae en la cara exterior de la solera
   const heel = under.length ? Math.max(...under.map((w) => Math.min(w.thick, 5.5 * IN))) / 2 : 0;

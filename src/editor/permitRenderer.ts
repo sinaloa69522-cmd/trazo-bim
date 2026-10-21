@@ -167,7 +167,7 @@ export function drawPermitOverlay(ctx: CanvasRenderingContext2D, ed: Editor, kin
       const ang = Math.atan2(w.y2 - w.y1, w.x2 - w.x1), rot = ang > Math.PI / 2 || ang < -Math.PI / 2 ? ang + Math.PI : ang;
       const at = { x: w.x1 + (w.x2 - w.x1) * 0.25, y: w.y1 + (w.y2 - w.y1) * 0.25 }, s = ed.toS(at.x, at.y);
       const off = (w.thick / 2) * ed.view.scale + 6;
-      label(ctx, isExterior(w) ? `2x6 @ 16" O.C.` : `2x4 @ 16" O.C.`, s.x + Math.sin(rot) * off, s.y - Math.cos(rot) * off, 6.5, "center", rot);
+      label(ctx, isExterior(w, 0, m.walls) ? `2x6 @ 16" O.C.` : `2x4 @ 16" O.C.`, s.x + Math.sin(rot) * off, s.y - Math.cos(rot) * off, 6.5, "center", rot);
     }
   } else if (kind === "rooffr") {
     for (const r of roofFraming(m)) {

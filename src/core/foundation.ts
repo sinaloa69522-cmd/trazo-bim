@@ -133,7 +133,7 @@ export function foundation(p: Project): Member[] {
   const fl = ft.framedFloor ? floorDepth(lv) : null;
   // cara superior del muro de cimentación: bajo el piso de madera, o a la cota de la losa
   const top = e - (fl ? fl.d + SUBFLOOR + T : 0);
-  const exts = lv.walls.filter(isExterior), ints = lv.walls.filter((w) => !isExterior(w));
+  const exts = lv.walls.filter(isExterior), ints = lv.walls.filter((w) => !isExterior(w, 0, lv.walls));
   const placed: { x: number; y: number }[] = [];
   const onWall = (x: Wall, c: { x: number; y: number }) => {
     const { L, ux, uy } = dir(x), t = (c.x - x.x1) * ux + (c.y - x.y1) * uy;
@@ -155,7 +155,7 @@ export function foundation(p: Project): Member[] {
 
   if (ft.id === "slab" || ft.id === "monolithic" || ft.id === "stemwall") {
     for (const w of lv.walls) {
-      const ex = isExterior(w), f = ex ? ft.ext : ft.int!, { L } = dir(w);
+      const ex = isExterior(w, 0, lv.walls), f = ex ? ft.ext : ft.int!, { L } = dir(w);
       if (ft.id === "stemwall" && ex) {
         const zf = e - 30 * IN;
         along(w, -f.w / 2, L + f.w / 2, zf - f.d / 2, f.w, f.d, "footing", "F1");
