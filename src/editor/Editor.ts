@@ -4,8 +4,9 @@ import { bounds, sheetBounds, dimOffset, dir, distSeg, dimGeom, fits, loc, onSla
 import { IDEAL_TREAD, POST_R, shortTread, sizedByTread, stairGeom, stairLabel, stairLenFor, stairSteps, stairTypeName } from "../core/stairs";
 import {
   attachWalls, liftBuriedRoofs, cloneModel, emptyProject, newLevel, nextId, nextSectionName, normalizeProject, sampleProject, type Level, type Project, type ProjectInfo,
-  type Deck, type DeckKind, type Dim, type LayerId, type MarkKind, type Model, type RoofKind, type RunSystem, type Stair, type StairKind, type Wall,
+  type Deck, type DeckKind, type Dim, type Dormer, type LayerId, type MarkKind, type Model, type Roof, type RoofKind, type RunSystem, type Stair, type StairKind, type Wall,
 } from "../core/model";
+import { DORMER, dormerAt, dormerGeom } from "../core/dormers";
 import { allAutoDims } from "../core/autodim";
 import { axes } from "../core/mxStruct";
 import { fmtArea, fmtElev, fmtLen, fmtSmall, imperial, parseLen, setUnitSystem, FT, IN, type UnitSystem } from "../core/units";
@@ -29,7 +30,7 @@ import { deleteElements, reflection, rotation, scaling, screenAngle, transformEl
 /** Centro (promedio de vértices) de un polígono. */
 const centroid = (r: Pt[]) => ({ x: r.reduce((s, q) => s + q.x, 0) / r.length, y: r.reduce((s, q) => s + q.y, 0) / r.length });
 
-export type Tool = "select" | "wall" | "door" | "window" | "line" | "dim" | "room" | "move" | "copy" | "mirror" | "rotate" | "scale" | "array" | "trim" | "extend" | "break" | "offset" | "slab" | "roof" | "stair" | "deck" | "column" | "furniture" | "section" | "hole" | "text" | "mark" | "fixture" | "run" | "calibrate" | "hatch";
+export type Tool = "select" | "wall" | "door" | "window" | "line" | "dim" | "room" | "move" | "copy" | "mirror" | "rotate" | "scale" | "array" | "trim" | "extend" | "break" | "offset" | "slab" | "roof" | "dormer" | "stair" | "deck" | "column" | "furniture" | "section" | "hole" | "text" | "mark" | "fixture" | "run" | "calibrate" | "hatch";
 /** Herramientas que actúan pulsando directamente sobre un muro o una línea. */
 const PICK_TOOLS: Tool[] = ["trim", "extend", "break", "offset"];
 /** Herramientas que actúan sobre la selección actual. */
@@ -68,7 +69,7 @@ const COMMANDS: Record<string, Tool> = {
   MO: "move", MOVER: "move", MOVE: "move", CO: "copy", COPIA: "copy", COPIAR: "copy", COPY: "copy", SI: "mirror", SIMETRIA: "mirror", "SIMETRÍA": "mirror", MI: "mirror", MIRROR: "mirror",
   RO: "rotate", GI: "rotate", ROTAR: "rotate", ROTATE: "rotate", ESC: "scale", ESCALA: "scale", SC: "scale", SCALE: "scale", MA: "array", MATRIZ: "array", AR: "array", ARRAY: "array",
   LO: "slab", LOSA: "slab", TR: "trim", RECORTAR: "trim", AL: "extend", ALARGAR: "extend", PA: "break", PARTIR: "break", BR: "break", BREAK: "break", DE: "offset", DESFASE: "offset", EQ: "offset", EQUIDISTANCIA: "offset",
-  CU: "roof", CUBIERTA: "roof", TEJADO: "roof", ES: "stair", ESCALERA: "stair", DK: "deck", DECK: "deck", PORCHE: "deck", CL: "column", COL: "column", COLUMNA: "column", MB: "furniture", MOBILIARIO: "furniture", MUEBLE: "furniture",
+  CU: "roof", CUBIERTA: "roof", TEJADO: "roof", BU: "dormer", BUHARDILLA: "dormer", DORMER: "dormer", DOR: "dormer", ES: "stair", ESCALERA: "stair", DK: "deck", DECK: "deck", PORCHE: "deck", CL: "column", COL: "column", COLUMNA: "column", MB: "furniture", MOBILIARIO: "furniture", MUEBLE: "furniture",
   HL: "hole", HUECO: "hole", TX: "text", TEXTO: "text", SE: "section", SECCION: "section", "SECCIÓN": "section", CORTE: "section",
   SB: "hatch", SOMBREA: "hatch", SOMBREADO: "hatch", RAYADO: "hatch", TRAMA: "hatch",
   TU: "run", TUBERIA: "run", "TUBERÍA": "run", CANALIZACION: "run", "CANALIZACIÓN": "run",
@@ -111,7 +112,7 @@ export class Editor {
   set model(m: Model) { this.project.levels[this.active] = { ...this.model, ...m }; }
   rooms: RoomGrid | null = null;
   vis: Record<LayerId, boolean> = { muros: true, puertas: true, ventanas: true, cotas: true, anot: true, hab: true, losas: true, cubiertas: true, escaleras: true, decks: true, columnas: true, mobiliario: true, secciones: true, electricidad: true, plomeria: true, calcos: true, sombreados: true, ejes: true };
-  defaults = { ...METRIC_DEFAULTS, roofKind: "gable" as RoofKind, furnKind: "bed2", furnRot: 0, mepKind: "enchufe", mepRot: 0, runSys: "af" as RunSystem, hatchPattern: "diagonal", hatchScale: 1, hatchAngle: 0, hatchMode: "room" as "room" | "poly", doorStyle: "single", winStyle: "fixed", deckKind: "wood" as DeckKind, colW: 0.3, stairKind: "recta" as StairKind, stairTurn: 1 as 1 | -1, markKind: "nivel" as MarkKind, markLabel: "N.P.T.", detailSheet: "" };
+  defaults = { ...METRIC_DEFAULTS, roofKind: "gable" as RoofKind, furnKind: "bed2", furnRot: 0, mepKind: "enchufe", mepRot: 0, runSys: "af" as RunSystem, hatchPattern: "diagonal", hatchScale: 1, hatchAngle: 0, hatchMode: "room" as "room" | "poly", doorStyle: "single", winStyle: "fixed", deckKind: "wood" as DeckKind, colW: 0.3, dormerKind: "gable" as Dormer["kind"], dormerW: DORMER.w, stairKind: "recta" as StairKind, stairTurn: 1 as 1 | -1, markKind: "nivel" as MarkKind, markLabel: "N.P.T.", detailSheet: "" };
   tool: Tool = "select";
   /** Elementos seleccionados. */
   sels: Selection[] = [];
@@ -404,6 +405,7 @@ export class Editor {
       case "array": return n ? `MATRIZ  Punto o distancia de la primera copia (${this.arrayN} elementos):` : `MATRIZ  Precisa punto base (${this.arrayN} elementos; teclea un número para cambiarlo):`;
       case "slab": return n < 3 ? `LOSA  Precisa ${n ? "siguiente" : "primer"} vértice del contorno:` : "LOSA  Siguiente vértice [Enter o clic en el primero cierra]:";
       case "roof": return n ? "CUBIERTA  Esquina opuesta del perímetro:" : `CUBIERTA  Primera esquina del perímetro (${ROOF_LABEL[d.roofKind].toLowerCase()}, ${d.pitch}°):`;
+      case "dormer": return `BUHARDILLA  Haz clic en un faldón de la cubierta, donde va su centro (${d.dormerKind === "gable" ? "a dos aguas" : "de un agua"}, ancho ${fmtLen(d.dormerW)}):`;
       case "column": return `COLUMNA  Punto del centro (${fmtLen(d.colW)} × ${fmtLen(d.colW)}):`;
       case "deck": return n ? "DECK  Esquina opuesta:" : `DECK  Primera esquina (${deckType(d.deckKind).name.toLowerCase()}):`;
       case "stair": return d.stairKind === "caracol" ? (n ? "ESCALERA  Radio exterior:" : "ESCALERA  Centro del caracol:") : n ? (sizedByTread(d.stairKind) ? "ESCALERA  Dirección de subida:" : "ESCALERA  Punto de llegada (o longitud):") : `ESCALERA  ${stairTypeName(d.stairKind)}: punto de arranque (ancho ${fmtLen(d.stairW)}):`;
@@ -741,6 +743,7 @@ export class Editor {
       this.draft.pts.push(p); this.emit();
       return;
     }
+    if (this.tool === "dormer") { this.placeDormer(p); return; }
     if (this.tool === "column") {
       this.snapshot();
       const id = nextId(m), w = this.defaults.colW;
@@ -1733,6 +1736,45 @@ export class Editor {
   }
 
   /** Quita todos los huecos de una losa (o de una azotea, si el id es de una cubierta). */
+  /** Buhardilla que se pondría en el punto, o el motivo por el que no cabe. Si hace falta, más baja y más angosta. */
+  dormerCandidate(p: Pt): { roof: Roof; dormer: Dormer } | string {
+    const m = this.model, r = m.roofs.find((x) => x.kind !== "flat" && pointInPolygon(p, roofGeom(x).outline));
+    if (!r) return m.roofs.some((x) => x.kind !== "flat") ? "Haz clic dentro de una cubierta inclinada." : "Las buhardillas van en cubiertas inclinadas y este nivel no tiene ninguna. Dibuja una con Cubierta (a dos o cuatro aguas).";
+    if (r.pitch < DORMER.minPitch) return `La pendiente de la cubierta (${r.pitch}°) es muy baja para una buhardilla; súbela a ${DORMER.minPitch}° o más.`;
+    const at = dormerAt(r, p)!, d = this.defaults;
+    for (const [w, h] of [[d.dormerW, DORMER.h], [d.dormerW, 0.9], [Math.min(d.dormerW, 1), 0.9], [Math.min(d.dormerW, 1), 0.7]]) {
+      const c: Dormer = { id: 0, u: at.u, side: at.side, w, h, set: DORMER.set, kind: d.dormerKind };
+      if (dormerGeom(r, c)) return { roof: r, dormer: c };
+    }
+    return "No cabe una buhardilla ahí: acércala al centro del faldón, lejos de los extremos y de la cumbrera.";
+  }
+
+  /** Pone una buhardilla en el faldón bajo el punto. */
+  placeDormer(p: Pt) {
+    const c = this.dormerCandidate(p);
+    if (typeof c === "string") { this.log(c); return; }
+    const { roof: r, dormer: dm } = c;
+    this.snapshot();
+    dm.id = nextId(this.model);
+    (r.dormers ??= []).push(dm);
+    this.sels = [{ type: "roof", id: r.id }];
+    this.message = `Buhardilla de ${fmtLen(dm.w)} colocada${dm.h < DORMER.h ? ` (más baja para que quepa: frente de ${fmtLen(dm.h)})` : ""}. Ajusta sus medidas en Propiedades de la cubierta. Haz clic para otra o Esc para terminar.`;
+    this.changed();
+  }
+
+  /** Cambia una buhardilla; si con el cambio ya no cabe, lo deja como estaba y avisa. */
+  setDormer(roofId: number, id: number, patch: Partial<Dormer>) {
+    const r = this.model.roofs.find((x) => x.id === roofId), dm = r?.dormers?.find((x) => x.id === id);
+    if (!r || !dm) return;
+    if (!dormerGeom(r, { ...dm, ...patch })) { this.log("Con esa medida la buhardilla no cabe en el faldón."); this.emit(); return; }
+    this.edit(() => { Object.assign(dm, patch); });
+  }
+
+  removeDormer(roofId: number, id: number) {
+    const r = this.model.roofs.find((x) => x.id === roofId);
+    if (r?.dormers?.some((x) => x.id === id)) this.edit(() => { r.dormers = r.dormers!.filter((x) => x.id !== id); });
+  }
+
   clearHoles(id: number, roof = false) {
     if (roof) {
       const r = this.model.roofs.find((x) => x.id === id);

@@ -1,5 +1,6 @@
 import { furnitureSolids, furnitureToPlan } from "./furniture";
 import { dir, endExt, loc, parapet, roofGeom, type Pt } from "./geometry";
+import { dormerGeom } from "./dormers";
 import { stairGeom } from "./stairs";
 import { wallType, type Hatch } from "./wallTypes";
 import { finishName, gableWall, outward, roofFinish, finish as finishById, type Finish } from "./finishes";
@@ -164,6 +165,15 @@ function project(p: Project, fr: Frame): Elevation {
         // el hastial lleva el acabado del muro sobre el que se levanta
         const w = gableWall(lv.walls, f), fin = finishById(w?.finish);
         face(f.map((q) => ({ ...q, z: e + q.z })), "wall", 0, fin ? { hatch: "solid", name: finishName(fin), finish: fin } : w ? { hatch: wallType(w.type).hatch, name: wallType(w.type).material } : undefined);
+      }
+      // buhardillas: techo con el material de la cubierta, frente y costados de muro y la ventana
+      for (const dm of r.dormers ?? []) {
+        const dg = dormerGeom(r, dm);
+        if (!dg) continue;
+        const up = (f: P3[]) => f.map((q) => ({ ...q, z: e + q.z }));
+        for (const f of dg.roof) face(up(f), "roof", 0, tile);
+        for (const f of dg.walls) face(up(f), "wall", 0);
+        for (const f of dg.glass) face(up(f), "glass", 1e-3, undefined, { kind: "window", style: "fixed" });
       }
       // canto del alero
       const zt = e + g.faces[0][0].z;
