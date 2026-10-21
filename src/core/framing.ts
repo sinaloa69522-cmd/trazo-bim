@@ -1,7 +1,8 @@
 // Estructura de madera (wood framing) en 3D a partir del modelo: cimentación, soleras, montantes, dinteles,
 // viguetas, cabios, limatesas y cumbrera, con los tamaños de predimensionado de permit.ts (tablas del IRC).
 import { dir, loc, roofGeom, type P3 } from "./geometry";
-import type { Project, Roof, Wall } from "./model";
+import type { Dormer, Project, Roof, Wall } from "./model";
+import { dormerGeom } from "./dormers";
 import { deckFraming } from "./decks";
 import { foundation, foundationType, gradeLevel } from "./foundation";
 import { ceilingSystem, depthOf, floorJoistDepth, floorSystem, SUBFLOOR } from "./joists";
@@ -122,12 +123,25 @@ function roofFrame(r: Roof, e: number, walls: Wall[], gableBase = 0): Member[] {
   const Z = (dv: number) => z0 + dv * tan + drop;
   const hip = r.kind === "hip", inset = hip ? Math.min(half, (U1 - U0) / 2) : 0;
   const rafter = (a: P3, b: P3) => out.push({ kind: "rafter", a, b, w: T, h: d, size: nominal(m) });
+  // buhardillas: hueco en el faldón entre dos cabios dobles (trimmers) y dos brochales dobles (headers)
+  const o = r.overhang, holes = (r.dormers ?? []).filter((dm) => dormerGeom(r, dm)).map((dm) => {
+    const um = (U0 + U1) / 2 + dm.u, back = dm.kind === "gable" ? dm.set + dm.h / tan + dm.w / 2 : dm.set + dm.h / (tan - tan / 3);
+    return { dm, side: dm.side, u0: um - dm.w / 2, u1: um + dm.w / 2, um, f: o + dm.set, b: o + back };
+  });
+  /** Punto a la distancia dv del alero, en el faldón de un lado (0: V0, 1: V1). */
+  const S = (side: number, u: number, dv: number, z: number) => P(u, side ? V1 - dv : V0 + dv, z);
   for (let u = U0 + s / 2; u < U1; u += s) {
     // en las cubiertas a cuatro aguas los cabios de los extremos mueren en la limatesa
     const reach = hip ? Math.min(half, u - U0, U1 - u) : half;
-    rafter(P(u, V0, Z(0)), P(u, V0 + reach, Z(reach)));
-    rafter(P(u, V1, Z(0)), P(u, V1 - reach, Z(reach)));
+    for (const side of [0, 1]) {
+      const hl = holes.find((x) => x.side === side && u > x.u0 - T && u < x.u1 + T);
+      if (!hl) { rafter(S(side, u, 0, Z(0)), S(side, u, reach, Z(reach))); continue; }
+      // cabio cortado por el hueco: tramo del alero al brochal de abajo y del brochal de arriba a la cumbrera
+      rafter(S(side, u, 0, Z(0)), S(side, u, hl.f - T, Z(hl.f - T)));
+      if (hl.b + T < reach) rafter(S(side, u, hl.b + T, Z(hl.b + T)), S(side, u, reach, Z(reach)));
+    }
   }
+  for (const hl of holes) out.push(...dormerFrame(hl, S, Z, drop, tan, d, nominal(m), half));
   if (hip) for (let v = V0 + s / 2; v < V1; v += s) {
     const reach = Math.min(v - V0, V1 - v, inset);
     rafter(P(U0, v, Z(0)), P(U0 + reach, v, Z(reach)));
@@ -161,6 +175,69 @@ function roofFrame(r: Roof, e: number, walls: Wall[], gableBase = 0): Member[] {
   if (U1 - inset - (U0 + inset) > 1e-3) out.push({ kind: "ridge", a: P(U0 + inset, vm, zr), b: P(U1 - inset, vm, zr), w: T, h: rd, size: rs });
   if (hip) for (const [u, ue] of [[U0, U0 + inset], [U1, U1 - inset]]) for (const v of [V0, V1])
     out.push({ kind: "ridge", a: P(u, v, Z(0)), b: P(ue, vm, Z(half)), w: T, h: rd, size: rs });
+  return out;
+}
+
+type Hole = { dm: Dormer; side: number; u0: number; u1: number; um: number; f: number; b: number };
+
+/**
+ * Entramado de una buhardilla: cabios dobles a los lados del hueco y brochales dobles arriba y abajo,
+ * montantes del frente (con el dintel de la ventana) y de los costados, soleras y los cabios de su techito.
+ */
+function dormerFrame(hl: Hole, S: (side: number, u: number, dv: number, z: number) => P3, Z: (dv: number) => number, drop: number, tan: number, d: number, size: string, half: number): Member[] {
+  const out: Member[] = [], { dm, side, u0, u1, um, f, b } = hl;
+  const top = (dv: number) => Z(dv) + drop;
+  // hueco: trimmers de alero a cumbrera junto a cada lado y brochales dobles entre ellos
+  for (const u of [u0 - T / 2, u1 + T / 2]) out.push({ kind: "rafter", a: S(side, u, 0, Z(0)), b: S(side, u, half, Z(half)), w: T, h: d, size });
+  for (const dv of [f - T / 2, Math.min(b, half - T) + T / 2]) out.push({ kind: "header", a: S(side, u0, dv, Z(dv)), b: S(side, u1, dv, Z(dv)), w: 2 * T, h: d, size: `(2) ${size}` });
+  // frente: solera sobre el brochal, montantes a 16" y doble solera arriba, a la altura del frente
+  const zf = top(f), ze = zf + dm.h, st = 3.5 * IN, alongU = { x: S(side, 1, 0, 0).x - S(side, 0, 0, 0).x, y: S(side, 1, 0, 0).y - S(side, 0, 0, 0).y };
+  const fv = f + st / 2;
+  const plate = (a: P3, c: P3) => out.push({ kind: "plate", a, b: c, w: st, h: T, size: "2x4" });
+  const stud = (a: P3, c: P3, along = alongU) => { if (c.z - a.z > 0.05) out.push({ kind: "stud", a, b: c, w: T, h: st, along, size: "2x4" }); };
+  plate(S(side, u0, fv, zf + T / 2), S(side, u1, fv, zf + T / 2));
+  plate(S(side, u0, fv, ze - T / 2), S(side, u1, fv, ze - T / 2)); plate(S(side, u0, fv, ze - 1.5 * T), S(side, u1, fv, ze - 1.5 * T));
+  // ventana como en dormers.ts: ancho del frente menos 40 cm, antepecho de 15 cm y dintel 12 cm bajo el frente
+  const ww = Math.max(0.4, dm.w - 0.4), wa = um - ww / 2, wb = um + ww / 2, sill = zf + 0.15, head = ze - 0.12;
+  const win = head - sill > 0.3, hd = Math.min(depthOf("2x6"), Math.max(0.05, head - sill - 0.05));
+  const us: number[] = [u0 + T / 2];
+  for (let u = u0 + 16 * IN; u < u1 - T; u += 16 * IN) us.push(u);
+  us.push(u1 - T / 2);
+  for (const u of us) {
+    const inWin = win && u > wa - T && u < wb + T;
+    if (!inWin) stud(S(side, u, fv, zf + T), S(side, u, fv, ze - 2 * T));
+    else { stud(S(side, u, fv, zf + T), S(side, u, fv, sill - T)); stud(S(side, u, fv, head + hd), S(side, u, fv, ze - 2 * T)); }
+  }
+  if (win) {
+    for (const u of [wa - T / 2, wb + T / 2]) stud(S(side, u, fv, zf + T), S(side, u, fv, head));
+    out.push({ kind: "header", a: S(side, wa - T, fv, head + hd / 2), b: S(side, wb + T, fv, head + hd / 2), w: st, h: hd, size: "(2) 2x6" });
+    plate(S(side, wa, fv, sill - T / 2), S(side, wb, fv, sill - T / 2));
+  }
+  // costados: montantes a 16" sobre el trimmer, del faldón a la doble solera
+  const tan2 = dm.kind === "gable" ? 0 : tan / 3, de = dm.kind === "gable" ? f + dm.h / tan : b;
+  const zTop = (dv: number) => ze + (dv - f) * tan2;
+  const alongV = { x: S(side, 0, 1, 0).x - S(side, 0, 0, 0).x, y: S(side, 0, 1, 0).y - S(side, 0, 0, 0).y };
+  for (const u of [u0 + st / 2, u1 - st / 2]) {
+    out.push({ kind: "plate", a: S(side, u, f, zTop(f) - T / 2), b: S(side, u, de, zTop(de) - T / 2), w: st, h: T, size: "2x4" });
+    for (let dv = f + 16 * IN; dv < de - 0.1; dv += 16 * IN) stud(S(side, u, dv, top(dv)), S(side, u, dv, zTop(dv) - T), alongV);
+  }
+  // techito: a dos aguas, cumbrera y pares de cabios a 16" que en la limahoya mueren contra el faldón
+  const rd = depthOf("2x6"), dr = 0.5 * rd / Math.cos(Math.atan(tan));
+  if (dm.kind === "gable") {
+    const zr = ze + (dm.w / 2) * tan;
+    out.push({ kind: "ridge", a: S(side, um, f - 0.15, zr - dr), b: S(side, um, b, zr - dr), w: T, h: depthOf("2x8"), size: "2x8" });
+    for (let dv = f - 0.15 + T / 2; dv < b - 0.05; dv += 16 * IN) {
+      const hw = Math.min(dm.w / 2 + 0.1, b - dv);
+      if (hw < 0.1) continue;
+      for (const sg of [-1, 1]) out.push({ kind: "rafter", a: S(side, um + sg * hw, dv, zr - hw * tan), b: S(side, um, dv, zr), w: T, h: rd, size: "2x6" });
+    }
+  } else {
+    // de un agua: cabios a lo largo de la pendiente, del frente al faldón
+    for (let u = u0 + T / 2; u < u1 + T; u += 16 * IN) {
+      const uu = Math.min(u, u1 - T / 2);
+      out.push({ kind: "rafter", a: S(side, uu, f - 0.15, zTop(f - 0.15) + dr), b: S(side, uu, b, zTop(b) + dr), w: T, h: rd, size: "2x6" });
+    }
+  }
   return out;
 }
 

@@ -49,3 +49,20 @@ describe("buhardillas", () => {
     expect(el.faces.some((f) => f.kind === "glass" && f.pts.some((p) => p.z > r.base + 0.5))).toBe(true);
   });
 });
+
+describe("buhardillas en la estructura", () => {
+  it("abren el faldón con cabios dobles y brochales y llevan montantes y techito", async () => {
+    const { framing } = await import("../framing");
+    const { ed, r } = withDormer(), dm = r.dormers![0];
+    const ms = framing(ed.project), A = roofAxes(r), um = (A.U0 + A.U1) / 2 + dm.u;
+    const at = (m: { a: { x: number; y: number } }) => (A.alongX ? m.a.x : m.a.y);
+    // ningún cabio del faldón cruza el hueco de la ventana a la altura del frente
+    const zf = r.base + dm.set * A.tan;
+    const vOf = (q: { x: number; y: number }) => (A.alongX ? q.y : q.x), mid = (A.V0 + A.V1) / 2;
+    const onSide = (m: { a: { x: number; y: number } }) => (dm.side ? vOf(m.a) > mid : vOf(m.a) < mid);
+    const crossing = ms.filter((m) => m.kind === "rafter" && onSide(m) && Math.abs(at(m) - um) < dm.w / 2 - 0.1 && Math.min(m.a.z, m.b.z) < zf + 0.3 && Math.max(m.a.z, m.b.z) > zf + 0.6);
+    expect(crossing).toHaveLength(0);
+    expect(ms.filter((m) => m.kind === "header" && /^\(2\)/.test(m.size) && m.w > 0.06).length).toBeGreaterThanOrEqual(2);
+    expect(ms.filter((m) => m.kind === "stud" && Math.abs(at(m) - um) < dm.w / 2 && m.b.z > zf).length).toBeGreaterThan(3);
+  });
+});
