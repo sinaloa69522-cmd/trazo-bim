@@ -13,9 +13,9 @@ import type { Editor } from "../editor/Editor";
 import { SymbolIcon, SystemIcon } from "./MepIcons";
 import { box, Ln, map, Note, Shape, type Frame, type XY } from "./PermitSheets";
 
-export type MxKind = "mxport" | "mxnotas" | "mxazo" | "mxcim" | "mxest" | "mxdet1" | "mxdet2" | "mxdet3" | "mxarq" | "hid" | "san" | "mxinst";
-export const MX_KINDS: MxKind[] = ["mxport", "mxnotas", "mxazo", "mxcim", "mxest", "mxdet1", "mxdet2", "mxdet3", "mxarq", "hid", "san", "mxinst"];
-export const MX_TEXT = ["mxport", "mxnotas", "mxdet1", "mxdet2", "mxdet3", "mxarq", "mxinst"];
+export type MxKind = "mxport" | "mxnotas" | "mxazo" | "mxcim" | "mxest" | "mxdet1" | "mxdet2" | "mxdet3" | "mxarq" | "hid" | "san" | "mxinst" | "mxdie" | "mxdih" | "mxdaa";
+export const MX_KINDS: MxKind[] = ["mxport", "mxnotas", "mxazo", "mxcim", "mxest", "mxdet1", "mxdet2", "mxdet3", "mxarq", "hid", "san", "mxinst", "mxdie", "mxdih", "mxdaa"];
+export const MX_TEXT = ["mxport", "mxnotas", "mxdet1", "mxdet2", "mxdet3", "mxarq", "mxinst", "mxdie", "mxdih", "mxdaa"];
 
 /** Título de cada lámina del juego en metros (también las de arquitectura e instalación eléctrica). */
 export const MX_TITLES: Record<string, string> = {
@@ -33,6 +33,9 @@ export const MX_TITLES: Record<string, string> = {
   mxdet3: "Detalles estructurales complementarios",
   mxarq: "Detalles arquitectónicos",
   mxinst: "Detalles de instalaciones",
+  mxdie: "Detalles de instalación eléctrica",
+  mxdih: "Detalles de instalación hidrosanitaria",
+  mxdaa: "Detalles de aire acondicionado",
   elec: "Instalación eléctrica",
   hid: "Instalación hidráulica (plomería)",
   san: "Instalación sanitaria (hidrosanitario)",
@@ -394,7 +397,7 @@ export type Box = { x: number; y: number; w: number; h: number };
 export const CONC = "#e3e3e3";
 export const FONT = "'IBM Plex Sans Condensed', 'Arial Narrow', sans-serif";
 
-export function Title({ x, y, n, title, scale, sheet }: { x: number; y: number; n: number; title: string; scale: string; sheet: string }) {
+export function Title({ x, y, n, title, scale, sheet, en }: { x: number; y: number; n: number; title: string; scale: string; sheet: string; en?: boolean }) {
   return (
     <g fontFamily={FONT}>
       <circle cx={x + 4} cy={y} r={3.6} fill="none" stroke="#111" strokeWidth={0.3} />
@@ -403,7 +406,7 @@ export function Title({ x, y, n, title, scale, sheet }: { x: number; y: number; 
       <text x={x + 4} y={y + 2.6} fontSize={1.6} textAnchor="middle">{sheet}</text>
       <text x={x + 10} y={y - 0.3} fontSize={3.2} fontWeight={600}>{title.toUpperCase()}</text>
       <line x1={x + 10} y1={y + 0.6} x2={x + 10 + title.length * 2.2} y2={y + 0.6} stroke="#111" strokeWidth={0.3} />
-      <text x={x + 10} y={y + 3.4} fontSize={2}>ESC. {scale}</text>
+      <text x={x + 10} y={y + 3.4} fontSize={2}>{en ? "SCALE: " : "ESC. "}{scale}</text>
     </g>
   );
 }

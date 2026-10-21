@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { Editor } from "../../editor/Editor";
-import { permitSet } from "../../ui/SheetView";
+import { mxSet, permitSet } from "../../ui/SheetView";
 import { anchorBolts, ceilingJoist, floorJoist, footings, headers, headerSize, hvac, joistBays, rafterSize, roofFraming, site, wallBox } from "../permit";
 import { FT, IN, setUnitSystem } from "../units";
 
@@ -87,5 +87,12 @@ describe("juego de permiso para EE.UU.", () => {
     expect(set.find((s) => s.content === "details2")!.no).toBe("A-502");
     expect(set.find((s) => s.content === "details3")!.no).toBe("A-503");
     expect(set.find((s) => s.content === "hvac")!.no).toBe("M-101");
+    expect(["details4", "details5", "details6"].map((c) => set.find((s) => s.content === c)!.no)).toEqual(["E-501", "P-501", "M-501"]);
+  });
+
+  it("el juego de México lleva las láminas de detalles de instalaciones", () => {
+    const ed = new Editor();
+    const set = mxSet(ed);
+    expect(["mxinst", "mxdie", "mxdih", "mxdaa"].map((c) => set.find((s) => s.content === c)!.no)).toEqual(["DI-01", "DI-02", "DI-03", "DI-04"]);
   });
 });

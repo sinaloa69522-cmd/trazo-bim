@@ -12,7 +12,7 @@ import { box, Ln, Shape, type Frame, type XY } from "./PermitSheets";
 import { columnSpec, K1 } from "../core/mxStruct";
 import type { Project } from "../core/model";
 
-export const MX_EXTRA_SIDE = ["mxport", "mxnotas", "mxarq", "mxinst"];
+export const MX_EXTRA_SIDE = ["mxport", "mxnotas", "mxarq", "mxinst", "mxdie", "mxdih", "mxdaa"];
 
 // ---------- textos ----------
 
@@ -172,7 +172,7 @@ export function MxExtraSide({ ed, content, set = [] }: { ed: Editor; content: st
     <table><tbody>
       <tr><td><b>G</b></td><td>Generales</td></tr><tr><td><b>ARQ</b></td><td>Arquitectónicos</td></tr><tr><td><b>EST</b></td><td>Estructurales</td></tr>
       <tr><td><b>IE</b></td><td>Instalación eléctrica</td></tr><tr><td><b>IH</b></td><td>Instalación hidráulica</td></tr><tr><td><b>IS</b></td><td>Instalación sanitaria</td></tr>
-      <tr><td><b>DI</b></td><td>Detalles de instalaciones</td></tr>
+      <tr><td><b>DI</b></td><td>Detalles de instalaciones (eléctrica, hidrosanitaria y aire acondicionado)</td></tr>
     </tbody></table>
     {ed.project.info.site && !(ed.project.info.site.lat === 0 && ed.project.info.site.lon === 0) && <>
       <h4>Localización en la zona</h4>
@@ -210,8 +210,45 @@ export function MxExtraSide({ ed, content, set = [] }: { ed: Editor; content: st
       {ALTURAS.map(([k, v]) => <tr key={k}><td>{k}</td><td className="r">{v}</td></tr>)}
     </tbody></table>
   </div>;
+  if (content === "mxdie" || content === "mxdih" || content === "mxdaa") return <div className="tables">
+    <h4>Simbología</h4>
+    <table className="symleg"><tbody>{mepSyms(content).map(([n, s]) => <tr key={n}><td>{s}</td><td>{n}</td></tr>)}</tbody></table>
+    <h4>Notas</h4>
+    <Notes items={MEP_NOTES[content]} />
+  </div>;
   return null;
 }
+
+const line = (color: string, w = 0.6, dash?: string) => <svg width="14mm" height="5mm" viewBox="0 0 14 5"><path d="M1 2.5h12" stroke={color} strokeWidth={w} strokeDasharray={dash} /></svg>;
+// función y no constante: los colores se declaran más abajo en el módulo
+const mepSyms = (c: string): [string, ReactNode][] => ({
+  mxdie: [["Conductor de puesta a tierra", line(GREEN, 0.5)], ["Tubo conduit / acometida", line("#555", 0.9)], ["Electrodo de tierra", line("#a0522d", 1.2)], ["Tubería de agua (unión a tierra)", line(BLUE, 0.9)], ["Tubería de gas", line("#c9a227", 0.9)]],
+  mxdih: [["Agua fría", line(BLUE, 0.6)], ["Agua caliente", line(RED, 0.6, "1.4 .5 .3 .5")], ["Drenaje y ventilación", line("#555", 1.1)], ["Llave de paso", <svg width="14mm" height="5mm" viewBox="0 0 14 5"><path d="M5.6 1.1v2.8L8.4 1.1v2.8z" fill="#111" /></svg>]],
+  mxdaa: [["Línea de refrigeración (succión aislada)", line("#333", 1.1)], ["Drenaje de condensados", line(BLUE, 0.6)], ["Ducto", line("#999", 1.4)], ["Alimentación eléctrica (licuatite)", line("#555", 0.6, "1 .4")]],
+} as Record<string, [string, ReactNode][]>)[c] ?? [];
+const MEP_NOTES: Record<string, string[]> = {
+  mxdie: [
+    "Los detalles son típicos y aplican en todos los casos similares. Ver planos IE para la distribución y los circuitos.",
+    "Instalación conforme a la NOM-001-SEDE-2012 y a las especificaciones de CFE.",
+    "Conductores de cobre con aislamiento THW-LS; calibre mínimo 14 AWG en alumbrado y 12 AWG en contactos.",
+    "Tubería poliducto en muros y losas; conduit galvanizado en exteriores y acometida.",
+    "Contactos en baños, cocina, lavado y exteriores con protección GFCI.",
+  ],
+  mxdih: [
+    "Los detalles son típicos y aplican en todos los casos similares. Ver planos IH e IS.",
+    "Agua fría y caliente en tubería de cobre tipo M, CPVC o PEX; drenaje y ventilación en PVC sanitario.",
+    "Probar la red de agua a 10 kg/cm² durante 3 horas y el drenaje con agua antes de tapar.",
+    "Pendiente mínima del drenaje 2 %; registros a cada 10 m y en cada cambio de dirección.",
+    "Aislar la tubería de agua caliente.",
+  ],
+  mxdaa: [
+    "Los detalles son típicos y aplican en todos los casos similares.",
+    "Equipos instalados según el fabricante; capacidad según el cálculo de cargas térmicas.",
+    "Tubería de refrigeración de cobre flexible con aislamiento, vacío y prueba de hermeticidad antes de cargar.",
+    "Drenaje de condensados con trampa y pendiente; descargar a coladera o al exterior, lejos de la cimentación.",
+    "Alimentación eléctrica en circuito independiente con su interruptor.",
+  ],
+};
 
 const ALTURAS: [string, string][] = [
   ["Contacto general", "0.30 m"], ["Contacto en cocina y baño", "1.20 m"], ["Apagador", "1.20 m"], ["Arbotante", "2.00 m"],
@@ -223,17 +260,17 @@ const ALTURAS: [string, string][] = [
 
 const SCALES = [5, 10, 15, 20, 25, 30, 40, 50, 75, 100];
 /** Marco de un dibujo (en cm) dentro de su cuarto de lámina, a la escala normalizada que quepa. */
-function fit(b: Box, i: number, [x0, x1, y0, y1]: [number, number, number, number]) {
+export function fit(b: Box, i: number, [x0, x1, y0, y1]: [number, number, number, number]) {
   const { cw, ch, at } = cellsOf(b), W = cw * 0.62 - 22, H = ch - 42;
   const kMax = Math.min(W / (x1 - x0), H / (y1 - y0)), den = SCALES.find((s) => 10 / s <= kMax) ?? 100, k = 10 / den;
   const f: Frame = { ox: at(i).x + 14 + (W - (x1 - x0) * k) / 2 - x0 * k, oy: at(i).y + ch - 26 + y0 * k, k };
   return { f, scale: `1:${den}`, nx: at(i).x + cw * 0.62, ny: at(i).y + 14, tx: at(i).x + 6, ty: at(i).y + ch - 7 };
 }
-const Pipe = ({ f, p, w = 0.6, color = "#111", dash }: { f: Frame; p: XY[]; w?: number; color?: string; dash?: string }) => {
+export const Pipe = ({ f, p, w = 0.6, color = "#111", dash }: { f: Frame; p: XY[]; w?: number; color?: string; dash?: string }) => {
   const d = p.map((q, i) => { const x = f.ox + q[0] * f.k, y = f.oy - q[1] * f.k; return `${i ? "L" : "M"}${x.toFixed(2)} ${y.toFixed(2)}`; }).join("");
   return <path d={d} fill="none" stroke={color} strokeWidth={w} strokeDasharray={dash} />;
 };
-const Valve = ({ f, at, vertical }: { f: Frame; at: XY; vertical?: boolean }) => {
+export const Valve = ({ f, at, vertical }: { f: Frame; at: XY; vertical?: boolean }) => {
   const [x, y] = [f.ox + at[0] * f.k, f.oy - at[1] * f.k], s = 1.4;
   return <path d={vertical ? `M${x - s} ${y - s}h${2 * s}L${x - s} ${y + s}h${2 * s}z` : `M${x - s} ${y - s}v${2 * s}L${x + s} ${y - s}v${2 * s}z`} fill="#111" />;
 };
@@ -450,7 +487,7 @@ export function MxArchDetails({ box: b, sheet }: { box: Box; sheet: string }) {
 
 // ---------- DI: detalles de instalaciones ----------
 
-const BLUE = "#1f5fbf", RED = "#c4302b", GREEN = "#2f7d32";
+export const BLUE = "#1f5fbf", RED = "#c4302b", GREEN = "#2f7d32";
 
 /** Registro sanitario, tinaco en azotea, tierra física y alturas de salidas en baño. */
 export function MxInstDetails({ box: b, sheet }: { box: Box; sheet: string }) {
