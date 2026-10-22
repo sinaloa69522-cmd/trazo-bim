@@ -6,7 +6,7 @@ import { furnitureDef } from "../core/furniture";
 import { mepDef } from "../core/mep";
 import type { Level, Project } from "../core/model";
 import { beams, CADENAS, castillos, columnSpec, K1, padFootings, padSize, slabPanels, stripFootings, stripSize } from "../core/mxStruct";
-import { roofSummary } from "../core/roofPlan";
+import { pitchedSummary, roofSummary } from "../core/roofPlan";
 import { circuitSchedule, mepSchedule, runSchedule } from "../core/schedules";
 import { fmtDim, fmtElev } from "../core/units";
 import type { Editor } from "../editor/Editor";
@@ -22,7 +22,7 @@ export const MX_TITLES: Record<string, string> = {
   mxport: "Portada e índice de planos",
   mxnotas: "Notas generales y abreviaturas",
   plan: "Planta arquitectónica",
-  mxazo: "Planta de azotea",
+  mxazo: "Planta de techos",
   fach: "Fachadas",
   sec: "Cortes arquitectónicos",
   elev: "Elevaciones",
@@ -182,10 +182,63 @@ function ParapetDetail({ h, t, e }: { h: number; t: number; e: number }) {
   </svg>;
 }
 
+const PITCHED_KIND: Record<string, string> = { gable: "A dos aguas", hip: "A cuatro aguas", shed: "De un agua" };
+
+/** Cuadro de las cubiertas inclinadas: pendiente, superficies, niveles, aristas, canalón y bajadas. */
+function PitchedTable({ lv }: { lv: Level }) {
+  const roofs = lv.roofs.filter((r) => r.kind !== "flat");
+  if (!roofs.length) return null;
+  return <>
+    <h4>Cuadro de techos</h4>
+    <table><tbody>
+      {roofs.map((r, i) => { const s = pitchedSummary(lv, r); return <Fragment key={r.id}>
+        <tr><td colSpan={2}><b>{roofs.length > 1 ? `T-${i + 1} · ` : ""}{PITCHED_KIND[r.kind]}</b></td></tr>
+        <tr><td>Pendiente</td><td className="r">{Math.round(s.pitch)}° · {s.pct} % · {s.ratio}</td></tr>
+        <tr><td>Medidas con vuelo</td><td className="r">{fmtDim(s.w)} × {fmtDim(s.d)} m</td></tr>
+        <tr><td>Vuelo del alero</td><td className="r">{fmtDim(r.overhang)} m</td></tr>
+        <tr><td>Superficie en planta</td><td className="r">{s.plan.toFixed(2)} m²</td></tr>
+        <tr><td>Superficie real (inclinada)</td><td className="r">{s.slope.toFixed(2)} m²</td></tr>
+        <tr><td>Material</td><td className="r">{s.finish || "—"}</td></tr>
+        <tr><td>N.A. (alero) / {r.kind === "shed" ? "borde alto" : "N.C. (cumbrera)"}</td><td className="r">{fmtElev(s.eave)} / {fmtElev(s.ridge)}</td></tr>
+        {s.ridgeLen > 0 && <tr><td>Cumbrera (caballete)</td><td className="r">{fmtDim(s.ridgeLen)} m</td></tr>}
+        {s.hipLen > 0 && <tr><td>Limatesas (4)</td><td className="r">{fmtDim(s.hipLen)} m</td></tr>}
+        <tr><td>Canalón</td><td className="r">{fmtDim(s.gutterLen)} m</td></tr>
+        <tr><td>Bajadas pluviales Ø 3"</td><td className="r">{s.downspouts.length || "—"}</td></tr>
+        {s.dormers > 0 && <tr><td>Buhardillas</td><td className="r">{s.dormers}</td></tr>}
+      </Fragment>; })}
+    </tbody></table>
+  </>;
+}
+
+const PITCHED_SYMS: [string, ReactNode][] = [
+  ["Alero (borde de la cubierta)", <Sym><line x1={1} y1={2.5} x2={13} y2={2.5} stroke="#111" strokeWidth={0.45} /></Sym>],
+  ["Paño del muro bajo el alero", <Sym><line x1={1} y1={2.5} x2={13} y2={2.5} stroke="#111" strokeWidth={0.2} strokeDasharray="1.6 .8" /></Sym>],
+  ["Cumbrera y limatesas", <Sym><path d="M1 4.5l3-2h6l3 2" stroke="#111" strokeWidth={0.35} fill="none" /></Sym>],
+  ["Pendiente (baja hacia la punta)", <Sym><path d="M1.5 2.5h11M12.5 2.5l-1.6-1M12.5 2.5l-1.6 1" stroke="#111" strokeWidth={0.25} fill="none" /><circle cx={1.5} cy={2.5} r={0.5} fill="#111" /></Sym>],
+  ["Canalón", <Sym><path d="M1 1.8h12M1 3.2h12" stroke="#111" strokeWidth={0.15} /></Sym>],
+  ["Bajada pluvial", <Sym><circle cx={7} cy={2.5} r={1.4} fill="#fff" stroke="#111" strokeWidth={0.2} /><path d="M5.6 2.5h2.8M7 1.1v2.8" stroke="#111" strokeWidth={0.15} /></Sym>],
+];
+
+const PITCHED_NOTES = [
+  "Cotas en metros; niveles sobre el N.P.T. ±0.00. N.A.: nivel de alero; N.C.: nivel de cumbrera.",
+  "Cabios, cumbrera y collarines según la lámina de entramado de cubierta. Cubierta de triplay de 16 mm (5/8\") clavado a cada 15 cm en bordes y 30 cm en el centro.",
+  "Bajo la teja: membrana impermeable autoadherible en aleros y limahoyas (90 cm) y fieltro asfáltico en el resto, traslapado 10 cm.",
+  "Gotero metálico en aleros y bordes de hastial; caballete y limatesas con piezas de remate del mismo material.",
+  "Canalón de lámina o aluminio con pendiente de 0.5 % hacia las bajadas; bajadas de Ø 3\" ancladas al muro a cada 1.50 m y descarga lejos del cimiento.",
+  "Buhardillas con tapajuntas escalonado en los costados y contra-tapajuntas en el frente.",
+];
+
 function RoofSide({ lv }: { lv: Level }) {
-  const roofs = lv.roofs, flat = roofs.filter((r) => r.kind === "flat");
+  const roofs = lv.roofs, flat = roofs.filter((r) => r.kind === "flat"), pitched = roofs.some((r) => r.kind !== "flat");
   const rows = flat.map((r) => roofSummary(lv, r)), pp = rows.find((s) => s.parapet)?.parapet;
+  if (pitched && !rows.length) return <div className="tables">
+    <PitchedTable lv={lv} />
+    <h4>Simbología</h4>
+    <table className="symleg"><tbody>{PITCHED_SYMS.map(([n, s]) => <tr key={n}><td>{s}</td><td>{n}</td></tr>)}</tbody></table>
+    <h4>Notas</h4><Notes items={PITCHED_NOTES} />
+  </div>;
   return <div className="tables">
+    {pitched && <PitchedTable lv={lv} />}
     <h4>Cuadro de azotea</h4>
     {rows.length ? <table><tbody>
       {rows.map((s, i) => <Fragment key={i}>
@@ -200,7 +253,7 @@ function RoofSide({ lv }: { lv: Level }) {
         {!s.holes.length && <tr><td>Huecos</td><td className="r">ninguno</td></tr>}
         <tr><td>Pendiente / gárgolas</td><td className="r">2 % · {s.gargoyles.length || "—"}</td></tr>
       </Fragment>)}
-    </tbody></table> : <p className="empty">{roofs.length ? "La cubierta de este nivel es inclinada: la planta muestra sus faldones y cumbreras." : "Este nivel no tiene azotea. Dibuja una cubierta plana con la herramienta Cubierta."}</p>}
+    </tbody></table> : <p className="empty">{roofs.length ? "" : "Este nivel no tiene cubierta. Dibuja una cubierta plana con la herramienta Cubierta."}</p>}
     <h4>Simbología</h4>
     <table className="symleg"><tbody>{ROOF_SYMS.map(([n, s]) => <tr key={n}><td>{s}</td><td>{n}</td></tr>)}</tbody></table>
     {pp && <><h4>Detalle de pretil</h4><ParapetDetail h={pp.h} t={pp.t} e={rows[0].thick} /></>}
