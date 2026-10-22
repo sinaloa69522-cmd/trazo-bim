@@ -1,7 +1,7 @@
 import type { SnapKind } from "./snaps";
 import { fmtArea, fmtDim, fmtLen, imperial, FT, IN } from "../core/units";
 import { deckGeom, deckType } from "../core/decks";
-import { dimGeom, dimOffset, dir, loc, pieces, roofGeom, textBox, type Pt } from "../core/geometry";
+import { dimGeom, dimOffset, dir, loc, pieces, roofGeom, roofSlopes, textBox, type Pt } from "../core/geometry";
 import { dormerGeom } from "../core/dormers";
 import { stairGeom } from "../core/stairs";
 import { drawAxes } from "./mxRenderer";
@@ -428,7 +428,7 @@ export function drawPlan(ctx: CanvasRenderingContext2D, ed: Editor, C: PlanColor
       lengthTag(ctx, ed, C, last, p);
     } else if (ed.tool === "roof") {
       const d = ed.defaults;
-      drawRoof(ctx, ed, { id: 0, x1: last.x, y1: last.y, x2: p.x, y2: p.y, kind: d.roofKind, pitch: d.pitch, overhang: d.overhang, base: d.height, thick: 0.15 }, C.accent, 1.5);
+      drawRoof(ctx, ed, { id: 0, x1: last.x, y1: last.y, x2: p.x, y2: p.y, kind: d.roofKind, pitch: d.pitch, overhang: d.overhang, base: d.height, thick: 0.15, ...ed.roofOrient() }, C.accent, 1.5);
       poly([last, { x: p.x, y: last.y }, p, { x: last.x, y: p.y }], null, C.accent, 1);
     } else if (ed.tool === "deck") {
       const t = deckType(ed.defaults.deckKind);
@@ -685,6 +685,17 @@ function drawRoof(ctx: CanvasRenderingContext2D, ed: Editor, r: Roof, col: strin
   ctx.setLineDash([10, 5]); path(ctx, ed, g.outline, true); ctx.setLineDash([]);
   ctx.lineWidth = Math.max(1, lw - 0.5);
   for (const [a, b] of g.ridges) path(ctx, ed, [a, b]);
+  // flechas de la pendiente: hacia dónde cae el agua
+  ctx.lineWidth = 1;
+  for (const [a, b] of roofSlopes(r)) {
+    const p = ed.toS(a.x, a.y), q = ed.toS(b.x, b.y), L = Math.hypot(q.x - p.x, q.y - p.y);
+    if (L < 24) continue;
+    const ux = (q.x - p.x) / L, uy = (q.y - p.y) / L, k = Math.min(9, L * 0.25);
+    ctx.beginPath(); ctx.moveTo(p.x, p.y); ctx.lineTo(q.x, q.y);
+    ctx.moveTo(q.x - ux * k - uy * k * 0.45, q.y - uy * k + ux * k * 0.45); ctx.lineTo(q.x, q.y); ctx.lineTo(q.x - ux * k + uy * k * 0.45, q.y - uy * k - ux * k * 0.45);
+    ctx.stroke();
+  }
+  ctx.lineWidth = Math.max(1, lw - 0.5);
   // buhardillas: su techito (contorno, cumbrera y limahoyas) y el frente con la ventana
   for (const dm of r.dormers ?? []) {
     const dg = dormerGeom(r, dm);

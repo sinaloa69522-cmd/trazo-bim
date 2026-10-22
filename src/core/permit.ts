@@ -4,7 +4,7 @@
  * Las medidas son predimensionados de vivienda unifamiliar según las tablas del IRC; el proyecto
  * lo tiene que revisar y sellar un profesional con licencia.
  */
-import { bounds, dir, loc, polygonArea, roofGeom, type Pt } from "./geometry";
+import { bounds, dir, loc, polygonArea, roofAlongX, roofGeom, type Pt } from "./geometry";
 import { hatchSegments, maskLoops, type PatLine } from "./hatch";
 import type { Level, Model, Project, Wall } from "./model";
 import { computeRooms, RC, type RoomGrid } from "./rooms";
@@ -191,17 +191,17 @@ export function roofFraming(m: Model): RoofFrame[] {
   return m.roofs.map((r) => {
     const g = roofGeom(r), xs = g.outline.map((p) => p.x), ys = g.outline.map((p) => p.y);
     const x0 = Math.min(...xs), x1 = Math.max(...xs), y0 = Math.min(...ys), y1 = Math.max(...ys);
-    const alongX = x1 - x0 >= y1 - y0, s = 24 * IN, flat = r.kind === "flat";
-    // la cumbrera va en la dirección larga; los cabios cruzan la corta
+    const alongX = roofAlongX(r), s = 24 * IN, flat = r.kind === "flat";
+    // los cabios cruzan la cumbrera (o el alero, en la de un agua)
     const line: PatLine = alongX
       ? { angle: 90, base: { x: x0 + s / 2, y: 0 }, offset: { x: s, y: 0 }, dashes: [] }
       : { angle: 0, base: { x: 0, y: y0 + s / 2 }, offset: { x: 0, y: s }, dashes: [] };
     const rafters = hatchSegments([g.outline], [line], 4000).segs as Seg2[];
-    const short = alongX ? y1 - y0 : x1 - x0, run = flat ? short : short / 2;
+    const short = alongX ? y1 - y0 : x1 - x0, run = flat || r.kind === "shed" ? short : short / 2;
     return {
       outline: g.outline, ridges: g.ridges as Seg2[], rafters, flat, run,
       member: flat ? floorJoist(run).replace("@ 16\"", "@ 24\"") : rafterSize(run),
-      ridge: flat ? "" : `${rafterSize(run).split(" ")[0].replace(/2x(\d+)/, (_, d) => `2x${Math.min(14, Number(d) + 2)}`)} RIDGE BOARD`,
+      ridge: flat || r.kind === "shed" ? "" : `${rafterSize(run).split(" ")[0].replace(/2x(\d+)/, (_, d) => `2x${Math.min(14, Number(d) + 2)}`)} RIDGE BOARD`,
       at: { x: (x0 + x1) / 2, y: (y0 + y1) / 2 },
     };
   });

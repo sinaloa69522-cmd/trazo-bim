@@ -65,7 +65,7 @@ export function drawRoofPlan(ctx: CanvasRenderingContext2D, ed: Editor, W: numbe
       ctx.lineWidth = 0.8;
       for (const [a, b] of g.ridges) { poly(ctx, ed, [a, b], false); ctx.stroke(); }
       const c = ed.toS((o0.x + o2.x) / 2, (o0.y + o2.y) / 2);
-      label(ctx, `CUBIERTA ${r.kind === "gable" ? "A DOS AGUAS" : "A CUATRO AGUAS"}  ${r.pitch}°`, c.x, c.y + 14, 8);
+      label(ctx, `CUBIERTA ${r.kind === "gable" ? "A DOS AGUAS" : r.kind === "shed" ? "DE UN AGUA" : "A CUATRO AGUAS"}  ${r.pitch}°`, c.x, c.y + 14, 8);
     }
 
     const pp = parapet(r);

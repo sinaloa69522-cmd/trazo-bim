@@ -76,7 +76,7 @@ export interface Slab {
   holes: { x: number; y: number }[][];
 }
 
-export type RoofKind = "flat" | "gable" | "hip";
+export type RoofKind = "flat" | "gable" | "hip" | "shed";
 
 /** Cubierta rectangular definida por dos esquinas opuestas del perímetro que cubre. */
 export interface Roof {
@@ -90,6 +90,10 @@ export interface Roof {
   pitch: number;
   /** Vuelo del alero más allá del perímetro */
   overhang: number;
+  /** A dos o cuatro aguas: dirección de la cumbrera ("x" horizontal, "y" vertical); sin dato, la dirección larga */
+  dir?: "x" | "y";
+  /** De un agua: lado hacia el que cae el agua (0 arriba, 1 derecha, 2 abajo, 3 izquierda); sin dato, abajo */
+  drain?: 0 | 1 | 2 | 3;
   /** Altura de arranque sobre la cota del nivel */
   base: number;
   thick: number;

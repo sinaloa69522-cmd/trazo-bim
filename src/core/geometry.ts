@@ -245,10 +245,6 @@ export interface RoofGeom {
   top: number;
 }
 
-/**
- * Geometría de una cubierta rectangular. La cumbrera va siempre en la dirección larga.
- * A dos aguas cae hacia los lados largos; a cuatro aguas, hacia los cuatro lados.
- */
 /** Pretil de azotea por omisión: altura sobre la losa y grueso (tabique con su aplanado). */
 export const PARAPET = { h: 0.6, t: 0.15 };
 
@@ -265,6 +261,34 @@ export function parapet(r: Roof) {
   return { h, t, outer, inner, z: r.base + r.thick };
 }
 
+/**
+ * true si la cumbrera (o, en la de un agua, la línea del alero) corre en x. La elige el usuario con dir o drain;
+ * sin dato va en la dirección larga.
+ */
+export function roofAlongX(r: Roof): boolean {
+  if (r.kind === "shed") return (r.drain ?? 2) % 2 === 0;
+  if (r.dir) return r.dir === "x";
+  return Math.abs(r.x2 - r.x1) >= Math.abs(r.y2 - r.y1);
+}
+
+/** De un agua: true si el alero bajo queda del lado V1 (abajo o a la derecha). */
+export const shedLowV1 = (r: Roof) => { const d = r.drain ?? 2; return d === 1 || d === 2; };
+
+/**
+ * Geometría de una cubierta rectangular. La cumbrera va en la dirección elegida (sin dato, la larga).
+ * A dos aguas cae hacia los lados paralelos a la cumbrera; a cuatro aguas, hacia los cuatro lados;
+ * de un agua, hacia el lado elegido, con un muro piñón en el lado alto.
+ */
+/** Flechas de la pendiente en planta, de arriba abajo: una por faldón largo (o la del único, en la de un agua). */
+export function roofSlopes(r: Roof): [Pt, Pt][] {
+  if (r.kind === "flat") return [];
+  const [a, , c] = roofGeom(r).outline, cx = (a.x + c.x) / 2, cy = (a.y + c.y) / 2, ax = roofAlongX(r);
+  const h = (ax ? c.y - a.y : c.x - a.x) / 2, n = ax ? { x: 0, y: 1 } : { x: 1, y: 0 };
+  const at = (k: number): Pt => ({ x: cx + n.x * h * k, y: cy + n.y * h * k });
+  if (r.kind === "shed") { const s = shedLowV1(r) ? 1 : -1; return [[at(-0.55 * s), at(0.55 * s)]]; }
+  return [[at(-0.2), at(-0.75)], [at(0.2), at(0.75)]];
+}
+
 export function roofGeom(r: Roof): RoofGeom {
   const o = r.overhang;
   const x0 = Math.min(r.x1, r.x2) - o, x1 = Math.max(r.x1, r.x2) + o;
@@ -279,12 +303,22 @@ export function roofGeom(r: Roof): RoofGeom {
     const f = outline.map((p) => ({ ...p, z: z0 + lift }));
     return { outline, ridges: [], faces: [f], gables: [], top: z0 + lift };
   }
-  // trabajamos en ejes locales: u en la dirección larga, v en la corta
-  const alongX = x1 - x0 >= y1 - y0;
+  // trabajamos en ejes locales: u a lo largo de la cumbrera, v a través
+  const alongX = roofAlongX(r);
   const U0 = alongX ? x0 : y0, U1 = alongX ? x1 : y1, V0 = alongX ? y0 : x0, V1 = alongX ? y1 : x1;
   const half = (V1 - V0) / 2, vm = (V0 + V1) / 2, zt = z0 + half * tan;
   const P = (u: number, v: number, z: number): P3 => (alongX ? { x: u, y: v, z } : { x: v, y: u, z });
   const pt = (q: P3): Pt => ({ x: q.x, y: q.y });
+  const top = (f: P3[]) => f.filter((q, i) => i === 0 || Math.hypot(q.x - f[i - 1].x, q.y - f[i - 1].y) > 1e-6).map((q) => ({ ...q, z: q.z + lift }));
+  if (r.kind === "shed") {
+    // un solo faldón del alero bajo al alto; los hastiales de los extremos son trapecios y el lado alto lleva muro
+    const lowV1 = shedLowV1(r), dv = (v: number) => (lowV1 ? V1 - v : v - V0), Z = (v: number) => z0 + dv(v) * tan;
+    const ua = U0 + o, ub = U1 - o, va = V0 + o, vb = V1 - o, vh = lowV1 ? va : vb, vhi = lowV1 ? V0 : V1;
+    const face = [P(U0, V0, Z(V0)), P(U1, V0, Z(V0)), P(U1, V1, Z(V1)), P(U0, V1, Z(V1))];
+    const gables = [ua, ub].map((u) => [P(u, va, r.base), P(u, vb, r.base), P(u, vb, Z(vb) + lift), P(u, va, Z(va) + lift)]);
+    gables.push([P(ua, vh, r.base), P(ub, vh, r.base), P(ub, vh, Z(vh) + lift), P(ua, vh, Z(vh) + lift)]);
+    return { outline, ridges: [], faces: [top(face)], gables, top: Z(vhi) + lift };
+  }
   const inset = r.kind === "hip" ? Math.min(half, (U1 - U0) / 2) : 0;
   const ra = P(U0 + inset, vm, zt), rb = P(U1 - inset, vm, zt);
   const c00 = P(U0, V0, z0), c10 = P(U1, V0, z0), c11 = P(U1, V1, z0), c01 = P(U0, V1, z0);
@@ -300,7 +334,6 @@ export function roofGeom(r: Roof): RoofGeom {
     const ua = U0 + o, ub = U1 - o, va = V0 + o, vb = V1 - o;
     gables.push([P(ua, va, r.base), P(ua, vm, zt + lift), P(ua, vb, r.base)], [P(ub, va, r.base), P(ub, vm, zt + lift), P(ub, vb, r.base)]);
   }
-  const top = (f: P3[]) => f.filter((q, i) => i === 0 || Math.hypot(q.x - f[i - 1].x, q.y - f[i - 1].y) > 1e-6).map((q) => ({ ...q, z: q.z + lift }));
   return { outline, ridges, faces: faces.map(top), gables, top: zt + lift };
 }
 

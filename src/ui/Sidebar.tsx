@@ -6,7 +6,7 @@ import { CIRCUITS, mepDef, mepOf, runLength, SYSTEMS, systemDef, type Discipline
 import { SymbolIcon, SystemIcon } from "./MepIcons";
 import { GENERIC, WALL_TYPES, wallType, wallTypeLabel } from "../core/wallTypes";
 import { LAYERS, type Dormer, type DormerWindow, type Model, type RoofKind, type RunSystem, type StairKind } from "../core/model";
-import { ROOF_LABEL, type Editor } from "../editor/Editor";
+import { DRAIN_LABEL, ROOF_LABEL, type Editor } from "../editor/Editor";
 import { fmtArea, fmtDim, fmtElev, fmtField, fmtLen, fmtSmall, imperial, lenUnit, parseLen } from "../core/units";
 import { finish, ROOFINGS, SIDINGS, type Finish } from "../core/finishes";
 import { finishSwatch } from "../editor/finishTextures";
@@ -144,6 +144,29 @@ function RoofKindField({ id, value, onChange }: { id: string; value: RoofKind; o
   );
 }
 
+/** Hacia dónde va la cubierta: dirección de la cumbrera (dos o cuatro aguas) o lado al que cae el agua (un agua). */
+function RoofOrientField({ id, kind, dir, drain, onDir, onDrain }: { id: string; kind: RoofKind; dir: "auto" | "x" | "y"; drain: 0 | 1 | 2 | 3; onDir: (d: "auto" | "x" | "y") => void; onDrain: (d: 0 | 1 | 2 | 3) => void }) {
+  if (kind === "flat") return null;
+  if (kind === "shed") return (
+    <>
+      <label htmlFor={id}>El agua cae hacia</label>
+      <select id={id} value={drain} onChange={(e) => onDrain(Number(e.target.value) as 0 | 1 | 2 | 3)}>
+        {DRAIN_LABEL.map((l, i) => <option key={l} value={i}>{l}</option>)}
+      </select>
+    </>
+  );
+  return (
+    <>
+      <label htmlFor={id}>Cumbrera</label>
+      <select id={id} value={dir} onChange={(e) => onDir(e.target.value as "auto" | "x" | "y")}>
+        <option value="auto">En lo largo (automática)</option>
+        <option value="x">Horizontal (caídas arriba y abajo)</option>
+        <option value="y">Vertical (caídas a izquierda y derecha)</option>
+      </select>
+    </>
+  );
+}
+
 /** Muestra de una trama: un cuadro de 0,8 m dibujado con sus líneas. */
 function HatchSwatch({ pattern, scale = 1, angle = 0 }: { pattern: string; scale?: number; angle?: number }) {
   const S = 0.8, sq = [[{ x: 0, y: 0 }, { x: S, y: 0 }, { x: S, y: S }, { x: 0, y: S }]];
@@ -235,7 +258,9 @@ function Properties({ ed, onFocusCommand }: { ed: Editor; onFocusCommand: () => 
     title = `Cubierta ${ROOF_LABEL[r.kind].toLowerCase()}`;
     ro.push(["Superficie en planta", `${fmtArea(polygonArea(g.outline))}`], ...(r.holes?.length ? [["Huecos", String(r.holes.length)] as [string, string]] : []), ["Altura cumbrera", `${fmtLen(g.top)}`]);
     body = <>
-      <RoofKindField id={`${key}-k`} value={r.kind} onChange={(k) => ed.edit(() => { r.kind = k; })} />
+      <RoofKindField id={`${key}-k`} value={r.kind} onChange={(k) => ed.edit(() => { r.kind = k; if (k === "shed") delete r.dormers; })} />
+      <RoofOrientField id={`${key}-or`} kind={r.kind} dir={r.dir ?? "auto"} drain={r.drain ?? 2}
+        onDir={(d) => ed.edit(() => { if (d === "auto") delete r.dir; else r.dir = d; })} onDrain={(d) => ed.edit(() => { r.drain = d; })} />
       {r.kind !== "flat" && <NumberField id={`${key}-p`} label="Pendiente (°)" value={r.pitch} min={1} step={1} digits={0} onCommit={(v) => ed.edit(() => { r.pitch = Math.min(75, v); })} />}
       {r.kind === "flat" && <NumberField id={`${key}-pp`} label="Pretil (m, 0 sin pretil)" value={r.parapet ?? PARAPET.h} min={0} onCommit={(v) => ed.edit(() => { r.parapet = v; })} />}
       <NumberField id={`${key}-o`} label="Vuelo (m)" value={r.overhang} min={0} onCommit={(v) => ed.edit(() => { r.overhang = v; })} />
@@ -493,6 +518,7 @@ function Properties({ ed, onFocusCommand }: { ed: Editor; onFocusCommand: () => 
       <NumberField id="def-s" label="Antepecho" len value={d.sill} onCommit={(v) => { d.sill = v; ed.emit(); }} />
       <NumberField id="def-sl" label="Espesor losa" len value={d.slabThick} onCommit={(v) => { d.slabThick = v; ed.emit(); }} />
       <RoofKindField id="def-rk" value={d.roofKind} onChange={(k) => { d.roofKind = k; ed.emit(); }} />
+      <RoofOrientField id="def-ro" kind={d.roofKind} dir={d.roofDir} drain={d.roofDrain} onDir={(v) => { d.roofDir = v; ed.emit(); }} onDrain={(v) => { d.roofDrain = v; ed.emit(); }} />
       <NumberField id="def-rp" label="Pendiente (°)" value={d.pitch} min={1} step={1} digits={0} onCommit={(v) => { d.pitch = Math.min(75, v); ed.emit(); }} />
       <NumberField id="def-tx" label="Altura texto" len value={d.textSize} min={0.02} onCommit={(v) => { d.textSize = v; ed.emit(); }} />
       <label htmlFor="def-dk">Buhardilla nueva</label>

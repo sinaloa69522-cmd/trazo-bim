@@ -1,6 +1,6 @@
 // Estructura de madera (wood framing) en 3D a partir del modelo: cimentación, soleras, montantes, dinteles,
 // viguetas, cabios, limatesas y cumbrera, con los tamaños de predimensionado de permit.ts (tablas del IRC).
-import { dir, loc, roofGeom, type P3 } from "./geometry";
+import { dir, loc, roofAlongX, roofGeom, shedLowV1, type P3 } from "./geometry";
 import type { Dormer, Project, Roof, Stair, Wall } from "./model";
 import { dormerGeom, frontWindow, sideWindow } from "./dormers";
 import { deckFraming } from "./decks";
@@ -110,7 +110,7 @@ function roofFrame(r: Roof, e: number, walls: Wall[], gableBase = 0): Member[] {
   const heel = under.length ? Math.max(...under.map((w) => Math.min(w.thick, 5.5 * IN))) / 2 : 0;
   const xs = g.outline.map((q) => q.x), ys = g.outline.map((q) => q.y);
   const x0 = Math.min(...xs), x1 = Math.max(...xs), y0 = Math.min(...ys), y1 = Math.max(...ys);
-  const alongX = x1 - x0 >= y1 - y0, U0 = alongX ? x0 : y0, U1 = alongX ? x1 : y1, V0 = alongX ? y0 : x0, V1 = alongX ? y1 : x1;
+  const alongX = roofAlongX(r), U0 = alongX ? x0 : y0, U1 = alongX ? x1 : y1, V0 = alongX ? y0 : x0, V1 = alongX ? y1 : x1;
   const P = (u: number, v: number, z: number): P3 => (alongX ? { x: u, y: v, z } : { x: v, y: u, z });
   const short = V1 - V0, s = 24 * IN;
   if (r.kind === "flat") {
@@ -119,6 +119,7 @@ function roofFrame(r: Roof, e: number, walls: Wall[], gableBase = 0): Member[] {
     for (let u = U0 + s / 2; u < U1; u += s) out.push({ kind: "rafter", a: P(u, V0, z), b: P(u, V1, z), w: T, h: d, size: nominal(m) });
     return out;
   }
+  if (r.kind === "shed") return shedFrame(r, e + seat, e + seat + gableBase, heel, alongX, P, U0, U1, V0, V1);
   const tan = Math.tan((Math.max(1, Math.min(75, r.pitch)) * Math.PI) / 180), half = short / 2, vm = (V0 + V1) / 2;
   const m = rafterSize(half), d = actualDepth(/TRUSS/.test(m) ? "2x8" : m), z0 = e + seat - (r.overhang - heel) * tan;
   // el plano del arranque pasa por la cara superior de la doble solera: los cabios se apoyan en ella
@@ -179,6 +180,28 @@ function roofFrame(r: Roof, e: number, walls: Wall[], gableBase = 0): Member[] {
   if (U1 - inset - (U0 + inset) > 1e-3) out.push({ kind: "ridge", a: P(U0 + inset, vm, zr), b: P(U1 - inset, vm, zr), w: T, h: rd, size: rs });
   if (hip) for (const [u, ue] of [[U0, U0 + inset], [U1, U1 - inset]]) for (const v of [V0, V1])
     out.push({ kind: "ridge", a: P(u, v, Z(0)), b: P(ue, vm, Z(half)), w: T, h: rd, size: rs });
+  return out;
+}
+
+/**
+ * Cubierta de un agua: cabios a 24" de alero a alero de un solo tramo, fascia en los dos aleros y montantes
+ * en los hastiales trapeciales y en el muro piñón del lado alto, hasta la cara inferior de los cabios.
+ */
+function shedFrame(r: Roof, zs: number, zb: number, heel: number, alongX: boolean, P: (u: number, v: number, z: number) => P3, U0: number, U1: number, V0: number, V1: number): Member[] {
+  const out: Member[] = [], s = 24 * IN, o = r.overhang, short = V1 - V0, lowV1 = shedLowV1(r);
+  const tan = Math.tan((Math.max(1, Math.min(75, r.pitch)) * Math.PI) / 180);
+  const m = rafterSize(short), d = actualDepth(/TRUSS/.test(m) ? "2x8" : m), drop = d / 2 / Math.cos(Math.atan(tan));
+  const z0 = zs - (o - heel) * tan, Z = (v: number) => z0 + (lowV1 ? V1 - v : v - V0) * tan + drop;
+  for (let u = U0 + s / 2; u < U1; u += s) out.push({ kind: "rafter", a: P(u, V0, Z(V0)), b: P(u, V1, Z(V1)), w: T, h: d, size: nominal(m) });
+  for (const v of [V0, V1]) out.push({ kind: "fascia", a: P(U0, v, Z(v) + drop - d / 2), b: P(U1, v, Z(v) + drop - d / 2), w: T, h: d, size: `${nominal(m)} FASCIA` });
+  const stud = (u: number, v: number, along: { x: number; y: number }) => {
+    const top = Z(v) - drop;
+    if (top - zb > 0.05) out.push({ kind: "stud", a: P(u, v, zb), b: P(u, v, top), w: T, h: 3.5 * IN, along, size: "2x4" });
+  };
+  const acrossV = alongX ? { x: 0, y: 1 } : { x: 1, y: 0 }, alongU = alongX ? { x: 1, y: 0 } : { x: 0, y: 1 };
+  for (const u of [U0 + o, U1 - o]) for (let v = V0 + o + 16 * IN; v < V1 - o - 0.05; v += 16 * IN) stud(u, v, acrossV);
+  const vh = lowV1 ? V0 + o : V1 - o;
+  for (let u = U0 + o + 16 * IN; u < U1 - o - 0.05; u += 16 * IN) stud(u, vh, alongU);
   return out;
 }
 

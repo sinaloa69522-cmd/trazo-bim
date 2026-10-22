@@ -129,7 +129,7 @@ export function toIfc(p: Project, opts: { now?: Date; random?: () => number } = 
     for (const r of lv.roofs) {
       const g = roofGeom(r);
       const rep = shape("SurfaceModel", [surfaces([...g.faces, ...g.gables])]);
-      const kind = r.kind === "flat" ? "FLAT_ROOF" : r.kind === "gable" ? "GABLE_ROOF" : "HIP_ROOF";
+      const kind = r.kind === "flat" ? "FLAT_ROOF" : r.kind === "gable" ? "GABLE_ROOF" : r.kind === "shed" ? "SHED_ROOF" : "HIP_ROOF";
       contained.push(add(`IFCROOF('${id()}',$,'Cubierta',$,$,${place(stPl)},${rep},$,.${kind}.)`));
     }
 

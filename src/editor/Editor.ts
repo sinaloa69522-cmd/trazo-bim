@@ -60,7 +60,9 @@ const STORAGE_KEY = "trazo-bim";
 /** Límites del zoom, en píxeles por metro: de un plano de varios kilómetros a un detalle de milímetros. */
 const MIN_ZOOM = 0.02, MAX_ZOOM = 20000;
 
-export const ROOF_LABEL: Record<RoofKind, string> = { flat: "Plana", gable: "A dos aguas", hip: "A cuatro aguas" };
+export const ROOF_LABEL: Record<RoofKind, string> = { flat: "Plana", gable: "A dos aguas", hip: "A cuatro aguas", shed: "De un agua" };
+/** Lado hacia el que cae el agua en la cubierta de un agua (el de su campo drain). */
+export const DRAIN_LABEL = ["Arriba", "Derecha", "Abajo", "Izquierda"] as const;
 
 const COMMANDS: Record<string, Tool> = {
   M: "wall", MURO: "wall", P: "door", PUERTA: "door", V: "window", VENTANA: "window",
@@ -112,7 +114,7 @@ export class Editor {
   set model(m: Model) { this.project.levels[this.active] = { ...this.model, ...m }; }
   rooms: RoomGrid | null = null;
   vis: Record<LayerId, boolean> = { muros: true, puertas: true, ventanas: true, cotas: true, anot: true, hab: true, losas: true, cubiertas: true, escaleras: true, decks: true, columnas: true, mobiliario: true, secciones: true, electricidad: true, plomeria: true, calcos: true, sombreados: true, ejes: true };
-  defaults = { ...METRIC_DEFAULTS, roofKind: "gable" as RoofKind, furnKind: "bed2", furnRot: 0, mepKind: "enchufe", mepRot: 0, runSys: "af" as RunSystem, hatchPattern: "diagonal", hatchScale: 1, hatchAngle: 0, hatchMode: "room" as "room" | "poly", doorStyle: "single", winStyle: "fixed", deckKind: "wood" as DeckKind, colW: 0.3, dormerKind: "gable" as Dormer["kind"], dormerW: DORMER.w, stairKind: "recta" as StairKind, stairTurn: 1 as 1 | -1, markKind: "nivel" as MarkKind, markLabel: "N.P.T.", detailSheet: "" };
+  defaults = { ...METRIC_DEFAULTS, roofKind: "gable" as RoofKind, roofDir: "auto" as "auto" | "x" | "y", roofDrain: 2 as 0 | 1 | 2 | 3, furnKind: "bed2", furnRot: 0, mepKind: "enchufe", mepRot: 0, runSys: "af" as RunSystem, hatchPattern: "diagonal", hatchScale: 1, hatchAngle: 0, hatchMode: "room" as "room" | "poly", doorStyle: "single", winStyle: "fixed", deckKind: "wood" as DeckKind, colW: 0.3, dormerKind: "gable" as Dormer["kind"], dormerW: DORMER.w, stairKind: "recta" as StairKind, stairTurn: 1 as 1 | -1, markKind: "nivel" as MarkKind, markLabel: "N.P.T.", detailSheet: "" };
   tool: Tool = "select";
   /** Elementos seleccionados. */
   sels: Selection[] = [];
@@ -404,7 +406,11 @@ export class Editor {
       case "scale": return n === 0 ? "ESCALA  Precisa punto base:" : n === 1 ? "ESCALA  Factor de escala, o punto de referencia:" : "ESCALA  Punto de la nueva longitud:";
       case "array": return n ? `MATRIZ  Punto o distancia de la primera copia (${this.arrayN} elementos):` : `MATRIZ  Precisa punto base (${this.arrayN} elementos; teclea un número para cambiarlo):`;
       case "slab": return n < 3 ? `LOSA  Precisa ${n ? "siguiente" : "primer"} vértice del contorno:` : "LOSA  Siguiente vértice [Enter o clic en el primero cierra]:";
-      case "roof": return n ? "CUBIERTA  Esquina opuesta del perímetro:" : `CUBIERTA  Primera esquina del perímetro (${ROOF_LABEL[d.roofKind].toLowerCase()}, ${d.pitch}°):`;
+      case "roof": {
+        const o = d.roofKind === "flat" ? "" : d.roofKind === "shed" ? `, cae hacia ${DRAIN_LABEL[d.roofDrain].toLowerCase()}` : d.roofDir === "auto" ? ", cumbrera en lo largo" : `, cumbrera ${d.roofDir === "x" ? "horizontal" : "vertical"}`;
+        const g = d.roofKind === "flat" ? "" : " [G gira]";
+        return n ? `CUBIERTA  Esquina opuesta del perímetro${o ? ` (${o.slice(2)})` : ""}${g}:` : `CUBIERTA  Primera esquina del perímetro (${ROOF_LABEL[d.roofKind].toLowerCase()}, ${d.pitch}°${o})${g}:`;
+      }
       case "dormer": return `BUHARDILLA  Haz clic en un faldón de la cubierta, donde va su centro (${d.dormerKind === "gable" ? "a dos aguas" : "de un agua"}, ancho ${fmtLen(d.dormerW)}):`;
       case "column": return `COLUMNA  Punto del centro (${fmtLen(d.colW)} × ${fmtLen(d.colW)}):`;
       case "deck": return n ? "DECK  Esquina opuesta:" : `DECK  Primera esquina (${deckType(d.deckKind).name.toLowerCase()}):`;
@@ -780,9 +786,10 @@ export class Editor {
       this.snapshot();
       const d = this.defaults, id = nextId(m);
       if (this.tool === "roof") {
-        m.roofs.push({ id, x1: a.x, y1: a.y, x2: p.x, y2: p.y, kind: d.roofKind, pitch: d.pitch, overhang: d.overhang, base: d.height, thick: 0.15 });
+        m.roofs.push({ id, x1: a.x, y1: a.y, x2: p.x, y2: p.y, kind: d.roofKind, pitch: d.pitch, overhang: d.overhang, base: d.height, thick: 0.15,
+          ...this.roofOrient() });
         this.sels = [{ type: "roof", id }];
-        this.message = `Cubierta ${ROOF_LABEL[d.roofKind].toLowerCase()} creada. Cambia el tipo y la pendiente en Propiedades.`;
+        this.message = `Cubierta ${ROOF_LABEL[d.roofKind].toLowerCase()} creada. Cambia el tipo, la pendiente y hacia dónde cae en Propiedades.`;
       } else {
         const st = this.newStair(a, p, id);
         m.stairs.push(st);
@@ -1088,6 +1095,26 @@ export class Editor {
     if (this.tool !== "furniture") this.setTool("furniture"); else this.emit();
   }
   /** Gira 90° la pieza que se va a colocar. */
+  /** Orientación elegida para la cubierta nueva: lado de caída (de un agua) o dirección de la cumbrera. */
+  roofOrient(): Pick<Roof, "dir" | "drain"> {
+    const d = this.defaults;
+    return d.roofKind === "shed" ? { drain: d.roofDrain } : d.roofDir !== "auto" && d.roofKind !== "flat" ? { dir: d.roofDir } : {};
+  }
+  /** G durante el dibujo de la cubierta: gira la cumbrera 90° o pasa la caída del agua al lado siguiente. */
+  rotateRoofPreview() {
+    const d = this.defaults;
+    if (d.roofKind === "flat") { this.log("La cubierta plana no tiene cumbrera que girar."); return; }
+    if (d.roofKind === "shed") {
+      d.roofDrain = ((d.roofDrain + 1) % 4) as 0 | 1 | 2 | 3;
+      this.log(`El agua cae hacia ${DRAIN_LABEL[d.roofDrain].toLowerCase()}.`);
+    } else {
+      const a = this.draft?.pts[0], p = this.snap ?? this.mouse;
+      const cur = d.roofDir !== "auto" ? d.roofDir === "x" : a ? Math.abs(p.x - a.x) >= Math.abs(p.y - a.y) : true;
+      d.roofDir = cur ? "y" : "x";
+      this.log(`Cumbrera ${d.roofDir === "x" ? "horizontal" : "vertical"}.`);
+    }
+    this.emit();
+  }
   rotateFurniturePreview() { this.defaults.furnRot = (this.defaults.furnRot + 90) % 360; this.log(`Giro ${this.defaults.furnRot}°.`); }
   /** Lista de piezas de la biblioteca. */
   get furnitureCatalog() { return FURNITURE; }
@@ -1484,6 +1511,7 @@ export class Editor {
     if (s === "U" || s === "DESHACER") return this.undo();
     if (s === "Z" || s === "ZOOM" || s === "ENCUADRAR") { this.fitRequest?.(); return; }
     if (this.tool === "furniture" && (s === "R" || s === "GIRAR")) { this.rotateFurniturePreview(); return; }
+    if (this.tool === "roof" && (s === "G" || s === "R" || s === "GIRAR")) { this.rotateRoofPreview(); return; }
     if (this.tool === "fixture" && (s === "R" || s === "GIRAR")) { this.rotateFixturePreview(); return; }
     // longitudes en las unidades del proyecto: 4.5, 30cm, 12'6", 6"…
     const len = parseLen(raw);
@@ -1739,8 +1767,8 @@ export class Editor {
   /** Quita todos los huecos de una losa (o de una azotea, si el id es de una cubierta). */
   /** Buhardilla que se pondría en el punto, o el motivo por el que no cabe. Si hace falta, más baja y más angosta. */
   dormerCandidate(p: Pt): { roof: Roof; dormer: Dormer } | string {
-    const m = this.model, r = m.roofs.find((x) => x.kind !== "flat" && pointInPolygon(p, roofGeom(x).outline));
-    if (!r) return m.roofs.some((x) => x.kind !== "flat") ? "Haz clic dentro de una cubierta inclinada." : "Las buhardillas van en cubiertas inclinadas y este nivel no tiene ninguna. Dibuja una con Cubierta (a dos o cuatro aguas).";
+    const m = this.model, r = m.roofs.find((x) => x.kind !== "flat" && x.kind !== "shed" && pointInPolygon(p, roofGeom(x).outline));
+    if (!r) return m.roofs.some((x) => x.kind !== "flat" && x.kind !== "shed") ? "Haz clic dentro de una cubierta inclinada." : "Las buhardillas van en cubiertas inclinadas y este nivel no tiene ninguna. Dibuja una con Cubierta (a dos o cuatro aguas).";
     if (r.pitch < DORMER.minPitch) return `La pendiente de la cubierta (${r.pitch}°) es muy baja para una buhardilla; súbela a ${DORMER.minPitch}° o más.`;
     const at = dormerAt(r, p)!, d = this.defaults;
     for (const [w, h] of [[d.dormerW, DORMER.h], [d.dormerW, 0.9], [Math.min(d.dormerW, 1), 0.9], [Math.min(d.dormerW, 1), 0.7]]) {
