@@ -1,16 +1,17 @@
 // Estructura de madera (wood framing) en 3D a partir del modelo: cimentación, soleras, montantes, dinteles,
 // viguetas, cabios, limatesas y cumbrera, con los tamaños de predimensionado de permit.ts (tablas del IRC).
 import { dir, loc, roofGeom, type P3 } from "./geometry";
-import type { Dormer, Project, Roof, Wall } from "./model";
+import type { Dormer, Project, Roof, Stair, Wall } from "./model";
 import { dormerGeom, frontWindow, sideWindow } from "./dormers";
 import { deckFraming } from "./decks";
 import { foundation, foundationType, gradeLevel } from "./foundation";
 import { ceilingSystem, depthOf, floorJoistDepth, floorSystem, SUBFLOOR } from "./joists";
 import { floorJoist, headerSize, isExterior, rafterSize } from "./permit";
+import { POST_R, stairFlights, stairGeom } from "./stairs";
 import { IN } from "./units";
 
 export type MemberKind = "footing" | "foundation" | "pier" | "girder" | "slab" | "sill" | "rim" | "floorJoist" | "subfloor" | "blocking"
-  | "plate" | "stud" | "header" | "ceilingJoist" | "rafter" | "collar" | "ridge" | "fascia" | "stringer";
+  | "plate" | "stud" | "header" | "ceilingJoist" | "rafter" | "collar" | "ridge" | "fascia" | "stringer" | "tread";
 
 /**
  * Pieza recta entre los centros de sus extremos a y b. w es su ancho horizontal y h su canto
@@ -24,7 +25,7 @@ export const MEMBER_COLOR: Record<MemberKind, string> = {
   footing: "#b3b0a8", foundation: "#a7a49c", pier: "#9d9a92", girder: "#8f6436", slab: "#c4c1b9", sill: "#7f9a6a",
   rim: "#b9844a", floorJoist: "#d6ad74", subfloor: "#c8b48c", blocking: "#c08f55",
   plate: "#c99b62", stud: "#e2c08f", header: "#a8763f", ceilingJoist: "#e4c79a", rafter: "#d9b27c", collar: "#b98d58",
-  ridge: "#9c6c3a", fascia: "#8a5f33", stringer: "#8e6a44",
+  ridge: "#9c6c3a", fascia: "#8a5f33", stringer: "#8e6a44", tread: "#cf9f62",
 };
 
 const T = 1.5 * IN;
@@ -47,7 +48,10 @@ export function framing(p: Project): Member[] {
     for (const w of lv.walls) out.push(...wallFrame({ ...w, height: frameH(w) }, lv.openings.filter((o) => o.wallId === w.id), e, onSlab, isExterior(w, 0, lv.walls)));
     // sobre la doble solera: el piso de la planta de arriba o, en la última planta, los ceiling joists
     const ceil = above ? [] : ceilingSystem(lv, e, frameH);
-    out.push(...(above ? floorSystem(lv, zb, D) : ceil));
+    // el piso de arriba deja el hueco de la escalera (y los huecos de su losa) con brochales y viguetas dobles
+    const holes = above ? [...lv.stairs.map((s) => stairGeom(s).outline), ...above.slabs.flatMap((sl) => sl.holes)] : [];
+    out.push(...(above ? floorSystem(lv, zb, D, holes) : ceil));
+    for (const s of lv.stairs) out.push(...stairFrame(s, e));
     // en los hastiales, los montantes arrancan sobre el rim joist del techo
     const rimH = Math.max(0, ...ceil.filter((m) => m.kind === "rim").map((m) => m.h));
     for (const r of lv.roofs) out.push(...roofFrame(r, e, lv.walls, rimH));
@@ -261,4 +265,60 @@ export function framingTakeoff(ms: Member[]) {
     r.count++; r.length += L; t.set(k, r);
   }
   return [...t.values()];
+}
+
+/**
+ * Escalera de madera: tres zancas de 2x12 por tramo (dos si es angosta), huellas de 2x12 con 1" de vuelo,
+ * contrahuellas de 1x8 y, en cada descanso, plataforma de 2x8 sobre postes de 4x4 con su tablero.
+ * El caracol: poste central y peldaños volados.
+ */
+export function stairFrame(s: Stair, e: number): Member[] {
+  const out: Member[] = [], fs = stairFlights(s), RISER = 0.75 * IN, NOSE = 1 * IN, SH = 11.25 * IN;
+  if (!fs) {
+    const g = stairGeom(s), c = { x: s.x1, y: s.y1 };
+    out.push({ kind: "stringer", a: { ...c, z: e }, b: { ...c, z: e + s.height }, w: POST_R * 2, h: POST_R * 2, along: { x: 1, y: 0 }, size: "STEEL POST" });
+    for (const pc of g.pieces.filter((p) => p.part === "step")) {
+      // de la cara del poste al borde, por la mitad del peldaño
+      const far = pc.pts.reduce((m, p) => (Math.hypot(p.x - c.x, p.y - c.y) > Math.hypot(m.x - c.x, m.y - c.y) ? p : m), pc.pts[0]);
+      const mid = { x: pc.pts.reduce((t, p) => t + p.x, 0) / pc.pts.length, y: pc.pts.reduce((t, p) => t + p.y, 0) / pc.pts.length };
+      const ang = Math.atan2(mid.y - c.y, mid.x - c.x), R = Math.hypot(far.x - c.x, far.y - c.y), at = (r: number) => ({ x: c.x + Math.cos(ang) * r, y: c.y + Math.sin(ang) * r });
+      const wd = Math.max(0.15, (pc.pts.length > 2 ? Math.hypot(pc.pts[1].x - pc.pts[pc.pts.length - 1].x, pc.pts[1].y - pc.pts[pc.pts.length - 1].y) : 0.2) * 0.6);
+      out.push({ kind: "tread", a: { ...at(POST_R), z: e + pc.z - T / 2 }, b: { ...at(R), z: e + pc.z - T / 2 }, w: wd, h: T, size: "2x12 TREAD" });
+    }
+    return out;
+  }
+  const add = (p: { x: number; y: number }, q: { x: number; y: number }, k: number) => ({ x: p.x + q.x * k, y: p.y + q.y * k });
+  for (const f of fs.flights) {
+    if (f.k < 1) continue;
+    const base = e + f.i0 * f.r, th = Math.atan2(f.r, f.t), off = SH / 2 / Math.cos(th);
+    for (let j = 0; j < f.k; j++) {
+      const zt = base + (j + 1) * f.r;
+      out.push({ kind: "tread", a: { ...add(f.a, f.u, j * f.t - NOSE), z: zt - T / 2 }, b: { ...add(f.a, f.u, (j + 1) * f.t), z: zt - T / 2 }, w: f.w, h: T, size: "2x12 TREAD" });
+      const rc = add(f.a, f.u, j * f.t + RISER / 2), zr = base + j * f.r + (f.r - T) / 2;
+      out.push({ kind: "tread", a: { ...add(rc, f.v, -f.w / 2), z: zr }, b: { ...add(rc, f.v, f.w / 2), z: zr }, w: RISER, h: f.r - T, size: "1x8 RISER" });
+    }
+    // eje de la zanca: su canto superior toca la cara inferior de las huellas por detrás; arranca apoyada en el piso
+    const zc = (x: number) => base + (x * f.r) / f.t - T - off, s0 = ((T + off) * f.t) / f.r, s1 = f.k * f.t;
+    if (s1 <= s0) continue;
+    const cs = f.w > 0.9 ? [-f.w / 2 + T / 2, 0, f.w / 2 - T / 2] : [-f.w / 2 + T / 2, f.w / 2 - T / 2];
+    for (const c of cs) {
+      const p0 = add(add(f.a, f.v, c), f.u, s0), p1 = add(add(f.a, f.v, c), f.u, s1);
+      out.push({ kind: "stringer", a: { ...p0, z: zc(s0) }, b: { ...p1, z: zc(s1) }, w: T, h: SH, size: "2x12" });
+    }
+  }
+  for (const l of fs.landings) {
+    const top = e + l.z, J = 7.25 * IN, z = top - 0.75 * IN - J / 2, hu = l.lu / 2, hv = l.lv / 2;
+    const corner = (i: number, j: number, k = 0) => add(add(l.c, l.u, i * (hu - k)), l.v, j * (hv - k));
+    out.push({ kind: "tread", a: { ...add(l.c, l.u, -hu), z: top - 0.375 * IN }, b: { ...add(l.c, l.u, hu), z: top - 0.375 * IN }, w: l.lv, h: 0.75 * IN, size: '3/4" PLYWOOD' });
+    // marco perimetral y viguetas a 16" en la dirección de u
+    for (const j of [-1, 1]) out.push({ kind: "stringer", a: { ...corner(-1, j, T / 2), z }, b: { ...corner(1, j, T / 2), z }, w: T, h: J, size: "2x8" });
+    for (const i of [-1, 1]) out.push({ kind: "stringer", a: { ...corner(i, -1, T / 2), z }, b: { ...corner(i, 1, T / 2), z }, w: T, h: J, size: "2x8" });
+    const nj = Math.floor((l.lv - T) / (16 * IN));
+    for (let q = 1; q <= nj; q++) { const v = -hv + (q * l.lv) / (nj + 1); out.push({ kind: "stringer", a: { ...add(add(l.c, l.u, -hu + T), l.v, v), z }, b: { ...add(add(l.c, l.u, hu - T), l.v, v), z }, w: T, h: J, size: "2x8" }); }
+    for (const [i, j] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) {
+      const p = corner(i, j, 1.75 * IN + T);
+      out.push({ kind: "stringer", a: { ...p, z: e }, b: { ...p, z: z - J / 2 }, w: 3.5 * IN, h: 3.5 * IN, along: l.u, size: "4x4 POST" });
+    }
+  }
+  return out;
 }
