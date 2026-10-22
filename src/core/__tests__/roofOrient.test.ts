@@ -61,6 +61,20 @@ describe("orientación de la cubierta", () => {
     expect(ed.roofOrient()).toEqual({ drain: 3 });
   });
 
+  it("con cumbrera automática la dirección no salta al estirar el rectángulo hasta la otra esquina", () => {
+    const ed = new Editor();
+    ed.defaults.roofKind = "gable"; ed.defaults.roofDir = "auto";
+    ed.setTool("roof");
+    ed.runCommand("0,0");
+    ed.mouse = { x: 6, y: -0.5, in: true };
+    expect(ed.roofOrient()).toEqual({ dir: "x" });
+    // ahora el lado vertical es más largo, pero la cumbrera sigue horizontal
+    ed.mouse = { x: 6, y: -9, in: true };
+    expect(ed.roofOrient()).toEqual({ dir: "x" });
+    ed.runCommand("6,9");
+    expect(ed.model.roofs[ed.model.roofs.length - 1].dir).toBe("x");
+  });
+
   it("entramado de la de un agua: cabios de alero a alero, sin cumbrera ni tirantes", () => {
     const p = sampleProject(), r = p.levels[0].roofs[0];
     r.kind = "shed"; r.drain = 2; r.pitch = 10; delete r.dormers;
