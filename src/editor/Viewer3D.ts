@@ -510,6 +510,22 @@ export class Viewer3D {
           bar({ ...wall, z: gz - 0.3 }, { ...wall, z: gl - base }, 0.075, 0, this.mat.gutter, true);
         }
       });
+      // buhardillas: los mismos remates en su techito, con un canalón corto en los aleros que vierte al faldón
+      for (const dm of r.dormers ?? []) {
+        const dg = dormerGeom(r, dm);
+        if (!dg) continue;
+        polys(dg.roof.map((f) => f.map((q) => ({ ...q, z: q.z - lift })).reverse()), sel ? this.mat.roofSel : this.mat.soffit);
+        const pts = dg.roof.flat(), cx = pts.reduce((s, q) => s + q.x, 0) / pts.length, cy = pts.reduce((s, q) => s + q.y, 0) / pts.length;
+        for (const { a, b, eave } of dg.edges) {
+          const L = Math.hypot(b.x - a.x, b.y - a.y) || 1, mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
+          let n = { x: (b.y - a.y) / L, y: -(b.x - a.x) / L };
+          if (n.x * (mx - cx) + n.y * (my - cy) < 0) n = { x: -n.x, y: -n.y };
+          const o = (q: P3, dz: number, k = out) => ({ x: q.x + n.x * k, y: q.y + n.y * k, z: q.z + dz });
+          polys([[o(a, 0.01), o(b, 0.01), o(b, -fh), o(a, -fh)]], trim);
+          if (eave) bar(o(a, -0.08, out + 0.06), o(b, -0.08, out + 0.06), 0.1, 0.09, sel ? this.mat.roofSel : this.mat.gutter);
+        }
+        if (dg.ridge) bar(dg.ridge[0], dg.ridge[1], rf?.style === "barrel" ? 0.18 : 0.12, 0, sel ? this.mat.roofSel : this.mepMat(rf ? shade(rf.color, -0.12) : "#8e4a33"), true);
+      }
       // caballete: piezas redondas sobre la cumbrera y las limatesas, del color de la cubierta
       const zAt = (q: Pt) => Math.max(...g.faces.flat().filter((v) => Math.hypot(v.x - q.x, v.y - q.y) < eps).map((v) => v.z));
       const cap = sel ? this.mat.roofSel : this.mepMat(rf ? shade(rf.color, -0.12) : "#8e4a33");
@@ -570,11 +586,13 @@ export class Viewer3D {
         roofTrim(r, g, rf, isSel("roof", r.id));
         // cada hastial con el revestimiento del muro sobre el que se levanta
         for (const f of g.gables) { const fin = finish(gableWall(m.walls, f)?.finish); polys([f], fin ? this.finishMat(fin) : this.mat.gable); }
+        // las buhardillas se forran con el revestimiento de la casa (el del hastial, o el de cualquier muro que lo lleve)
+        const siding = g.gables.map((f) => finish(gableWall(m.walls, f)?.finish)).find(Boolean) ?? m.walls.map((w) => finish(w.finish)).find(Boolean);
         for (const dm of r.dormers ?? []) {
           const dg = dormerGeom(r, dm);
           if (!dg) continue;
           polys(dg.roof, isSel("roof", r.id) ? this.mat.roofSel : rf ? this.finishMat(rf) : this.mat.roof);
-          polys(dg.walls, this.mat.gable);
+          polys(dg.walls, siding ? this.finishMat(siding) : this.mat.gable);
           polys(dg.frames, this.mat.frame);
           polys(dg.glass, this.mat.glass);
         }
