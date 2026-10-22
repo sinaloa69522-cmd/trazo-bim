@@ -137,3 +137,33 @@ export function stairSteps(s: Stair) {
   const g = stairGeom(s);
   return { n: g.n, L: g.L, tread: g.tread, riser: g.riser };
 }
+
+/** Tramo de una escalera: arranque (centro del primer peldaño, a nivel), sentido de subida u, ancho, huella y peldaños. */
+export interface Flight { a: Pt; u: Pt; v: Pt; w: number; t: number; r: number; i0: number; k: number }
+/** Descanso: centro, ejes y medidas a lo largo de u y v, y cota de su cara superior. */
+export interface Landing { c: Pt; u: Pt; v: Pt; lu: number; lv: number; z: number }
+
+/**
+ * Tramos y descansos de una escalera (las mismas medidas que stairGeom), para la estructura de madera:
+ * zancas bajo cada tramo y plataforma en cada descanso. El caracol no tiene tramos rectos: null.
+ */
+export function stairFlights(s: Stair): { flights: Flight[]; landings: Landing[] } | null {
+  const kind = s.kind ?? "recta", sg = s.turn ?? 1, w = s.width, h = w / 2;
+  if (kind === "caracol") return null;
+  const L0 = Math.hypot(s.x2 - s.x1, s.y2 - s.y1), g = stairGeom(s), n = g.n, r = g.riser;
+  const P = (a: number, b: number) => loc(s, a, b * sg);
+  const o = P(0, 0), U = { x: P(1, 0).x - o.x, y: P(1, 0).y - o.y }, V = { x: P(0, 1).x - o.x, y: P(0, 1).y - o.y };
+  const neg = (p: Pt) => ({ x: -p.x, y: -p.y });
+  const fl = (a: Pt, u: Pt, v: Pt, t: number, i0: number, k: number): Flight => ({ a, u, v, w, t, r, i0, k });
+  const land = (a0: number, a1: number, b0: number, b1: number, i: number): Landing => ({ c: P((a0 + a1) / 2, (b0 + b1) / 2), u: U, v: V, lu: a1 - a0, lv: b1 - b0, z: (i + 1) * r });
+  if (kind === "recta" || L0 < w * 1.2) return { flights: [fl(o, U, V, g.tread, 0, n)], landings: [] };
+  const D = w, a = kind === "U" ? Math.ceil((n - 1) / 2) : Math.round((n - 1) / 2), b = n - 1 - a;
+  if (kind === "descanso") {
+    const t = (L0 - D) / (n - 1);
+    return { flights: [fl(o, U, V, t, 0, a), fl(P(a * t + D, 0), U, V, t, a + 1, b)], landings: [land(a * t, a * t + D, -h, h, a)] };
+  }
+  const t = (L0 - D) / a, e = a * t;
+  if (kind === "L") return { flights: [fl(o, U, V, t, 0, a), fl(P(e + h, h), V, neg(U), t, a + 1, b)], landings: [land(e, e + D, -h, h, a)] };
+  const off = w + GAP, t2 = b ? e / b : t;
+  return { flights: [fl(o, U, V, t, 0, a), fl(P(e, off), neg(U), neg(V), t2, a + 1, b)], landings: [land(e, e + D, -h, off + h, a)] };
+}
