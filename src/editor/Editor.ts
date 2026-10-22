@@ -1098,8 +1098,22 @@ export class Editor {
   /** Orientación elegida para la cubierta nueva: lado de caída (de un agua) o dirección de la cumbrera. */
   roofOrient(): Pick<Roof, "dir" | "drain"> {
     const d = this.defaults;
-    return d.roofKind === "shed" ? { drain: d.roofDrain } : d.roofDir !== "auto" && d.roofKind !== "flat" ? { dir: d.roofDir } : {};
+    if (d.roofKind === "shed") return { drain: d.roofDrain };
+    if (d.roofKind === "flat") return {};
+    if (d.roofDir !== "auto") return { dir: d.roofDir };
+    // automática: la dirección larga se fija la primera vez que el rectángulo pasa de 1 m, para que no salte
+    // de un lado a otro mientras se estira hasta la otra esquina
+    const a = this.draft?.pts[0];
+    if (!a) return {};
+    if (this.roofLock?.draft !== this.draft) {
+      const p = this.snap ?? this.mouse, dx = Math.abs(p.x - a.x), dy = Math.abs(p.y - a.y);
+      if (Math.max(dx, dy) < 1) return { dir: dx >= dy ? "x" : "y" };
+      this.roofLock = { draft: this.draft!, dir: dx >= dy ? "x" : "y" };
+    }
+    return { dir: this.roofLock.dir };
   }
+  /** Dirección de la cumbrera fijada para el rectángulo que se está dibujando (cumbrera automática). */
+  private roofLock: { draft: object; dir: "x" | "y" } | null = null;
   /** G durante el dibujo de la cubierta: gira la cumbrera 90° o pasa la caída del agua al lado siguiente. */
   rotateRoofPreview() {
     const d = this.defaults;
@@ -1108,9 +1122,7 @@ export class Editor {
       d.roofDrain = ((d.roofDrain + 1) % 4) as 0 | 1 | 2 | 3;
       this.log(`El agua cae hacia ${DRAIN_LABEL[d.roofDrain].toLowerCase()}.`);
     } else {
-      const a = this.draft?.pts[0], p = this.snap ?? this.mouse;
-      const cur = d.roofDir !== "auto" ? d.roofDir === "x" : a ? Math.abs(p.x - a.x) >= Math.abs(p.y - a.y) : true;
-      d.roofDir = cur ? "y" : "x";
+      d.roofDir = this.roofOrient().dir === "y" ? "x" : "y";
       this.log(`Cumbrera ${d.roofDir === "x" ? "horizontal" : "vertical"}.`);
     }
     this.emit();
