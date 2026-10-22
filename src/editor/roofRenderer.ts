@@ -1,8 +1,11 @@
-// Planta de azotea del juego en metros: losa con sus huecos (cubo de escalera), pretil con su chaflán,
-// pendientes hacia las gárgolas, niveles y cotas, en tinta negra sobre la planta del nivel apagada.
-import { parapet, roofGeom, type Pt } from "../core/geometry";
-import { roofSummary } from "../core/roofPlan";
-import { fmtDim, fmtElev } from "../core/units";
+// Planta de techos del juego en metros: la azotea con sus huecos (cubo de escalera), pretil con su chaflán y
+// pendientes hacia las gárgolas, y las cubiertas inclinadas con cumbreras, buhardillas, pendientes, canalones y
+// bajadas, con niveles y cotas, en tinta negra sobre la planta del nivel apagada.
+import { parapet, roofAlongX, roofGeom, roofSlopes, type Pt } from "../core/geometry";
+import { pitchedSummary, roofSummary } from "../core/roofPlan";
+import { dormerGeom } from "../core/dormers";
+import type { Level, Roof } from "../core/model";
+import { fmtDim, fmtElev, imperial } from "../core/units";
 import type { Editor } from "./Editor";
 import { callout, dimension, label, poly } from "./permitRenderer";
 
@@ -36,6 +39,66 @@ function levelMark(ctx: CanvasRenderingContext2D, ed: Editor, at: Pt, text: stri
   label(ctx, text, s.x + 6, s.y - 11, 7, "left");
 }
 
+const t = (es: string, en: string) => (imperial() ? en : es);
+const KIND = { gable: ["A DOS AGUAS", "GABLE ROOF"], hip: ["A CUATRO AGUAS", "HIP ROOF"], shed: ["DE UN AGUA", "SHED ROOF"] } as const;
+
+/**
+ * Cubierta inclinada en la planta de techos: paño del muro a trazos bajo el alero, cumbrera y limatesas, buhardillas,
+ * flechas de pendiente con su valor, canalones (doble línea por fuera del alero) y bajadas pluviales, niveles de alero
+ * y cumbrera, el vuelo acotado y el material.
+ */
+function drawPitched(ctx: CanvasRenderingContext2D, ed: Editor, lv: Level, r: Roof) {
+  const g = roofGeom(r), sum = pitchedSummary(lv, r), [o0, , o2] = g.outline, sc = ed.view.scale;
+  // paño exterior de los muros bajo el vuelo
+  const wl = rect(Math.min(r.x1, r.x2), Math.min(r.y1, r.y2), Math.max(r.x1, r.x2), Math.max(r.y1, r.y2));
+  ctx.setLineDash([6, 3]); poly(ctx, ed, wl); ctx.lineWidth = 0.6; ctx.strokeStyle = INK; ctx.stroke(); ctx.setLineDash([]);
+  // cumbrera y limatesas
+  ctx.lineWidth = 1.1;
+  for (const [a, b] of g.ridges) { poly(ctx, ed, [a, b], false); ctx.stroke(); }
+  // buhardillas: su techito y la línea del frente
+  for (const dm of r.dormers ?? []) {
+    const dg = dormerGeom(r, dm);
+    if (!dg) continue;
+    ctx.beginPath(); ring(ctx, ed, dg.outline); ctx.fillStyle = "#fff"; ctx.fill(); ctx.lineWidth = 0.9; ctx.stroke();
+    ctx.lineWidth = 0.6;
+    for (const [a, b] of dg.lines) { poly(ctx, ed, [a, b], false); ctx.stroke(); }
+  }
+  // canalón: doble línea 12 cm por fuera del alero
+  for (const [a, b] of sum.gutters) {
+    const L = Math.hypot(b.x - a.x, b.y - a.y) || 1, mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2, cx = (o0.x + o2.x) / 2, cy = (o0.y + o2.y) / 2;
+    let n = { x: (b.y - a.y) / L, y: -(b.x - a.x) / L };
+    if (n.x * (mx - cx) + n.y * (my - cy) < 0) n = { x: -n.x, y: -n.y };
+    for (const k of [0.02, 0.14]) { poly(ctx, ed, [{ x: a.x + n.x * k, y: a.y + n.y * k }, { x: b.x + n.x * k, y: b.y + n.y * k }], false); ctx.lineWidth = 0.45; ctx.stroke(); }
+  }
+  // bajadas pluviales: círculo con cruz
+  sum.downspouts.forEach((p) => {
+    const s = ed.toS(p.x, p.y), rr = Math.max(2.5, 0.05 * sc);
+    ctx.beginPath(); ctx.arc(s.x, s.y, rr, 0, Math.PI * 2); ctx.fillStyle = "#fff"; ctx.fill(); ctx.lineWidth = 0.6; ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(s.x - rr, s.y); ctx.lineTo(s.x + rr, s.y); ctx.moveTo(s.x, s.y - rr); ctx.lineTo(s.x, s.y + rr); ctx.lineWidth = 0.4; ctx.stroke();
+  });
+  if (sum.downspouts.length) callout(ctx, ed, sum.downspouts[0], -22, -16, t("B.A.P. Ø 3\" (bajada pluvial)", "3\" DOWNSPOUT"));
+  // pendientes: flecha hacia el alero con su valor
+  const ptxt = t(`P = ${Math.round(r.pitch)}° (${sum.pct} %)`, `${sum.ratio} PITCH`);
+  for (const [a, b] of roofSlopes(r)) slopeArrow(ctx, ed, a, b, ptxt);
+  // rótulo: tipo y material, a un cuarto del largo en el faldón sin buhardillas (las flechas van al centro)
+  const along = roofAlongX(r), side = (r.dormers ?? []).some((dm) => dm.side === 0) && !(r.dormers ?? []).some((dm) => dm.side === 1) ? 1 : 0;
+  const lx = along ? o0.x + (o2.x - o0.x) * 0.28 : o0.x + (o2.x - o0.x) * (side ? 0.72 : 0.28);
+  const ly = along ? o0.y + (o2.y - o0.y) * (side ? 0.72 : 0.28) : o0.y + (o2.y - o0.y) * 0.28;
+  const c = ed.toS(lx, ly), kind = KIND[r.kind as keyof typeof KIND];
+  label(ctx, t(`CUBIERTA ${kind[0]}`, kind[1]), c.x, c.y, 8);
+  if (sum.finish) label(ctx, sum.finish.toUpperCase(), c.x, c.y + 11, 7);
+  // niveles: cumbrera (o borde alto) y alero
+  const top = g.ridges[0] ? { x: (g.ridges[0][0].x + g.ridges[0][1].x) / 2, y: (g.ridges[0][0].y + g.ridges[0][1].y) / 2 } : null;
+  if (top) levelMark(ctx, ed, { x: top.x + (along ? 1.2 : 0), y: top.y + (along ? 0 : 1.2) }, `${t("N.C.", "RIDGE")} ${fmtElev(sum.ridge)}`);
+  else levelMark(ctx, ed, { x: (o0.x + o2.x) / 2 + 1, y: (o0.y + o2.y) / 2 - 0.8 }, `${t("N. ALTO", "HIGH")} ${fmtElev(sum.ridge)}`);
+  if (sum.gutters[0]) { const [a, b] = sum.gutters[0]; levelMark(ctx, ed, { x: a.x + (b.x - a.x) * 0.72, y: a.y + (b.y - a.y) * 0.72 }, `${t("N.A.", "EAVE")} ${fmtElev(sum.eave)}`); }
+  // vuelo del alero acotado en la esquina de arriba a la derecha
+  if (r.overhang > 0.05) {
+    dimension(ctx, ed, { x: wl[1].x, y: o0.y }, { x: o2.x, y: o0.y }, 14, fmtDim(r.overhang));
+    dimension(ctx, ed, { x: o2.x, y: o0.y }, { x: o2.x, y: wl[1].y }, 14, fmtDim(r.overhang));
+  }
+}
+
 /** Recorta lo que se dibuje después a las cubiertas del nivel activo: en la planta de azotea no se ve nada fuera de ellas. */
 export function clipToRoofs(ctx: CanvasRenderingContext2D, ed: Editor) {
   const rs = ed.project.levels[ed.active].roofs;
@@ -50,7 +113,7 @@ export function drawRoofPlan(ctx: CanvasRenderingContext2D, ed: Editor, W: numbe
   const lv = ed.project.levels[ed.active];
   ctx.save();
   if (!lv.roofs.length) {
-    label(ctx, "Este nivel no tiene azotea. Dibuja una cubierta plana con la herramienta Cubierta y vuelve a esta lámina.", W / 2, H / 2, 11);
+    label(ctx, "Este nivel no tiene cubierta. Dibuja una con la herramienta Cubierta y vuelve a esta lámina.", W / 2, H / 2, 11);
     ctx.restore();
     return;
   }
@@ -61,12 +124,7 @@ export function drawRoofPlan(ctx: CanvasRenderingContext2D, ed: Editor, W: numbe
     ctx.fillStyle = "rgba(255,255,255,0.8)"; ctx.fill("evenodd");
     poly(ctx, ed, g.outline); ctx.lineWidth = 1.3; ctx.strokeStyle = INK; ctx.stroke();
 
-    if (r.kind !== "flat") {
-      ctx.lineWidth = 0.8;
-      for (const [a, b] of g.ridges) { poly(ctx, ed, [a, b], false); ctx.stroke(); }
-      const c = ed.toS((o0.x + o2.x) / 2, (o0.y + o2.y) / 2);
-      label(ctx, `CUBIERTA ${r.kind === "gable" ? "A DOS AGUAS" : r.kind === "shed" ? "DE UN AGUA" : "A CUATRO AGUAS"}  ${r.pitch}°`, c.x, c.y + 14, 8);
-    }
+    if (r.kind !== "flat") drawPitched(ctx, ed, lv, r);
 
     const pp = parapet(r);
     if (pp) {
