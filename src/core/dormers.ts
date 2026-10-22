@@ -69,6 +69,10 @@ export interface DormerGeom {
   /** Contorno en planta y aristas (cumbrera y limahoyas) */
   outline: Pt[];
   lines: [Pt, Pt][];
+  /** Bordes libres del techo por su cara superior: aleros (horizontales, con canalón) y bordes inclinados del frente */
+  edges: { a: P3; b: P3; eave: boolean }[];
+  /** Cumbrera del techito a dos aguas, por su cara superior */
+  ridge: [P3, P3] | null;
 }
 
 /** Geometría de la buhardilla, o null si no cabe en el faldón (pendiente baja, demasiado alta o fuera de él). */
@@ -86,8 +90,8 @@ export function dormerGeom(r: Roof, d: Dormer): DormerGeom | null {
   const at = (z: number) => (z - base - lift) / tan;
   const zf = base + d.set * tan + lift, ze = zf + d.h;
   let tops: number;
-  const roof: P3[][] = [], lines: [Pt, Pt][] = [];
-  let outline: Pt[];
+  const roof: P3[][] = [], lines: [Pt, Pt][] = [], edges: DormerGeom["edges"] = [];
+  let outline: Pt[], ridge: [P3, P3] | null = null;
   if (d.kind === "gable") {
     const zr = ze + (d.w / 2) * tan, dr = at(zr), zs = ze - SO * tan, ds = at(zs);
     tops = dr;
@@ -96,6 +100,8 @@ export function dormerGeom(r: Roof, d: Dormer): DormerGeom | null {
     roof.push([a, b, c, e], [b, a2, e2, c]);
     outline = [a, a2, e2, c, e].map(pt);
     lines.push([pt(b), pt(c)], [pt(e), pt(c)], [pt(e2), pt(c)]);
+    edges.push({ a, b, eave: false }, { a: b, b: a2, eave: false }, { a, b: e, eave: true }, { a: a2, b: e2, eave: true });
+    ridge = [b, c];
   } else {
     const ts = tan / 3, dm = d.set + d.h / (tan - ts), zm = ze + (dm - d.set) * ts;
     tops = dm;
@@ -104,6 +110,7 @@ export function dormerGeom(r: Roof, d: Dormer): DormerGeom | null {
     roof.push([a, b, c, e]);
     outline = [a, b, c, e].map(pt);
     lines.push([pt(e), pt(c)]);
+    edges.push({ a, b, eave: true }, { a, b: e, eave: false }, { a: b, b: c, eave: false });
   }
   // cabe si no pasa de la cumbrera ni de los extremos del faldón (en la de cuatro aguas, de las limatesas)
   const reach = tops + 0.15, side = A.hip ? A.o + reach : 0;
@@ -141,7 +148,7 @@ export function dormerGeom(r: Roof, d: Dormer): DormerGeom | null {
     solid([C(t2, zRoof(t2)), C(dTop, zTop(dTop)), C(t2, zTop(t2))], n);
     pane([C(t1, sill), C(t2, sill), C(t2, head), C(t1, head)], n, sw.style);
   }
-  return { roof, walls, glass, styles, frames, outline, lines };
+  return { roof, walls, glass, styles, frames, outline, lines, edges, ridge };
 }
 
 /** Faldón y centro (medido desde el centro de la cubierta) de una buhardilla para el punto p de la planta, o null si p no cae en un faldón largo. */
