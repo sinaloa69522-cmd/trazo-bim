@@ -2,13 +2,13 @@ import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { furnitureSolids, furnitureToPlan } from "../core/furniture";
 import { discOfSystem, mepDef, systemDef } from "../core/mep";
-import { bounds, dir, loc, parapet, pieces, roofGeom, solidPts, wallEnds, type P3, type Pt } from "../core/geometry";
+import { bounds, dir, loc, parapet, pieces, roofAlongX, roofGeom, solidPts, wallEnds, type P3, type Pt, type RoofGeom } from "../core/geometry";
 import { stairGeom } from "../core/stairs";
 import type { Level, Opening, Roof, Wall } from "../core/model";
 import { openingStyle } from "../core/openingStyles";
 import { dormerGeom } from "../core/dormers";
-import { finish, gableWall, outward, roofFinish, type Finish } from "../core/finishes";
-import { finishTile } from "./finishTextures";
+import { finish, gableWall, outward, roofFinish, ROOFINGS, type Finish } from "../core/finishes";
+import { finishTile, shade } from "./finishTextures";
 import { framing, MEMBER_COLOR, type Member } from "../core/framing";
 import { foundation, gradeLevel } from "../core/foundation";
 import { deckBoxes, type Box } from "../core/decks";
@@ -76,6 +76,11 @@ export class Viewer3D {
     /** Remate del pretil y gárgolas: concreto */
     coping: new THREE.MeshStandardMaterial({ color: 0xb9b5ad, roughness: 0.9 }),
     edge: new THREE.LineBasicMaterial({ color: 0x2b3330, transparent: true, opacity: 0.55 }),
+    /** Fascia y plafón del alero: madera pintada de blanco */
+    trim: new THREE.MeshStandardMaterial({ color: 0xf3f1ec, roughness: 0.6, side: THREE.DoubleSide }),
+    soffit: new THREE.MeshStandardMaterial({ color: 0xe4dfd5, roughness: 0.9, side: THREE.DoubleSide }),
+    /** Canalón y bajadas de aluminio color bronce */
+    gutter: new THREE.MeshStandardMaterial({ color: 0x6a5e52, roughness: 0.4, metalness: 0.2 }),
   };
 
   private mepMats = new Map<string, THREE.Material>();
@@ -97,7 +102,9 @@ export class Viewer3D {
       tex.colorSpace = THREE.SRGBColorSpace;
       tex.anisotropy = 4;
       const metal = f.style === "seam" || f.style === "corr" || f.style === "panel";
-      m = new THREE.MeshStandardMaterial({ map: tex, roughness: metal ? 0.45 : 0.9, metalness: metal ? 0.35 : 0, side: THREE.DoubleSide });
+      // las piezas de cubierta tienen relieve: la propia textura hace de mapa de alturas (las juntas oscuras se hunden)
+      const relief = ROOFINGS.some((r) => r.id === f.id) && f.style !== "membrane";
+      m = new THREE.MeshStandardMaterial({ map: tex, roughness: metal ? 0.45 : 0.9, metalness: metal ? 0.35 : 0, side: THREE.DoubleSide, ...(relief ? { bumpMap: tex, bumpScale: metal ? 1.5 : 4 } : {}) });
       this.finMats.set(f.id, m);
     }
     return m;
@@ -453,6 +460,61 @@ export class Viewer3D {
         this.group.add(gg);
       }
     };
+    /** Pieza alargada (canalón, bajada, caballete) de sección w × h entre dos puntos en 3D. */
+    const bar = (a: P3, c: P3, w: number, h: number, mat: THREE.Material, round = false) => {
+      const A = new THREE.Vector3(a.x, base + a.z, a.y), C = new THREE.Vector3(c.x, base + c.z, c.y), L = A.distanceTo(C);
+      if (L < 1e-3) return;
+      const g = round ? new THREE.CylinderGeometry(w / 2, w / 2, L, 12) : new THREE.BoxGeometry(w, L, h);
+      const mesh = new THREE.Mesh(g, mat);
+      mesh.position.copy(A).add(C).multiplyScalar(0.5);
+      mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), C.clone().sub(A).normalize());
+      mesh.castShadow = true;
+      this.group.add(mesh);
+    };
+    /**
+     * Remates de una cubierta inclinada: espesor del faldón con su plafón por debajo, fascia blanca en aleros y
+     * bordes de los hastiales, caballete sobre la cumbrera y las limatesas, y canalón con bajadas en los aleros.
+     */
+    const roofTrim = (r: Roof, g: RoofGeom, rf: Finish | undefined, sel: boolean) => {
+      const [o0, , o2] = g.outline, eps = 1e-3, lift = r.thick / Math.cos((Math.max(0, Math.min(75, r.pitch)) * Math.PI) / 180);
+      // lado del contorno en el que queda el borde a–b (0 arriba, 1 derecha, 2 abajo, 3 izquierda), o −1 si es interior
+      const on = (q: Pt) => [Math.abs(q.y - o0.y) < eps, Math.abs(q.x - o2.x) < eps, Math.abs(q.y - o2.y) < eps, Math.abs(q.x - o0.x) < eps];
+      const side = (a: Pt, b: Pt) => { const A = on(a), B = on(b); return A.findIndex((v, i) => v && B[i]); };
+      const N = [{ x: 0, y: -1 }, { x: 1, y: 0 }, { x: 0, y: 1 }, { x: -1, y: 0 }];
+      const trim = sel ? this.mat.roofSel : this.mat.trim;
+      // plafón: la cara inferior del faldón
+      polys(g.faces.map((f) => f.map((q) => ({ ...q, z: q.z - lift })).reverse()), sel ? this.mat.roofSel : this.mat.soffit);
+      const fh = lift + 0.1, out = 0.02, spouts = new Map<string, P3>();
+      for (const f of g.faces) f.forEach((a, i) => {
+        const b = f[(i + 1) % f.length], sa = side(a, b);
+        if (sa < 0) return;
+        const n = N[sa], o = (q: P3, dz: number) => ({ x: q.x + n.x * out, y: q.y + n.y * out, z: q.z + dz });
+        // fascia: tabla vertical en el borde, del canto superior del faldón a 10 cm bajo el inferior
+        polys([[o(a, 0.01), o(b, 0.01), o(b, -fh), o(a, -fh)]], trim);
+        if (Math.abs(a.z - b.z) > 0.02 || a.z > Math.min(...f.map((q) => q.z)) + 0.02) return;
+        // alero horizontal: canalón por fuera de la fascia, con su bajada en cada extremo hasta el terreno
+        const k = 0.07, gz = a.z - 0.08, ga = { x: a.x + n.x * (out + k), y: a.y + n.y * (out + k), z: gz }, gb = { x: b.x + n.x * (out + k), y: b.y + n.y * (out + k), z: gz };
+        bar(ga, gb, 0.12, 0.11, sel ? this.mat.roofSel : this.mat.gutter);
+        const L = Math.hypot(gb.x - ga.x, gb.y - ga.y);
+        // las bajadas van en los aleros paralelos a la cumbrera (en la de cuatro aguas, no en las cabezas)
+        if (L < 1 || (sa % 2 === 0) !== roofAlongX(r)) return;
+        for (const [p, q] of [[ga, gb], [gb, ga]]) {
+          // cerca de la esquina de la casa, un poco dentro del paño del muro de al lado
+          const t = { x: (q.x - p.x) / L, y: (q.y - p.y) / L }, d = r.overhang + 0.3, back = r.overhang + out + k - 0.2;
+          const top = { x: p.x + t.x * d, y: p.y + t.y * d }, wall = { x: top.x - n.x * back, y: top.y - n.y * back };
+          const key = `${Math.round(wall.x * 4)},${Math.round(wall.y * 4)}`;
+          if (spouts.has(key)) continue;
+          spouts.set(key, { ...wall, z: gz });
+          // codo del canalón al muro y bajada pegada a él
+          bar({ ...top, z: gz - 0.04 }, { ...wall, z: gz - 0.3 }, 0.075, 0, this.mat.gutter, true);
+          bar({ ...wall, z: gz - 0.3 }, { ...wall, z: gl - base }, 0.075, 0, this.mat.gutter, true);
+        }
+      });
+      // caballete: piezas redondas sobre la cumbrera y las limatesas, del color de la cubierta
+      const zAt = (q: Pt) => Math.max(...g.faces.flat().filter((v) => Math.hypot(v.x - q.x, v.y - q.y) < eps).map((v) => v.z));
+      const cap = sel ? this.mat.roofSel : this.mepMat(rf ? shade(rf.color, -0.12) : "#8e4a33");
+      for (const [a, b] of g.ridges) bar({ ...a, z: zAt(a) }, { ...b, z: zAt(b) }, rf?.style === "barrel" ? 0.22 : 0.14, 0, cap, true);
+    };
     const b = projectBounds(this.ed);
     const real = this.realistic && !this.ed.framing, gl = gradeLevel(project), cx = (b.x0 + b.x1) / 2, cz = (b.y0 + b.y1) / 2;
     const floor = new THREE.Mesh(new THREE.BoxGeometry(b.x1 - b.x0, 0.1, b.y1 - b.y0), real ? pavingMaterial(this.ren, b.x1 - b.x0, b.y1 - b.y0) : this.mat.floor);
@@ -505,6 +567,7 @@ export class Viewer3D {
         const g = roofGeom(r);
         const rf = roofFinish(r);
         polys(g.faces, isSel("roof", r.id) ? this.mat.roofSel : rf ? this.finishMat(rf) : this.mat.roof);
+        roofTrim(r, g, rf, isSel("roof", r.id));
         // cada hastial con el revestimiento del muro sobre el que se levanta
         for (const f of g.gables) { const fin = finish(gableWall(m.walls, f)?.finish); polys([f], fin ? this.finishMat(fin) : this.mat.gable); }
         for (const dm of r.dormers ?? []) {

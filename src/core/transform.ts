@@ -91,6 +91,15 @@ export function transformElements(m: Model, refs: ElementRef[], t: Xform, copy: 
         }
         // cada buhardilla sigue a su faldón: se lleva el centro de su frente y se vuelve a ubicar
         const ds = r.type === "roof" ? (el.dormers ?? []).map((d: Dormer) => t.map(dormerCenter(el, d))) : [];
+        // la cumbrera y el lado de caída de la cubierta giran (o se reflejan) con ella
+        if (r.type === "roof" && (el.dir || el.drain != null)) {
+          const c = { x: (el.x1 + el.x2) / 2, y: (el.y1 + el.y2) / 2 }, p0 = t.map(c);
+          if (el.dir) { const q = t.map(el.dir === "x" ? { x: c.x + 1, y: c.y } : { x: c.x, y: c.y + 1 }); el.dir = Math.abs(q.x - p0.x) > Math.abs(q.y - p0.y) ? "x" : "y"; }
+          if (el.drain != null) {
+            const [dx, dy] = [[0, -1], [1, 0], [0, 1], [-1, 0]][el.drain], q = t.map({ x: c.x + dx, y: c.y + dy }), ux = q.x - p0.x, uy = q.y - p0.y;
+            el.drain = Math.abs(ux) > Math.abs(uy) ? (ux > 0 ? 1 : 3) : (uy > 0 ? 2 : 0);
+          }
+        }
         el.x1 = Math.min(a.x, b.x); el.y1 = Math.min(a.y, b.y); el.x2 = Math.max(a.x, b.x); el.y2 = Math.max(a.y, b.y);
         ds.forEach((p: Pt, i: number) => { const at = dormerAt(el, p); if (at) Object.assign(el.dormers[i], at); });
       } else {

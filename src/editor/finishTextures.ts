@@ -6,7 +6,7 @@ export interface FinishTile { canvas: HTMLCanvasElement; tw: number; th: number 
 
 const hex = (c: string) => [1, 3, 5].map((i) => parseInt(c.slice(i, i + 2), 16));
 /** Color base aclarado (k > 0) u oscurecido (k < 0). */
-function shade(c: string, k: number) {
+export function shade(c: string, k: number) {
   const v = hex(c).map((x) => Math.round(k >= 0 ? x + (255 - x) * k : x * (1 + k)));
   return `rgb(${v.map((x) => Math.max(0, Math.min(255, x))).join(",")})`;
 }

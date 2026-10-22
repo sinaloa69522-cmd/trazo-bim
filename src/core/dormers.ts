@@ -1,6 +1,6 @@
 // Buhardillas (dormers): frente vertical con ventana, costados triangulares y techo a dos aguas o de un agua
 // que muere en el faldón. Todo en el mismo sistema que roofGeom: z sobre la cota del nivel, cara superior.
-import type { P3, Pt } from "./geometry";
+import { roofAlongX, type P3, type Pt } from "./geometry";
 import type { Dormer, Roof } from "./model";
 
 export const DORMER = { w: 1.4, h: 1.2, set: 0.3, minPitch: 15, wall: 0.1 };
@@ -48,7 +48,7 @@ const FO = 0.15, SO = 0.1;
 export function roofAxes(r: Roof) {
   const o = r.overhang;
   const x0 = Math.min(r.x1, r.x2) - o, x1 = Math.max(r.x1, r.x2) + o, y0 = Math.min(r.y1, r.y2) - o, y1 = Math.max(r.y1, r.y2) + o;
-  const alongX = x1 - x0 >= y1 - y0;
+  const alongX = roofAlongX(r);
   const U0 = alongX ? x0 : y0, U1 = alongX ? x1 : y1, V0 = alongX ? y0 : x0, V1 = alongX ? y1 : x1;
   const tan = Math.tan((Math.max(0, Math.min(75, r.pitch)) * Math.PI) / 180);
   const lift = r.thick / Math.cos(Math.atan(tan));
