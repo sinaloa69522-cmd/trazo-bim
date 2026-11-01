@@ -1,7 +1,7 @@
 import type { SnapKind } from "./snaps";
 import { fmtArea, fmtDim, fmtLen, imperial, FT, IN } from "../core/units";
 import { deckGeom, deckType } from "../core/decks";
-import { dimGeom, dimOffset, dir, loc, pieces, roofGeom, roofSlopes, textBox, type Pt } from "../core/geometry";
+import { dimGeom, dimOffset, dir, loc, pieces, polygonArea, roofGeom, roofSlopes, textBox, type Pt } from "../core/geometry";
 import { dormerGeom } from "../core/dormers";
 import { stairGeom } from "../core/stairs";
 import { drawAxes } from "./mxRenderer";
@@ -343,6 +343,37 @@ export function drawPlan(ctx: CanvasRenderingContext2D, ed: Editor, C: PlanColor
     for (const q of [a, b]) { const s = toS(q.x, q.y); ctx.strokeStyle = C.danger; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.moveTo(s.x - 6, s.y - 6); ctx.lineTo(s.x + 6, s.y + 6); ctx.moveTo(s.x + 6, s.y - 6); ctx.lineTo(s.x - 6, s.y + 6); ctx.stroke(); }
     const mid = toS((a.x + b.x) / 2, (a.y + b.y) / 2);
     ctx.font = MONO; ctx.fillStyle = C.danger; ctx.fillText(fmtLen(Math.hypot(b.x - a.x, b.y - a.y)), mid.x + 8, mid.y - 8);
+  }
+  // medir: tramos con su largo, el tramo vivo hasta el cursor y, cerrada, el área en el centro
+  if (ed.tool === "measure" && (draft?.pts.length || ed.measured)) {
+    const live = !!draft?.pts.length, pts = live ? [...draft!.pts, p] : ed.measured!.pts, closed = !live && ed.measured!.closed;
+    const MC = "#e8590c", tag = (txt: string, at: Pt, bold = false) => {
+      ctx.font = bold ? `bold ${MONO}` : MONO;
+      const w = ctx.measureText(txt).width;
+      ctx.fillStyle = C.panel; ctx.globalAlpha = 0.9; ctx.fillRect(at.x - w / 2 - 4, at.y - 9, w + 8, 16); ctx.globalAlpha = 1;
+      ctx.strokeStyle = MC; ctx.lineWidth = 1; ctx.strokeRect(at.x - w / 2 - 3.5, at.y - 8.5, w + 7, 15);
+      ctx.fillStyle = MC; ctx.textAlign = "center"; ctx.fillText(txt, at.x, at.y + 3); ctx.textAlign = "left";
+    };
+    if (closed) { ctx.globalAlpha = 0.12; poly(pts, MC); ctx.globalAlpha = 1; }
+    const ring = closed ? [...pts, pts[0]] : pts;
+    for (let i = 0; i + 1 < ring.length; i++) seg(ring[i], ring[i + 1], MC, 2, live && i === ring.length - 2 ? [6, 4] : []);
+    for (const q of draft?.pts ?? pts) { const s = toS(q.x, q.y); ctx.fillStyle = MC; ctx.beginPath(); ctx.arc(s.x, s.y, 3.5, 0, Math.PI * 2); ctx.fill(); }
+    for (let i = 0; i + 1 < ring.length; i++) {
+      const a = ring[i], b = ring[i + 1], L = Math.hypot(b.x - a.x, b.y - a.y);
+      if (L * ed.view.scale < 30) continue;
+      const m = toS((a.x + b.x) / 2, (a.y + b.y) / 2), nx = -(b.y - a.y) / L, ny = (b.x - a.x) / L;
+      tag(fmtLen(L), { x: m.x + nx * 14, y: m.y + ny * 14 });
+    }
+    const total = ring.slice(1).reduce((t, q, i) => t + Math.hypot(q.x - ring[i].x, q.y - ring[i].y), 0);
+    if (closed) {
+      const cx = pts.reduce((t, q) => t + q.x, 0) / pts.length, cy = pts.reduce((t, q) => t + q.y, 0) / pts.length, c = toS(cx, cy);
+      tag(`Área ${fmtArea(polygonArea(pts))}`, c, true);
+      tag(`Perímetro ${fmtLen(total)}`, { x: c.x, y: c.y + 20 });
+    } else if (ring.length > 2) {
+      const e = toS(ring[ring.length - 1].x, ring[ring.length - 1].y);
+      tag(`Total ${fmtLen(total)}`, { x: e.x + 60, y: e.y - 22 }, true);
+    }
+    if (live) lengthTag(ctx, ed, C, draft!.pts[draft!.pts.length - 1], p);
   }
   const xfs = ed.previewXforms();
   if (xfs.length && draft) {

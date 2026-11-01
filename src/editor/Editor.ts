@@ -30,7 +30,7 @@ import { deleteElements, reflection, rotation, scaling, screenAngle, transformEl
 /** Centro (promedio de vértices) de un polígono. */
 const centroid = (r: Pt[]) => ({ x: r.reduce((s, q) => s + q.x, 0) / r.length, y: r.reduce((s, q) => s + q.y, 0) / r.length });
 
-export type Tool = "select" | "wall" | "door" | "window" | "line" | "dim" | "room" | "move" | "copy" | "mirror" | "rotate" | "scale" | "array" | "trim" | "extend" | "break" | "offset" | "slab" | "roof" | "dormer" | "stair" | "deck" | "column" | "furniture" | "section" | "hole" | "text" | "mark" | "fixture" | "run" | "calibrate" | "hatch";
+export type Tool = "select" | "wall" | "door" | "window" | "line" | "dim" | "room" | "move" | "copy" | "mirror" | "rotate" | "scale" | "array" | "trim" | "extend" | "break" | "offset" | "slab" | "roof" | "dormer" | "stair" | "deck" | "column" | "furniture" | "section" | "hole" | "text" | "mark" | "fixture" | "run" | "calibrate" | "hatch" | "measure";
 /** Herramientas que actúan pulsando directamente sobre un muro o una línea. */
 const PICK_TOOLS: Tool[] = ["trim", "extend", "break", "offset"];
 /** Herramientas que actúan sobre la selección actual. */
@@ -75,7 +75,10 @@ const COMMANDS: Record<string, Tool> = {
   HL: "hole", HUECO: "hole", TX: "text", TEXTO: "text", SE: "section", SECCION: "section", "SECCIÓN": "section", CORTE: "section",
   SB: "hatch", SOMBREA: "hatch", SOMBREADO: "hatch", RAYADO: "hatch", TRAMA: "hatch",
   TU: "run", TUBERIA: "run", "TUBERÍA": "run", CANALIZACION: "run", "CANALIZACIÓN": "run",
+  MD: "measure", MEDIR: "measure", DIST: "measure", DISTANCIA: "measure", MEASURE: "measure",
 };
+/** Largo de una polilínea. */
+const pathLength = (pts: Pt[]) => pts.slice(1).reduce((s, q, i) => s + Math.hypot(q.x - pts[i].x, q.y - pts[i].y), 0);
 /** Comandos de los símbolos de anotación. */
 const MARK_COMMANDS: Record<string, MarkKind> = {
   NV: "nivel", NIVEL: "nivel", LD: "detalle", LLAMADA: "detalle", DETALLE: "detalle", NT: "nota", NOTA: "nota",
@@ -121,6 +124,8 @@ export class Editor {
   /** La selección cuando hay exactamente un elemento; null si no hay ninguno o hay varios. */
   get sel(): Selection | null { return this.sels.length === 1 ? this.sels[0] : null; }
   set sel(s: Selection | null) { this.sels = s ? [s] : []; }
+  /** Medición terminada que se sigue viendo hasta el siguiente clic (cerrada: con su área). */
+  measured: { pts: Pt[]; closed: boolean } | null = null;
   /** Distancia de desfase (equidistancia) y elemento elegido para desfasar. */
   offsetDist = 1;
   /** Elementos de la matriz (incluido el original) */
@@ -432,6 +437,7 @@ export class Editor {
       case "break": return this.breakFrom
         ? "PARTIR  Segundo punto (se quita el tramo entre los dos) [Enter parte en el primero]:"
         : "PARTIR  Haz clic en el muro o línea, en el primer punto de corte:";
+      case "measure": return n === 0 ? "MEDIR  Primer punto:" : n === 1 ? "MEDIR  Segundo punto (o teclea una distancia):" : "MEDIR  Siguiente punto [Enter termina, clic en el primero cierra y da el área, Esc borra]:";
       case "calibrate": return n === 0 ? "CALIBRAR  Primer punto de una medida conocida:" : n === 1 ? "CALIBRAR  Segundo punto de la medida:" : `CALIBRAR  Mide ${imperial() ? fmtLen(this.calibDist()) : `${this.calibDist().toFixed(3)} m`} en el dibujo. Escribe la medida real${imperial() ? " (12'6\")" : " en metros"} y Enter:`;
       case "offset": return this.offsetTarget
         ? "DESFASE  Haz clic en el lado donde va la copia:"
@@ -498,7 +504,7 @@ export class Editor {
     if (MODIFY_TOOLS.includes(t) && this.sels.every((s) => s.type === "opening")) {
       this.message = "Las puertas y ventanas se mueven con su muro. Selecciona el muro."; t = "select";
     }
-    this.tool = t; this.draft = null; this.openCand = null; this.oneShot = null; this.tracked = []; this.box = null; this.offsetTarget = null; this.breakFrom = null; this.textAt = null; this.noteAt = null;
+    this.tool = t; this.draft = null; this.measured = null; this.openCand = null; this.oneShot = null; this.tracked = []; this.box = null; this.offsetTarget = null; this.breakFrom = null; this.textAt = null; this.noteAt = null;
     if (t === "calibrate") {
       // sin selección, se calibra el único calco del nivel
       if (!this.sels.length && this.model.underlays.length === 1) this.sels = [{ type: "underlay", id: this.model.underlays[0].id }];
@@ -704,6 +710,7 @@ export class Editor {
     const m = this.model;
     this.oneShot = null;
     if (MODIFY_TOOLS.includes(this.tool)) return this.modify(p);
+    if (this.tool === "measure") return this.measurePoint(p);
     if (this.tool === "calibrate") {
       const pts = this.draft?.pts ?? [];
       if (pts.length >= 2) { this.log("Escribe la medida real en metros y pulsa Enter."); return; }
@@ -1375,7 +1382,34 @@ export class Editor {
     return true;
   }
 
+  /** Medir: cada clic añade un punto; el clic en el primero (con tres o más) cierra el contorno y da su área. */
+  measurePoint(p: Pt) {
+    const pts = this.draft?.pts ?? [];
+    if (!pts.length) { this.measured = null; this.draft = { pts: [p] }; this.message = "Marca el siguiente punto."; this.emit(); return; }
+    const last = pts[pts.length - 1];
+    if (Math.hypot(p.x - last.x, p.y - last.y) < 1e-6) return;
+    if (pts.length >= 3 && Math.hypot(p.x - pts[0].x, p.y - pts[0].y) < 1e-6) { this.endMeasure(true); return; }
+    this.draft = { pts: [...pts, p] };
+    const L = Math.hypot(p.x - last.x, p.y - last.y);
+    let ang = (Math.atan2(-(p.y - last.y), p.x - last.x) * 180) / Math.PI;
+    if (ang < 0) ang += 360;
+    this.log(this.draft.pts.length > 2
+      ? `Tramo ${fmtLen(L)} a ${ang.toFixed(0)}° · total ${fmtLen(pathLength(this.draft.pts))}. Enter termina; clic en el primer punto cierra y da el área.`
+      : `Distancia ${fmtLen(L)} · ΔX ${fmtLen(Math.abs(p.x - last.x))} · ΔY ${fmtLen(Math.abs(p.y - last.y))} · ángulo ${ang.toFixed(0)}°. Sigue marcando para sumar tramos o Enter para terminar.`);
+  }
+  /** Termina la medición y deja el resultado a la vista. */
+  endMeasure(closed: boolean) {
+    const pts = this.draft?.pts ?? [];
+    this.draft = null;
+    if (pts.length < 2) { this.measured = null; this.log("Medición cancelada."); return; }
+    closed = closed && pts.length >= 3;
+    this.measured = { pts, closed };
+    const per = pathLength(closed ? [...pts, pts[0]] : pts);
+    this.log(closed ? `Área ${fmtArea(polygonArea(pts))} · perímetro ${fmtLen(per)}.` : pts.length > 2 ? `Longitud total ${fmtLen(per)} en ${pts.length - 1} tramos.` : `Distancia ${fmtLen(per)}.`);
+  }
+
   finishDraft() {
+    if (this.tool === "measure") { this.endMeasure(false); return; }
     if (this.draft && this.tool === "run") { this.finishRun(); return; }
     if (this.draft && this.tool === "calibrate") { this.draft = null; this.setTool("select"); this.log("Calibración cancelada."); return; }
     if (this.draft) { this.draft = null; this.tracked = []; this.log("Comando terminado."); }
@@ -1461,6 +1495,7 @@ export class Editor {
     if (MODIFY_TOOLS.includes(this.tool)) { this.setTool("select"); return; }
     if (this.tool === "offset" && this.offsetTarget) { this.offsetTarget = null; this.emit(); return; }
     if (this.tool === "break" && this.breakFrom) { this.breakFrom = null; this.log("Partir cancelado."); return; }
+    if (this.tool === "measure" && (this.draft || this.measured)) { this.draft = null; this.measured = null; this.log("Medición borrada."); return; }
     if (this.draft) this.finishDraft();
     else if (this.tool !== "select") this.setTool("select");
     else this.select(null);
@@ -1543,7 +1578,7 @@ export class Editor {
       this.arrayN = num; this.log(`Matriz de ${num} elementos.`); return;
     }
     const lengthOk = this.draft?.pts.length &&
-      (["wall", "line", "move", "copy", "mirror", "array", "slab", "stair", "run", "hatch"].includes(this.tool) || (this.tool === "dim" && this.draft.pts.length === 1));
+      (["wall", "line", "move", "copy", "mirror", "array", "slab", "stair", "run", "hatch", "measure"].includes(this.tool) || (this.tool === "dim" && this.draft.pts.length === 1));
     if (Number.isFinite(len) && lengthOk) {
       const L = len, from = this.draft!.pts[this.draft!.pts.length - 1], p = this.snap ?? this.mouse;
       let dx = p.x - from.x, dy = p.y - from.y;

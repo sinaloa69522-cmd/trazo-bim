@@ -24,6 +24,7 @@ const TOOLS: { tool: Tool; label: string; key: string; icon: JSX.Element; disc?:
   { tool: "window", label: "Ventana", key: "V", icon: <><rect x="1.5" y="5.5" width="13" height="5" /><path d="M1.5 8h13" /></> },
   { tool: "line", label: "Línea", key: "L", icon: <path d="M2 14L14 2" /> },
   { tool: "dim", label: "Cota", key: "C", icon: <path d="M2 4v6M14 4v6M2 8h12M4 9.5l-2-1.5 2-1.5M12 6.5l2 1.5-2 1.5" /> },
+  { tool: "measure", label: "Medir (distancia y área)", key: "MD", icon: <><path d="M1.5 10.5l9-9 4 4-9 9z" /><path d="M4 8l1.5 1.5M6 6l1 1M8 4l1.5 1.5" /></> },
   { tool: "room", label: "Habitación", key: "H", icon: <><rect x="2" y="2" width="12" height="12" /><path d="M5 7h6M5 10h4" /></> },
   { tool: "slab", label: "Losa", key: "LO", icon: <path d="M2 6l6-3 6 3-6 3zM2 6v3l6 3 6-3V6" /> },
   { tool: "hatch", label: "Sombreado", key: "SB", icon: <><rect x="2" y="2" width="12" height="12" /><path d="M2 8l6-6M2 14L14 2M8 14l6-6" /></> },
