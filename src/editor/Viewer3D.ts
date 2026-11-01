@@ -15,6 +15,7 @@ import { deckBoxes, type Box } from "../core/decks";
 import type { Editor } from "./Editor";
 import { grass, pavingMaterial, SKY, skyDome, skyEnvironment, tree, treeSpots } from "./scenery";
 import { IN } from "../core/units";
+import { BODY, collide, EYE, floorAt, walkStart } from "./walk";
 
 /** Block de concreto (CMU) de la cimentación: piezas de 16" × 8" a hueso. */
 const CMU: Finish = { id: "cmu-foundation", name: "Block de concreto", en: "CMU", color: "#a9a69e", style: "brick", row: 8 * IN, len: 16 * IN, bond: true, vary: 0.05 };
@@ -253,14 +254,18 @@ export class Viewer3D {
     this.resize();
     this.build();
     this.fit();
+    let last = performance.now();
     const loop = () => {
       this.raf = requestAnimationFrame(loop);
-      if (this.ctl.update() || this.dirty) { this.dirty = false; this.sky.position.copy(this.cam.position); this.ren.render(this.scene, this.cam); }
+      const now = performance.now(), dt = Math.min(0.1, (now - last) / 1000); last = now;
+      if (this.walk) this.walkStep(dt);
+      if ((!this.walk && this.ctl.update()) || this.dirty) { this.dirty = false; this.sky.position.copy(this.cam.position); this.ren.render(this.scene, this.cam); }
     };
     loop();
   }
 
   dispose() {
+    this.stopWalk();
     cancelAnimationFrame(this.raf);
     clearTimeout(this.timer);
     this.unsub();
@@ -679,7 +684,15 @@ export class Viewer3D {
             box(w, a, bb, top, H, w.thick, mat, true, ext);
             if (o.sill > 0) box(w, a, bb, 0, o.sill, w.thick, mat, true, ext);
           }
-          if (o.kind === "door" ? vis.puertas : vis.ventanas) this.carpentry(box, w, o, a, bb, top, om);
+          if (o.kind === "door" ? vis.puertas : vis.ventanas) {
+            const n0 = this.group.children.length;
+            this.carpentry(box, w, o, a, bb, top, om);
+            // en el recorrido las puertas se abren (se ocultan) al acercarse
+            if (o.kind === "door") {
+              const c = loc(w, (a + bb) / 2, 0), tag = { x: c.x, y: c.y, level: li };
+              for (const ch of this.group.children.slice(n0)) ch.userData.door = tag;
+            }
+          }
         }
       }
     });
@@ -700,7 +713,128 @@ export class Viewer3D {
   /** El último encuadre se hizo sin nada que ver en 3D: se vuelve a encuadrar con el primer muro. */
   private fitEmpty = false;
 
+  // ---------- recorrido en primera persona ----------
+  private walk: null | {
+    x: number; y: number; yaw: number; pitch: number; eye: number; level: number;
+    keys: Set<string>; hold: { f: number; s: number; t: number };
+    saved: { pos: THREE.Vector3; target: THREE.Vector3; fov: number; near: number };
+    off: () => void;
+  } = null;
+  /** Aviso a la interfaz cuando el recorrido empieza o termina. */
+  onWalk?: (on: boolean) => void;
+
+  isWalking() { return !!this.walk; }
+
+  /** Entra a la casa a la altura de los ojos: teclas WASD o flechas, arrastrar para mirar, Esc para salir. */
+  startWalk() {
+    if (this.walk) return;
+    const { project, active } = this.ed, lv = project.levels[active], b = projectBounds(this.ed);
+    const st = walkStart(lv, { x: (b.x0 + b.x1) / 2, y: (b.y0 + b.y1) / 2 });
+    const keys = new Set<string>(), el = this.ren.domElement;
+    const MOVE = ["w", "a", "s", "d", "q", "e", "arrowup", "arrowdown", "arrowleft", "arrowright", "shift"];
+    const kd = (e: KeyboardEvent) => {
+      const t = e.target as HTMLElement;
+      if (["INPUT", "TEXTAREA", "SELECT"].includes(t?.tagName)) return;
+      const k = e.key.toLowerCase();
+      if (k === "escape") { e.preventDefault(); e.stopPropagation(); this.stopWalk(); return; }
+      if (MOVE.includes(k)) { e.preventDefault(); e.stopPropagation(); keys.add(k); }
+    };
+    const ku = (e: KeyboardEvent) => keys.delete(e.key.toLowerCase());
+    const blur = () => keys.clear();
+    let drag: { x: number; y: number; id: number } | null = null;
+    const pd = (e: PointerEvent) => { drag = { x: e.clientX, y: e.clientY, id: e.pointerId }; el.setPointerCapture(e.pointerId); };
+    const pm = (e: PointerEvent) => {
+      if (!drag || !this.walk || e.pointerId !== drag.id) return;
+      const w = this.walk, k = 3.2 / Math.max(300, el.clientWidth);
+      w.yaw += (e.clientX - drag.x) * k; w.pitch = Math.max(-1.2, Math.min(1.2, w.pitch - (e.clientY - drag.y) * k));
+      drag = { ...drag, x: e.clientX, y: e.clientY }; this.dirty = true;
+    };
+    const pu = () => { drag = null; };
+    const wh = (e: WheelEvent) => { e.preventDefault(); this.walkBy(-Math.sign(e.deltaY) * 0.5, 0); };
+    window.addEventListener("keydown", kd, true); window.addEventListener("keyup", ku, true); window.addEventListener("blur", blur);
+    el.addEventListener("pointerdown", pd); el.addEventListener("pointermove", pm); el.addEventListener("pointerup", pu); el.addEventListener("pointercancel", pu);
+    el.addEventListener("wheel", wh, { passive: false });
+    const off = () => {
+      window.removeEventListener("keydown", kd, true); window.removeEventListener("keyup", ku, true); window.removeEventListener("blur", blur);
+      el.removeEventListener("pointerdown", pd); el.removeEventListener("pointermove", pm); el.removeEventListener("pointerup", pu); el.removeEventListener("pointercancel", pu);
+      el.removeEventListener("wheel", wh);
+    };
+    const p = collide(lv, st.p), grade = gradeLevel(project);
+    this.walk = {
+      x: p.x, y: p.y, yaw: st.yaw, pitch: -0.05, level: active, keys, hold: { f: 0, s: 0, t: 0 },
+      eye: floorAt(lv, p, grade, active === 0) + EYE,
+      saved: { pos: this.cam.position.clone(), target: this.ctl.target.clone(), fov: this.cam.fov, near: this.cam.near },
+      off,
+    };
+    this.ctl.enabled = false;
+    this.cam.fov = 65; this.cam.near = 0.05; this.cam.updateProjectionMatrix();
+    this.walkCamera();
+    this.onWalk?.(true);
+  }
+
+  stopWalk() {
+    const w = this.walk;
+    if (!w) return;
+    w.off();
+    this.walk = null;
+    this.cam.fov = w.saved.fov; this.cam.near = w.saved.near; this.cam.updateProjectionMatrix();
+    this.cam.position.copy(w.saved.pos); this.ctl.target.copy(w.saved.target);
+    this.ctl.enabled = true; this.ctl.update();
+    for (const ch of this.group.children) if (ch.userData.door) ch.visible = true;
+    this.dirty = true;
+    this.onWalk?.(false);
+  }
+
+  /** Movimiento sostenido desde los botones de la pantalla (f: adelante/atrás, s: lado, t: girar), −1..1. */
+  walkHold(f: number, s: number, t = 0) { if (this.walk) this.walk.hold = { f, s, t }; }
+
+  /** Avanza f metros y se desplaza s metros a la derecha, chocando con los muros. */
+  private walkBy(f: number, s: number) {
+    const w = this.walk;
+    if (!w) return;
+    const lv = this.ed.project.levels[w.level];
+    if (!lv) { this.stopWalk(); return; }
+    const c = Math.cos(w.yaw), sn = Math.sin(w.yaw);
+    // pasos cortos para no atravesar muros delgados
+    const n = Math.max(1, Math.ceil(Math.hypot(f, s) / (BODY * 0.8)));
+    let p = { x: w.x, y: w.y };
+    for (let i = 0; i < n; i++) p = collide(lv, { x: p.x + (c * f - sn * s) / n, y: p.y + (sn * f + c * s) / n });
+    w.x = p.x; w.y = p.y;
+    this.dirty = true;
+  }
+
+  private walkStep(dt: number) {
+    const w = this.walk!, k = w.keys, h = w.hold;
+    const run = k.has("shift") ? 2.2 : 1;
+    const f = (k.has("w") || k.has("arrowup") ? 1 : 0) - (k.has("s") || k.has("arrowdown") ? 1 : 0) + h.f;
+    const s = (k.has("d") ? 1 : 0) - (k.has("a") ? 1 : 0) + h.s;
+    const t = (k.has("arrowright") || k.has("e") ? 1 : 0) - (k.has("arrowleft") || k.has("q") ? 1 : 0) + h.t;
+    if (t) { w.yaw += t * 1.6 * dt; this.dirty = true; }
+    if (f || s) this.walkBy(f * 1.5 * run * dt, s * 1.2 * run * dt);
+    const lv = this.ed.project.levels[w.level];
+    if (lv) {
+      const target = floorAt(lv, w, gradeLevel(this.ed.project), w.level === 0) + EYE;
+      if (Math.abs(target - w.eye) > 1e-3) { w.eye += Math.sign(target - w.eye) * Math.min(Math.abs(target - w.eye), 2 * dt); this.dirty = true; }
+    }
+    // puertas abiertas a menos de 1.8 m (en el nivel por el que se camina)
+    for (const ch of this.group.children) {
+      const d = ch.userData.door as { x: number; y: number; level: number } | undefined;
+      if (!d) continue;
+      const vis = !(d.level === w.level && Math.hypot(d.x - w.x, d.y - w.y) < 1.8);
+      if (ch.visible !== vis) { ch.visible = vis; this.dirty = true; }
+    }
+    if (this.dirty) this.walkCamera();
+  }
+
+  private walkCamera() {
+    const w = this.walk!;
+    this.cam.position.set(w.x, w.eye, w.y);
+    this.cam.lookAt(w.x + Math.cos(w.yaw) * Math.cos(w.pitch), w.eye + Math.sin(w.pitch), w.y + Math.sin(w.yaw) * Math.cos(w.pitch));
+    this.dirty = true;
+  }
+
   fit() {
+    this.stopWalk();
     const b = projectBounds(this.ed);
     this.fitEmpty = !b.solid;
     const cx = (b.x0 + b.x1) / 2, cz = (b.y0 + b.y1) / 2;

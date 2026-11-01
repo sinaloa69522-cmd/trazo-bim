@@ -270,6 +270,7 @@ export function App() {
               <button className={`btn${ed.framing ? " on" : ""}`} aria-pressed={ed.framing} title="Ver toda la estructura de madera: zapatas, soleras, montantes, dinteles, viguetas y cabios" onClick={() => ed.toggleFraming()}>Estructura</button>
               <button className={`btn${real3d ? " on" : ""}`} aria-pressed={real3d} title="Cielo, sol, sombras suaves, reflejos en vidrios, pasto y árboles. Apágalo para ver el modelo con colores planos y aristas" onClick={toggleReal3d}>Realista</button>
               <button className="btn" onClick={() => view3d.current?.fit()}>Encuadrar</button>
+              <button className="btn" title="Caminar dentro de la casa a la altura de los ojos, por el nivel activo" onClick={() => view3d.current?.walk()}>Recorrido</button>
               <button className="btn" title="Guarda una imagen PNG en alta resolución (3200 px de ancho) de lo que se ve en el 3D" onClick={exportImage}>Imagen</button>
             </div>
             {ed.framing && <FramingLegend ed={ed} />}
