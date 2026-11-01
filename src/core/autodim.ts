@@ -52,20 +52,22 @@ export function autoDims(m: Model): Omit<Dim, "id">[] {
   const out: Omit<Dim, "id">[] = [];
   const ext = new Map(m.walls.map((w) => [w, dir(w).L > 0.05 ? exteriorSide(m.walls, w) : 0] as const));
   /** Normal exterior del muro (unitaria), o null si es interior. */
+  // los tramos de un muro curvo no llevan cotas propias (serían decenas); sí cuentan para saber qué es exterior
+  const straight = m.walls.filter((w) => w.curve === undefined);
   const nrm = (w: Model["walls"][number]): Pt | null => { const s = ext.get(w); if (!s) return null; const d = dir(w); return { x: -d.uy * s, y: d.ux * s }; };
   for (const { o, t } of SIDES) {
     const P = (u: number, v: number): Pt => ({ x: r3(u * t.x + v * o.x), y: r3(u * t.y + v * o.y) });
     // muros exteriores paralelos a esta fachada que miran hacia fuera por ella
-    const side = m.walls.filter((w) => { const n = nrm(w); return n && Math.abs(dir(w).ux * o.x + dir(w).uy * o.y) < 0.01 && dot(n, o) > 0.99; });
+    const side = straight.filter((w) => { const n = nrm(w); return n && Math.abs(dir(w).ux * o.x + dir(w).uy * o.y) < 0.01 && dot(n, o) > 0.99; });
     if (!side.length) continue;
     const face = Math.max(...side.map((w) => dot({ x: w.x1, y: w.y1 }, o) + w.thick / 2));
     // los inclinados que también miran a este lado (un chaflán) cuentan para el total y marcan quiebres
-    const slant = m.walls.filter((w) => { const n = nrm(w), d = dir(w); return n && Math.abs(d.ux) > 0.01 && Math.abs(d.uy) > 0.01 && dot(n, o) > 0.1; });
+    const slant = straight.filter((w) => { const n = nrm(w), d = dir(w); return n && Math.abs(d.ux) > 0.01 && Math.abs(d.uy) > 0.01 && dot(n, o) > 0.1; });
     const corners = slant.flatMap((w) => [dot({ x: w.x1, y: w.y1 }, t), dot({ x: w.x2, y: w.y2 }, t)]);
     const us = [...side.flatMap((w) => [dot({ x: w.x1, y: w.y1 }, t), dot({ x: w.x2, y: w.y2 }, t)]), ...corners];
     const th = Math.max(...side.map((w) => w.thick));
     // los extremos: las caras exteriores de los muros que cierran la fachada por los lados
-    const ends = m.walls.filter((w) => { const n = nrm(w); return n && Math.abs(dot(n, t)) > 0.99; }).map((w) => dot({ x: w.x1, y: w.y1 }, t) + dot(nrm(w)!, t) * w.thick / 2);
+    const ends = straight.filter((w) => { const n = nrm(w); return n && Math.abs(dot(n, t)) > 0.99; }).map((w) => dot({ x: w.x1, y: w.y1 }, t) + dot(nrm(w)!, t) * w.thick / 2);
     const lo = Math.min(...us), hi = Math.max(...us);
     const u0 = Math.min(lo - th / 2, ...ends.filter((u) => u < lo + 0.01 && u > lo - th)), u1 = Math.max(hi + th / 2, ...ends.filter((u) => u > hi - 0.01 && u < hi + th));
     const clamp = (u: number) => Math.max(u0, Math.min(u1, u));
@@ -78,7 +80,7 @@ export function autoDims(m: Model): Omit<Dim, "id">[] {
     const cross: number[] = [];
     /** ¿Llega p a un extremo de un muro de esta fachada? */
     const touches = (p: Pt) => [...side, ...slant].some((sw) => [{ x: sw.x1, y: sw.y1 }, { x: sw.x2, y: sw.y2 }].some((q) => Math.hypot(p.x - q.x, p.y - q.y) < sw.thick + 0.05));
-    for (const w of m.walls) {
+    for (const w of straight) {
       const d = dir(w);
       if (d.L < 0.05 || Math.abs(d.ux * t.x + d.uy * t.y) > 0.01) continue;
       const u = dot({ x: w.x1, y: w.y1 }, t);
@@ -111,7 +113,7 @@ export function autoDims(m: Model): Omit<Dim, "id">[] {
     });
   }
   // muros exteriores inclinados: huecos y largo a cara exterior, paralelos al muro
-  for (const w of m.walls) {
+  for (const w of straight) {
     const n = nrm(w), d = dir(w);
     if (!n || Math.abs(d.ux) < 0.01 || Math.abs(d.uy) < 0.01) continue;
     const s = ext.get(w)!, h = (w.thick / 2) * s;
@@ -138,7 +140,7 @@ export const INNER_OFFSET = 0.45;
  */
 export function interiorDims(m: Model): Omit<Dim, "id">[] {
   const out: Omit<Dim, "id">[] = [], seen = new Set<string>();
-  const ortho = m.walls.map((w) => ({ w, d: dir(w) })).filter(({ d }) => d.L > 0.05 && (Math.abs(d.ux) < 0.01 || Math.abs(d.uy) < 0.01));
+  const ortho = m.walls.filter((w) => w.curve === undefined).map((w) => ({ w, d: dir(w) })).filter(({ d }) => d.L > 0.05 && (Math.abs(d.ux) < 0.01 || Math.abs(d.uy) < 0.01));
   /** Caras de muro más cercanas a p hacia un lado y otro, a lo largo de x (horiz) o de y. */
   const faces = (p: Pt, horiz: boolean): [number, number] | null => {
     let lo = -Infinity, hi = Infinity;

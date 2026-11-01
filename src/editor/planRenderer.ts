@@ -1,3 +1,4 @@
+import { arcPoints, arcThrough } from "../core/arc";
 import type { SnapKind } from "./snaps";
 import { fmtArea, fmtDim, fmtLen, imperial, FT, IN } from "../core/units";
 import { deckGeom, deckType } from "../core/decks";
@@ -219,6 +220,20 @@ export function drawPlan(ctx: CanvasRenderingContext2D, ed: Editor, C: PlanColor
     for (const { w, polys } of parts) {
       const hl = isSel("wall", w.id) || (hover?.type === "wall" && hover.id === w.id);
       if (hl) for (const q of polys) poly(q, null, C.accent, isSel("wall", w.id) ? 2.5 : 1.5);
+    }
+    // muros curvos: el radio junto al centro del arco, por el lado convexo
+    const curves = new Map<number, Wall[]>();
+    for (const w of m.walls) if (w.curve !== undefined) curves.set(w.curve, [...(curves.get(w.curve) ?? []), w]);
+    for (const ws of curves.values()) {
+      if (ws.length < 3) continue;
+      const a = { x: ws[0].x1, y: ws[0].y1 }, mid = ws[Math.floor(ws.length / 2)], b = { x: ws[ws.length - 1].x2, y: ws[ws.length - 1].y2 };
+      const arc = arcThrough(a, b, { x: mid.x1, y: mid.y1 });
+      if (!arc) continue;
+      const q = { x: mid.x1, y: mid.y1 }, d = Math.hypot(q.x - arc.cx, q.y - arc.cy) || 1, off = (mid.thick / 2 + 0.25);
+      const s = ed.toS(q.x + ((q.x - arc.cx) / d) * off, q.y + ((q.y - arc.cy) / d) * off);
+      ctx.font = MONO; ctx.fillStyle = C.anno; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+      ctx.fillText(`R ${fmtLen(arc.r)}`, s.x, s.y);
+      ctx.textAlign = "left"; ctx.textBaseline = "alphabetic";
     }
   }
 
@@ -447,7 +462,25 @@ export function drawPlan(ctx: CanvasRenderingContext2D, ed: Editor, C: PlanColor
     if (ed.tool !== "rotate") lengthTag(ctx, ed, C, bp, p);
   } else if (draft?.pts.length) {
     const last = draft.pts[draft.pts.length - 1];
-    if (ed.tool === "wall") {
+    if (ed.tool === "arcwall") {
+      const h = ed.defaults.thick / 2;
+      if (draft.pts.length === 1) { seg(last, p, C.accent, 1, [5, 4]); lengthTag(ctx, ed, C, last, p); }
+      else {
+        const arc = arcThrough(draft.pts[0], draft.pts[1], p), path = arc ? arcPoints(arc, 0.2) : [draft.pts[0], draft.pts[1]];
+        ctx.globalAlpha = 0.45;
+        for (let i = 0; i + 1 < path.length; i++) { const w = { x1: path[i].x, y1: path[i].y, x2: path[i + 1].x, y2: path[i + 1].y }; poly(quad(w, 0, dir(w).L, -h, h), C.accent); }
+        ctx.globalAlpha = 1;
+        for (let i = 0; i + 1 < path.length; i++) seg(path[i], path[i + 1], C.accent, 1.2);
+        seg(draft.pts[0], draft.pts[1], C.accent, 1, [2, 4]);
+        if (arc) {
+          const s = ed.toS(p.x, p.y), txt = `R ${fmtLen(arc.r)}  L ${fmtLen(Math.abs(arc.sweep) * arc.r)}`;
+          ctx.font = MONO; const tw = ctx.measureText(txt).width;
+          ctx.fillStyle = C.panel; ctx.fillRect(s.x + 12, s.y + 10, tw + 10, 18);
+          ctx.strokeStyle = C.accent; ctx.lineWidth = 1; ctx.strokeRect(s.x + 12.5, s.y + 10.5, tw + 9, 17);
+          ctx.fillStyle = C.fg; ctx.fillText(txt, s.x + 17, s.y + 23);
+        }
+      }
+    } else if (ed.tool === "wall") {
       const w = { x1: last.x, y1: last.y, x2: p.x, y2: p.y }, h = ed.defaults.thick / 2, L = dir(w).L;
       if (L > 0.01) { ctx.globalAlpha = 0.45; poly(quad(w, 0, L, -h, h), C.accent); ctx.globalAlpha = 1; }
       seg(last, p, C.accent, 1, [5, 4]); lengthTag(ctx, ed, C, last, p);

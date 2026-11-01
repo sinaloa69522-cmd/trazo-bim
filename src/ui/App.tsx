@@ -22,6 +22,7 @@ type ViewMode = "plan" | "split" | "3d" | "sheet" | "budget";
 const TOOLS: { tool: Tool; label: string; key: string; icon: JSX.Element; disc?: Discipline }[] = [
   { tool: "select", label: "Seleccionar", key: "S", icon: <path d="M3 2l9 5-4 1.2L6.5 13z" /> },
   { tool: "wall", label: "Muro", key: "M", icon: <rect x="1.5" y="6" width="13" height="4" /> },
+  { tool: "arcwall", label: "Muro curvo (inicio, fin y un punto del arco)", key: "MC", icon: <path d="M1.5 13a6.5 6.5 0 0 1 13 0M4.5 13a3.5 3.5 0 0 1 7 0" /> },
   { tool: "door", label: "Puerta", key: "P", icon: <path d="M2 13h12M4 13V4M4 4a9 9 0 0 1 9 9" /> },
   { tool: "window", label: "Ventana", key: "V", icon: <><rect x="1.5" y="5.5" width="13" height="5" /><path d="M1.5 8h13" /></> },
   { tool: "line", label: "Línea", key: "L", icon: <path d="M2 14L14 2" /> },
