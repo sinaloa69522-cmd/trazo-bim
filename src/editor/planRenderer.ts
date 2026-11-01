@@ -1,6 +1,7 @@
 import { arcPoints, arcThrough } from "../core/arc";
+import { contours, downhill, retainingWalls, terrainModel, type TerrainModel } from "../core/terrain";
 import type { SnapKind } from "./snaps";
-import { fmtArea, fmtDim, fmtLen, imperial, FT, IN } from "../core/units";
+import { fmtArea, fmtDim, fmtElev, fmtLen, imperial, FT, IN } from "../core/units";
 import { deckGeom, deckType } from "../core/decks";
 import { dimGeom, dimOffset, dir, loc, pieces, polygonArea, roofGeom, roofSlopes, textBox, type Pt } from "../core/geometry";
 import { dormerGeom } from "../core/dormers";
@@ -211,6 +212,7 @@ export function drawPlan(ctx: CanvasRenderingContext2D, ed: Editor, C: PlanColor
     const hl = isSel("deck", dk.id) || (hover?.type === "deck" && hover.id === dk.id);
     drawDeck(ctx, ed, dk, m.walls, hl ? C.accent : C.fg, hl ? 2 : 1, !!opts.print);
   }
+  if (ed.active === 0) { const tm = terrainModel(ed.project); if (tm) drawTerrain(ctx, ed, C, tm, tl, br); }
   if (ed.vis.muros) {
     const parts = m.walls.map((w) => { const h = w.thick / 2; return { w, polys: pieces(m, w).solids.map(([a, b]) => quad(w, a, b, -h, h)) }; });
     // primero el contorno grueso de todos y luego el relleno encima: así las juntas entre muros
@@ -956,4 +958,55 @@ export function snapMarker(ctx: CanvasRenderingContext2D, kind: SnapKind, s: Pt,
     case "near": ctx.moveTo(s.x - r, s.y - r); ctx.lineTo(s.x + r, s.y - r); ctx.lineTo(s.x - r, s.y + r); ctx.lineTo(s.x + r, s.y + r); ctx.closePath(); break;
   }
   ctx.stroke();
+}
+
+/** Curvas de nivel del terreno (cada step, maestras cada 1 m), muros de contención y flecha de la pendiente. */
+function drawTerrain(ctx: CanvasRenderingContext2D, ed: Editor, C: PlanColors, tm: TerrainModel, tl: Pt, br: Pt) {
+  const area = { x0: Math.min(tl.x, br.x), y0: Math.min(tl.y, br.y), x1: Math.max(tl.x, br.x), y1: Math.max(tl.y, br.y) };
+  ctx.save();
+  ctx.font = MONO; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+  for (const c of contours(tm, area)) {
+    const major = Math.abs(c.z - Math.round(c.z)) < 1e-6;
+    ctx.strokeStyle = C.anno; ctx.globalAlpha = major ? 0.7 : 0.4; ctx.lineWidth = major ? 1.2 : 0.8; ctx.setLineDash(major ? [] : [6, 4]);
+    for (const [a, b] of c.segs) {
+      const p = ed.toS(a.x, a.y), q = ed.toS(b.x, b.y);
+      ctx.beginPath(); ctx.moveTo(p.x, p.y); ctx.lineTo(q.x, q.y); ctx.stroke();
+      // cota en el centro del tramo, sobre un fondo para que se lea
+      if (Math.hypot(q.x - p.x, q.y - p.y) < 90) continue;
+      const mx = (p.x + q.x) / 2, my = (p.y + q.y) / 2, txt = fmtElev(c.z);
+      ctx.globalAlpha = 1; ctx.setLineDash([]);
+      const tw = ctx.measureText(txt).width;
+      ctx.fillStyle = C["plan-bg"]; ctx.fillRect(mx - tw / 2 - 3, my - 7, tw + 6, 14);
+      ctx.fillStyle = C.anno; ctx.fillText(txt, mx, my);
+      ctx.globalAlpha = major ? 0.7 : 0.4; ctx.setLineDash(major ? [] : [6, 4]);
+    }
+  }
+  ctx.globalAlpha = 1; ctx.setLineDash([]);
+  // muros de contención: línea gruesa con dientes hacia el lado del terreno más alto
+  for (const w of retainingWalls(tm)) {
+    const p = ed.toS(w.a.x, w.a.y), q = ed.toS(w.b.x, w.b.y), L = Math.hypot(q.x - p.x, q.y - p.y) || 1;
+    ctx.strokeStyle = C.fg; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(p.x, p.y); ctx.lineTo(q.x, q.y); ctx.stroke();
+    // el exterior de la plataforma está a la izquierda de a→b en pantalla; dientes hacia el corte (h > 0) o hacia dentro si es relleno
+    const nx = (q.y - p.y) / L, ny = -(q.x - p.x) / L;
+    ctx.lineWidth = 1;
+    for (let d = 6; d < L; d += 10) {
+      const t = d / L, h = w.ha + (w.hb - w.ha) * t;
+      if (Math.abs(h) < 0.05) continue;
+      const s = h > 0 ? 1 : -1, x = p.x + (q.x - p.x) * t, y = p.y + (q.y - p.y) * t;
+      ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + nx * 6 * s, y + ny * 6 * s); ctx.stroke();
+    }
+    const mx = (p.x + q.x) / 2 + nx * 16, my = (p.y + q.y) / 2 + ny * 16, ang = Math.atan2(q.y - p.y, q.x - p.x);
+    ctx.save(); ctx.translate(mx, my); ctx.rotate(Math.abs(ang) > Math.PI / 2 ? ang + Math.PI : ang);
+    ctx.fillStyle = C.fg; ctx.fillText(`Muro de contención h ${fmtLen(w.max)}`, 0, 0); ctx.restore();
+  }
+  // pendiente: flecha hacia abajo fuera de la plataforma
+  const r = tm.pad, d = downhill(tm.t.dir), c = { x: (r.x0 + r.x1) / 2, y: (r.y0 + r.y1) / 2 };
+  const reach = Math.abs(d.x) * (r.x1 - r.x0) / 2 + Math.abs(d.y) * (r.y1 - r.y0) / 2 + 2.5;
+  const a = ed.toS(c.x + d.x * reach, c.y + d.y * reach), b = ed.toS(c.x + d.x * (reach + 3), c.y + d.y * (reach + 3));
+  ctx.strokeStyle = C.anno; ctx.fillStyle = C.anno; ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
+  const ang = Math.atan2(b.y - a.y, b.x - a.x);
+  ctx.beginPath(); ctx.moveTo(b.x, b.y); ctx.lineTo(b.x - 10 * Math.cos(ang - 0.4), b.y - 10 * Math.sin(ang - 0.4)); ctx.lineTo(b.x - 10 * Math.cos(ang + 0.4), b.y - 10 * Math.sin(ang + 0.4)); ctx.closePath(); ctx.fill();
+  ctx.fillText(`Pendiente ${tm.t.slope} %`, (a.x + b.x) / 2 + 14 * Math.sin(ang), (a.y + b.y) / 2 - 14 * Math.cos(ang));
+  ctx.restore();
 }

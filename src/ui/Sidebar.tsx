@@ -1,3 +1,4 @@
+import { DEFAULT_TERRAIN, earthwork, retainingWalls, terrainModel } from "../core/terrain";
 import { Fragment, useState } from "react";
 import { dimGeom, dir, fits, polygonArea, PARAPET, roofGeom, slabArea } from "../core/geometry";
 import { IDEAL_TREAD, POST_R, shortTread, sizedByTread, STAIR_TYPES, stairLabel, stairLenFor, stairSteps } from "../core/stairs";
@@ -585,6 +586,7 @@ function Levels({ ed }: { ed: Editor }) {
             ))}
           </div>
         </div>
+        <TerrainFields ed={ed} />
         <div className="full" style={{ display: "flex", gap: 6 }}>
           <button className="btn" style={{ flex: 1 }} onClick={() => ed.addLevel(false)} title="Nivel vacío encima, con el de abajo en gris como referencia">Nuevo nivel</button>
           <button className="btn" style={{ flex: 1 }} onClick={() => ed.addLevel(true)} title="Copia muros, huecos, losas y escaleras del nivel activo">Duplicar</button>
@@ -859,4 +861,24 @@ export function Sidebar({ ed, onFocusCommand, onClose }: { ed: Editor; onFocusCo
       </p>
     </aside>
   );
+}
+
+const DOWNHILL = [["N", 0], ["NE", 45], ["E", 90], ["SE", 135], ["S", 180], ["SO", 225], ["O", 270], ["NO", 315]] as const;
+
+/** Terreno con pendiente: porcentaje, hacia dónde baja, margen de la plataforma y curvas de nivel. */
+function TerrainFields({ ed }: { ed: Editor }) {
+  const t = { ...DEFAULT_TERRAIN, ...ed.project.terrain }, tm = terrainModel(ed.project);
+  const ws = tm ? retainingWalls(tm) : [], e = tm ? earthwork(tm) : null;
+  return <>
+    <NumberField id="ter-slope" min={0} step={1} digits={1} label="Pendiente terreno (%)" value={t.slope} onCommit={(v) => ed.setTerrain({ slope: Math.max(0, Math.min(60, v)) })} />
+    {t.slope > 0 && <>
+      <label htmlFor="ter-dir">Baja hacia</label>
+      <select id="ter-dir" value={t.dir} onChange={(e) => ed.setTerrain({ dir: +e.target.value })}>
+        {DOWNHILL.map(([n, a]) => <option key={a} value={a}>{n}</option>)}
+      </select>
+      <NumberField id="ter-pad" min={0} label="Plataforma (m)" value={t.pad} onCommit={(v) => ed.setTerrain({ pad: Math.max(0, Math.min(20, v)) })} />
+      <NumberField id="ter-step" label="Curvas cada (m)" value={t.step} onCommit={(v) => ed.setTerrain({ step: Math.max(0.1, Math.min(5, v)) })} />
+      {tm && <p className="hint full">{ws.length ? `Muros de contención: ${ws.map((w) => `${w.side} ${fmtLen(w.max)}`).join(", ")}.` : "Sin muros de contención."} Corte {e!.cut.toFixed(1)} m³ · relleno {e!.fill.toFixed(1)} m³.</p>}
+    </>}
+  </>;
 }
