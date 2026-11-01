@@ -140,6 +140,7 @@ export function App() {
     view3d.current?.fit();
   };
   const view3d = useRef<View3DHandle>(null);
+  const [sun3d, setSun3d] = useState(false);
   const [real3d, setReal3d] = useState(() => { try { return localStorage.getItem("trazo-3d-real") !== "0"; } catch { return true; } });
   const toggleReal3d = () => setReal3d((v) => {
     try { localStorage.setItem("trazo-3d-real", v ? "0" : "1"); } catch { /* sin almacenamiento */ }
@@ -264,12 +265,13 @@ export function App() {
           {view === "sheet" && <SheetView ed={ed} />}
           {view === "budget" && <BudgetView ed={ed} />}
           <div className="pane pane3d">
-            <View3D ref={view3d} ed={ed} realistic={real3d} />
+            <View3D ref={view3d} ed={ed} realistic={real3d} sun={sun3d} onCloseSun={() => setSun3d(false)} />
             <span className="tag">3D · {ed.framing ? "Estructura de framing" : real3d ? "Vista realista" : "Vista axonométrica"}</span>
             <div className="paneover">
               <button className={`btn${ed.framing ? " on" : ""}`} aria-pressed={ed.framing} title="Ver toda la estructura de madera: zapatas, soleras, montantes, dinteles, viguetas y cabios" onClick={() => ed.toggleFraming()}>Estructura</button>
               <button className={`btn${real3d ? " on" : ""}`} aria-pressed={real3d} title="Cielo, sol, sombras suaves, reflejos en vidrios, pasto y árboles. Apágalo para ver el modelo con colores planos y aristas" onClick={toggleReal3d}>Realista</button>
               <button className="btn" onClick={() => view3d.current?.fit()}>Encuadrar</button>
+              <button className={`btn${sun3d ? " on" : ""}`} aria-pressed={sun3d} title="Estudio de sol y sombras: latitud, fecha y hora" onClick={() => setSun3d(!sun3d)}>Sol</button>
               <button className="btn" title="Caminar dentro de la casa a la altura de los ojos, por el nivel activo" onClick={() => view3d.current?.walk()}>Recorrido</button>
               <button className="btn" title="Guarda una imagen PNG en alta resolución (3200 px de ancho) de lo que se ve en el 3D" onClick={exportImage}>Imagen</button>
             </div>

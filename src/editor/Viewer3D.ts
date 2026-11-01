@@ -15,6 +15,7 @@ import { deckBoxes, type Box } from "../core/decks";
 import type { Editor } from "./Editor";
 import { grass, pavingMaterial, SKY, skyDome, skyEnvironment, tree, treeSpots } from "./scenery";
 import { IN } from "../core/units";
+import { sunVector } from "../core/sun";
 import { BODY, collide, EYE, floorAt, walkStart } from "./walk";
 
 /** Block de concreto (CMU) de la cimentación: piezas de 16" × 8" a hueso. */
@@ -338,7 +339,24 @@ export class Viewer3D {
     m.frame.metalness = r ? 0.5 : 0;
     m.roof.envMapIntensity = r ? 0.5 : 1;
     if (!r) this.scene.fog = null;
+    // estudio de sol: más débil y cálido cerca del horizonte; de noche solo la luz del cielo
+    const st = this.study;
+    if (st) {
+      const f = Math.max(0, Math.min(1, Math.sin(st.alt * Math.PI / 180) / Math.sin(30 * Math.PI / 180)));
+      this.sun.intensity *= st.alt > 0 ? 0.35 + 0.65 * f : 0;
+      if (st.alt > 0) this.sun.color.lerp(new THREE.Color(0xffa860), 1 - f);
+      this.hemi.intensity *= st.alt > 0 ? 0.5 + 0.5 * f : 0.25;
+    }
     this.dirty = true;
+  }
+
+  /** Estudio de asoleamiento: el sol en esa altura y acimut (grados). null vuelve al sol de siempre. */
+  private study: { alt: number; az: number } | null = null;
+  private sunArgs: [number, number, number, number] | null = null;
+  setSunStudy(s: { alt: number; az: number } | null) {
+    this.study = s;
+    this.look();
+    if (this.sunArgs) this.placeSun(...this.sunArgs);
   }
 
   schedule() { clearTimeout(this.timer); this.timer = window.setTimeout(() => this.build(), 60); }
@@ -703,7 +721,10 @@ export class Viewer3D {
 
   /** Sol alto desde un costado (la fachada de enfrente iluminada y la lateral en sombra), a media altura, con la cámara de sombras ajustada al proyecto (sombras más nítidas). */
   private placeSun(cx: number, cz: number, half: number, y: number) {
-    const d = new THREE.Vector3(-0.5, 0.78, 0.55).normalize(), dist = half * 2 + 30;
+    this.sunArgs = [cx, cz, half, y];
+    const v = this.study && this.study.alt > 0 ? sunVector(this.study.alt, this.study.az) : null;
+    // la planta (x, y) va a (x, z) y la altura a y
+    const d = v ? new THREE.Vector3(v.x, v.z, v.y).normalize() : new THREE.Vector3(-0.5, 0.78, 0.55).normalize(), dist = half * 2 + 30;
     this.sun.position.set(cx + d.x * dist, y + d.y * dist, cz + d.z * dist);
     this.sun.target.position.set(cx, y, cz);
     Object.assign(this.sun.shadow.camera, { left: -half, right: half, top: half, bottom: -half, near: 1, far: dist + half * 2 + 20 });
