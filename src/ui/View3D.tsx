@@ -2,14 +2,14 @@ import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "re
 import type { Editor } from "../editor/Editor";
 import { Viewer3D } from "../editor/Viewer3D";
 
-export interface View3DHandle { fit(): void }
+export interface View3DHandle { fit(): void; snapshot(width?: number): Blob | null }
 
 export const View3D = forwardRef<View3DHandle, { ed: Editor; realistic: boolean }>(function View3D({ ed, realistic }, ref) {
   const host = useRef<HTMLDivElement>(null);
   const viewer = useRef<Viewer3D | null>(null);
   const [failed, setFailed] = useState(false);
 
-  useImperativeHandle(ref, () => ({ fit: () => viewer.current?.fit() }), []);
+  useImperativeHandle(ref, () => ({ fit: () => viewer.current?.fit(), snapshot: (w?: number) => viewer.current?.snapshot(w) ?? null }), []);
 
   useEffect(() => {
     try {
