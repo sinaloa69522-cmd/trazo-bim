@@ -17,6 +17,7 @@ import { parseProjectFile, projectFileName, readProjectImages, serializeProject 
 import { SITE_ZOOM, type Site } from "../core/site";
 import { TEMPLATES } from "../core/templates";
 import { arcPoints, arcThrough, bulgePoint } from "../core/arc";
+import { addVersion, listVersions, removeVersion, renameVersion, type Version } from "../core/versions";
 import { DEFAULT_TERRAIN, earthwork, retainingWalls, terrainModel, type Terrain } from "../core/terrain";
 import { FURNITURE, furnitureDef, furnitureOutline } from "../core/furniture";
 import { autoRoute, discOfSystem, isElectric, MEP, mepDef, mepOf, runLength, sanitaryPoints, systemDef, type Discipline } from "../core/mep";
@@ -276,6 +277,36 @@ export class Editor {
     this.log(`Proyecto guardado como ${f.name}.`);
     return f;
   }
+  // ---------- versiones con nombre ----------
+  get versions(): Version[] { return listVersions(this.storage); }
+  /** Guarda el proyecto tal como está como una versión con nombre. */
+  saveVersion(name: string): boolean {
+    const r = addVersion(this.storage, this.project, name);
+    this.log(r ? `Versión «${r[0].name}» guardada (${r.length} en el historial).` : "No se pudo guardar la versión: el navegador no tiene espacio.");
+    return !!r;
+  }
+  /** Vuelve a una versión; antes guarda el estado actual como versión para no perderlo. Se puede deshacer. */
+  restoreVersion(id: string) {
+    const v = this.versions.find((x) => x.id === id);
+    if (!v) return;
+    addVersion(this.storage, this.project, `Antes de restaurar «${v.name}»`);
+    this.snapshot();
+    this.project = normalizeProject(JSON.parse(v.data));
+    this.active = 0; this.sels = []; this.draft = null;
+    this.log(`Versión «${v.name}» restaurada. El estado anterior quedó guardado como versión y también se puede deshacer.`);
+    this.changed();
+    this.fitRequest?.();
+  }
+  deleteVersion(id: string) { removeVersion(this.storage, id); this.emit(); }
+  renameVersion(id: string, name: string) { renameVersion(this.storage, id, name); this.emit(); }
+  /** Archivo .trazo de una versión, para descargarla sin restaurarla. */
+  versionFile(id: string): { name: string; text: string } | null {
+    const v = this.versions.find((x) => x.id === id);
+    if (!v) return null;
+    const p = normalizeProject(JSON.parse(v.data));
+    return { name: projectFileName(`${p.info.name} ${v.name}`), text: serializeProject(p, new Date(v.at), this.usedImages()) };
+  }
+
   /** Abre un archivo .trazo; si no es válido, no toca el proyecto actual y lo explica. Se puede deshacer. */
   openFile(text: string, fileName = "archivo"): boolean {
     let p: Project;
