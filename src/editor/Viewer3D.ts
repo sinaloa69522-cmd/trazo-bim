@@ -279,6 +279,30 @@ export class Viewer3D {
     this.dirty = true;
   }
 
+  /**
+   * Foto del 3D en alta resolución, con el mismo encuadre que se ve. width: ancho en píxeles de la imagen
+   * (la altura sigue la proporción de la vista). Se dibuja y se lee en el mismo paso, sin preserveDrawingBuffer.
+   */
+  snapshot(width = 3200): Blob | null {
+    const w = this.host.clientWidth, h = this.host.clientHeight;
+    if (!w || !h) return null;
+    const gl = this.ren.getContext();
+    const maxDim = Math.min(gl.getParameter(gl.MAX_RENDERBUFFER_SIZE) as number, 8192);
+    const ratio = Math.max(1, Math.min(width / w, maxDim / Math.max(w, h)));
+    const old = this.ren.getPixelRatio();
+    this.ren.setPixelRatio(ratio);
+    this.ren.setSize(w, h, false);
+    this.sky.position.copy(this.cam.position);
+    this.ren.render(this.scene, this.cam);
+    const url = this.ren.domElement.toDataURL("image/png");
+    this.ren.setPixelRatio(old);
+    this.ren.setSize(w, h, false);
+    this.dirty = true;
+    const bin = atob(url.slice(url.indexOf(",") + 1)), bytes = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    return new Blob([bytes], { type: "image/png" });
+  }
+
   isRealistic() { return this.realistic; }
   setRealistic(on: boolean) {
     if (on === this.realistic) return;

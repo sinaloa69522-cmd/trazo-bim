@@ -1,4 +1,5 @@
 import { saveFile } from "./saveFile";
+import { projectFileName } from "../core/projectFile";
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { Editor, type Tool } from "../editor/Editor";
 import { mepDef, type Discipline } from "../core/mep";
@@ -108,6 +109,13 @@ export function App() {
   const fileRef = useRef<HTMLInputElement>(null);
   const openRef = useRef<HTMLInputElement>(null);
   const [dragging, setDragging] = useState(false);
+  const exportImage = async () => {
+    const b = view3d.current?.snapshot(3200);
+    if (!b) { ed.log("No se pudo generar la imagen del 3D."); return; }
+    const base = projectFileName(ed.project.info.name).replace(/\.trazo$/i, "");
+    const r = await saveFile(`${base}-3D.png`, b, "image/png");
+    if (r === "saved") ed.log(`Imagen del 3D guardada como ${base}-3D.png.`);
+  };
   const save = () => { const f = ed.saveFile(); download(f.name, f.text); };
   const [pdfFile, setPdfFile] = useState<File | null>(null);
   /** Abre un .trazo o importa un DXF, DWG, PDF o imagen, según la extensión. */
@@ -262,6 +270,7 @@ export function App() {
               <button className={`btn${ed.framing ? " on" : ""}`} aria-pressed={ed.framing} title="Ver toda la estructura de madera: zapatas, soleras, montantes, dinteles, viguetas y cabios" onClick={() => ed.toggleFraming()}>Estructura</button>
               <button className={`btn${real3d ? " on" : ""}`} aria-pressed={real3d} title="Cielo, sol, sombras suaves, reflejos en vidrios, pasto y árboles. Apágalo para ver el modelo con colores planos y aristas" onClick={toggleReal3d}>Realista</button>
               <button className="btn" onClick={() => view3d.current?.fit()}>Encuadrar</button>
+              <button className="btn" title="Guarda una imagen PNG en alta resolución (3200 px de ancho) de lo que se ve en el 3D" onClick={exportImage}>Imagen</button>
             </div>
             {ed.framing && <FramingLegend ed={ed} />}
           </div>
