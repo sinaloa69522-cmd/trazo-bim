@@ -15,6 +15,7 @@ import type { CadImportResult } from "../core/cadImport";
 import { parseDxf } from "../core/dxfImport";
 import { parseProjectFile, projectFileName, readProjectImages, serializeProject } from "../core/projectFile";
 import { SITE_ZOOM, type Site } from "../core/site";
+import { TEMPLATES } from "../core/templates";
 import { FURNITURE, furnitureDef, furnitureOutline } from "../core/furniture";
 import { autoRoute, discOfSystem, isElectric, MEP, mepDef, mepOf, runLength, sanitaryPoints, systemDef, type Discipline } from "../core/mep";
 import { breakLinear, extend, offset, trim, type Linear } from "../core/modify";
@@ -252,6 +253,16 @@ export class Editor {
   log(t: string) { this.message = t; this.emit(); }
 
   loadSample() { this.snapshot(); this.project = { ...sampleProject(), info: this.project.info, budget: this.project.budget, units: this.project.units }; this.active = 0; this.sel = null; this.log("Vivienda de ejemplo cargada."); this.changed(); }
+  /** Carga una plantilla de casa (templates.ts) conservando los datos del cajetín, el presupuesto y las unidades. */
+  loadTemplate(id: string) {
+    const t = TEMPLATES.find((x) => x.id === id);
+    if (!t) return;
+    this.snapshot();
+    this.project = { ...t.build(), info: this.project.info, budget: this.project.budget, units: this.project.units };
+    this.active = 0; this.sel = null;
+    this.log(`Plantilla «${t.name}» cargada (${t.desc.split(" · ")[0]}). Todo se puede editar; Deshacer vuelve al dibujo anterior.`);
+    this.changed();
+  }
   clear() { this.snapshot(); this.project = { ...emptyProject(), info: this.project.info, budget: this.project.budget, units: this.project.units }; this.active = 0; this.sel = null; this.log("Dibujo nuevo. Usa Deshacer si te equivocaste."); this.changed(); this.setTool("wall"); }
 
   // ---------- archivo del proyecto ----------

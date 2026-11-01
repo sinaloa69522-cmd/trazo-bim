@@ -1,5 +1,6 @@
 import { saveFile } from "./saveFile";
 import { projectFileName } from "../core/projectFile";
+import { TemplateDialog } from "./TemplateDialog";
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { Editor, type Tool } from "../editor/Editor";
 import { mepDef, type Discipline } from "../core/mep";
@@ -141,6 +142,7 @@ export function App() {
   };
   const view3d = useRef<View3DHandle>(null);
   const [sun3d, setSun3d] = useState(false);
+  const [templates, setTemplates] = useState(false);
   const [real3d, setReal3d] = useState(() => { try { return localStorage.getItem("trazo-3d-real") !== "0"; } catch { return true; } });
   const toggleReal3d = () => setReal3d((v) => {
     try { localStorage.setItem("trazo-3d-real", v ? "0" : "1"); } catch { /* sin almacenamiento */ }
@@ -225,6 +227,7 @@ export function App() {
         <div className="more" onClick={(e) => { if ((e.target as HTMLElement).closest("button")) setMenu(false); }}>
         <button className="btn" onClick={() => { ed.loadSample(); ed.fitRequest?.(); view3d.current?.fit(); }}>Ejemplo</button>
         <button className="btn" onClick={() => ed.clear()}>Nuevo</button>
+        <button className="btn" onClick={() => setTemplates(true)} title="Casas de 2 y 3 recámaras listas para editar">Plantillas</button>
         <button className="btn" onClick={() => openRef.current?.click()} title="Abrir un proyecto .trazo (Ctrl+O). También puedes arrastrarlo a la ventana.">Abrir</button>
         <button className="btn" onClick={save} title={`Guardar el proyecto en un archivo .trazo (Ctrl+S)${ed.dirty ? ": hay cambios sin guardar en archivo" : ""}`}>
           Guardar{ed.dirty && <span className="dot" aria-label="cambios sin guardar" />}
@@ -283,6 +286,7 @@ export function App() {
       <CommandLine ed={ed} inputRef={cmdRef} onExport={setExporting} />
       {dragging && <div className="dropzone">Suelta un proyecto .trazo para abrirlo, o un DWG, DXF, PDF o imagen para importarlo</div>}
       {pdfFile && <ImportPdfDialog ed={ed} file={pdfFile} onClose={() => { setPdfFile(null); view3d.current?.fit(); }} />}
+      {templates && <TemplateDialog ed={ed} onClose={() => setTemplates(false)} onLoaded={() => { ed.fitRequest?.(); view3d.current?.fit(); }} />}
       {exporting && <ExportDialog ed={ed} format={exporting} onClose={() => setExporting(null)} />}
     </div>
   );
