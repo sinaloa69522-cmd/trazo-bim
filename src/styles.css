@@ -129,6 +129,19 @@ button,input,select,textarea{font:inherit;color:inherit}
 
 /* diálogo DXF */
 dialog{border:1px solid var(--line);border-radius:8px;background:var(--panel);color:var(--fg);padding:18px;width:min(640px,calc(100vw - 32px))}
+dialog.verdlg{width:min(720px,calc(100vw - 32px))}
+.vernew{display:flex;gap:8px}
+.vernew input{flex:1;min-width:0}
+.vercur{font-size:12px;color:var(--muted);margin:8px 0}
+.verlist{list-style:none;margin:0;padding:0;max-height:min(52vh,460px);overflow:auto;border:1px solid var(--line);border-radius:6px}
+.verlist li{display:flex;gap:8px;align-items:center;justify-content:space-between;padding:8px 10px;border-bottom:1px solid var(--line);flex-wrap:wrap}
+.verlist li:last-child{border-bottom:0}
+.vermeta{display:grid;gap:2px;min-width:0;flex:1}
+.vermeta input{font-weight:600;border:1px solid transparent;background:transparent;color:var(--fg);padding:2px 4px;font:inherit}
+.vermeta input:hover,.vermeta input:focus{border-color:var(--line)}
+.vermeta small{color:var(--muted);font-size:11px;padding-left:4px}
+.veracts{display:flex;gap:6px}
+.btn.danger{color:var(--danger);border-color:var(--danger)}
 dialog.tpldlg{width:min(760px,calc(100vw - 32px))}
 dialog .hint{color:var(--muted);font-size:13px;margin:0 0 12px}
 .tpls{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:10px}
