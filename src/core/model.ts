@@ -23,6 +23,8 @@ export interface Wall {
   attach: boolean;
   /** Revestimiento exterior (finishes.ts); sin él, la fachada muestra el material del tipo */
   finish?: string;
+  /** Tramo de un muro curvo: todos los tramos del mismo arco comparten este número y se seleccionan juntos */
+  curve?: number;
 }
 
 export type OpeningKind = "door" | "window";

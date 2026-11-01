@@ -16,6 +16,7 @@ import { parseDxf } from "../core/dxfImport";
 import { parseProjectFile, projectFileName, readProjectImages, serializeProject } from "../core/projectFile";
 import { SITE_ZOOM, type Site } from "../core/site";
 import { TEMPLATES } from "../core/templates";
+import { arcPoints, arcThrough, bulgePoint } from "../core/arc";
 import { FURNITURE, furnitureDef, furnitureOutline } from "../core/furniture";
 import { autoRoute, discOfSystem, isElectric, MEP, mepDef, mepOf, runLength, sanitaryPoints, systemDef, type Discipline } from "../core/mep";
 import { breakLinear, extend, offset, trim, type Linear } from "../core/modify";
@@ -31,7 +32,7 @@ import { deleteElements, reflection, rotation, scaling, screenAngle, transformEl
 /** Centro (promedio de vértices) de un polígono. */
 const centroid = (r: Pt[]) => ({ x: r.reduce((s, q) => s + q.x, 0) / r.length, y: r.reduce((s, q) => s + q.y, 0) / r.length });
 
-export type Tool = "select" | "wall" | "door" | "window" | "line" | "dim" | "room" | "move" | "copy" | "mirror" | "rotate" | "scale" | "array" | "trim" | "extend" | "break" | "offset" | "slab" | "roof" | "dormer" | "stair" | "deck" | "column" | "furniture" | "section" | "hole" | "text" | "mark" | "fixture" | "run" | "calibrate" | "hatch" | "measure";
+export type Tool = "select" | "wall" | "door" | "window" | "line" | "dim" | "room" | "move" | "copy" | "mirror" | "rotate" | "scale" | "array" | "trim" | "extend" | "break" | "offset" | "slab" | "roof" | "dormer" | "stair" | "deck" | "column" | "furniture" | "section" | "hole" | "text" | "mark" | "fixture" | "run" | "calibrate" | "hatch" | "measure" | "arcwall";
 /** Herramientas que actúan pulsando directamente sobre un muro o una línea. */
 const PICK_TOOLS: Tool[] = ["trim", "extend", "break", "offset"];
 /** Herramientas que actúan sobre la selección actual. */
@@ -76,6 +77,7 @@ const COMMANDS: Record<string, Tool> = {
   HL: "hole", HUECO: "hole", TX: "text", TEXTO: "text", SE: "section", SECCION: "section", "SECCIÓN": "section", CORTE: "section",
   SB: "hatch", SOMBREA: "hatch", SOMBREADO: "hatch", RAYADO: "hatch", TRAMA: "hatch",
   TU: "run", TUBERIA: "run", "TUBERÍA": "run", CANALIZACION: "run", "CANALIZACIÓN": "run",
+  MC: "arcwall", MUROCURVO: "arcwall", CURVO: "arcwall",
   MD: "measure", MEDIR: "measure", DIST: "measure", DISTANCIA: "measure", MEASURE: "measure",
 };
 /** Largo de una polilínea. */
@@ -409,6 +411,7 @@ export class Editor {
     const n = this.draft ? this.draft.pts.length : 0, d = this.defaults;
     switch (this.tool) {
       case "select": return "Comando:";
+      case "arcwall": return n === 0 ? "MURO CURVO  Punto inicial:" : n === 1 ? "MURO CURVO  Punto final:" : "MURO CURVO  Punto por el que pasa el arco (o teclea la flecha en metros, negativa al otro lado):";
       case "wall": return n ? "MURO  Siguiente punto o longitud [Enter termina]:" : "MURO  Precisa punto inicial:";
       case "line": return n ? "LÍNEA  Siguiente punto o longitud [Enter termina]:" : "LÍNEA  Precisa primer punto:";
       case "dim": return n === 0 ? "COTA  Origen de la primera línea de referencia:" : n === 1 ? "COTA  Origen de la segunda línea:" : "COTA  Posición de la línea de cota:";
@@ -547,7 +550,13 @@ export class Editor {
     } catch { /* sin almacenamiento */ }
   }
   setLayer(id: LayerId, on: boolean) { this.vis[id] = on; this.sel = null; this.refresh3d(); }
-  select(s: Selection | null) { this.sel = s; this.refresh3d(); }
+  select(s: Selection | null) {
+    this.sel = s;
+    // un tramo de muro curvo selecciona el arco entero
+    const w = s?.type === "wall" ? this.model.walls.find((x) => x.id === s.id) : undefined;
+    if (w?.curve !== undefined) this.sels = this.model.walls.filter((x) => x.curve === w.curve).map((x) => ({ type: "wall" as const, id: x.id }));
+    this.refresh3d();
+  }
   /** Añade o quita un elemento de la selección (Ctrl o Mayús + clic). */
   toggleSelect(s: Selection) {
     this.sels = this.isSelected(s.type, s.id) ? this.sels.filter((x) => !(x.type === s.type && x.id === s.id)) : [...this.sels, s];
@@ -722,6 +731,7 @@ export class Editor {
     this.oneShot = null;
     if (MODIFY_TOOLS.includes(this.tool)) return this.modify(p);
     if (this.tool === "measure") return this.measurePoint(p);
+    if (this.tool === "arcwall") return this.arcWallPoint(p);
     if (this.tool === "calibrate") {
       const pts = this.draft?.pts ?? [];
       if (pts.length >= 2) { this.log("Escribe la medida real en metros y pulsa Enter."); return; }
@@ -1408,6 +1418,28 @@ export class Editor {
       ? `Tramo ${fmtLen(L)} a ${ang.toFixed(0)}° · total ${fmtLen(pathLength(this.draft.pts))}. Enter termina; clic en el primer punto cierra y da el área.`
       : `Distancia ${fmtLen(L)} · ΔX ${fmtLen(Math.abs(p.x - last.x))} · ΔY ${fmtLen(Math.abs(p.y - last.y))} · ángulo ${ang.toFixed(0)}°. Sigue marcando para sumar tramos o Enter para terminar.`);
   }
+  /** Muro curvo: inicio, fin y un punto por el que pasa; se crea como tramos rectos cortos de un mismo arco. */
+  arcWallPoint(p: Pt) {
+    const pts = this.draft?.pts ?? [];
+    if (!pts.length) { this.draft = { pts: [p] }; this.message = "Marca el punto final del muro curvo."; this.emit(); return; }
+    if (pts.length === 1) {
+      if (Math.hypot(p.x - pts[0].x, p.y - pts[0].y) < 0.1) return;
+      this.draft = { pts: [pts[0], p] }; this.message = "Mueve el cursor para curvar el muro y haz clic, o teclea la flecha en metros."; this.emit(); return;
+    }
+    const arc = arcThrough(pts[0], pts[1], p);
+    if (!arc) { this.log("Los tres puntos están alineados: aleja el tercero para curvar el muro."); return; }
+    this.addArcWall(arcPoints(arc));
+  }
+  /** Crea los tramos de un muro curvo por los puntos dados. */
+  addArcWall(path: Pt[]) {
+    const m = this.model, curve = nextId(m);
+    this.snapshot();
+    for (let i = 0; i + 1 < path.length; i++)
+      m.walls.push({ id: nextId(m), type: this.defaults.wallType, x1: path[i].x, y1: path[i].y, x2: path[i + 1].x, y2: path[i + 1].y, thick: this.defaults.thick, height: this.defaults.height, attach: true, curve });
+    this.draft = null;
+    this.message = `Muro curvo de ${fmtLen(pathLength(path))} creado en ${path.length - 1} tramos (se selecciona y borra entero). Marca otro o Esc para terminar.`;
+    this.changed();
+  }
   /** Termina la medición y deja el resultado a la vista. */
   endMeasure(closed: boolean) {
     const pts = this.draft?.pts ?? [];
@@ -1587,6 +1619,12 @@ export class Editor {
     if (this.tool === "array" && !this.draft?.pts.length && Number.isInteger(num)) {
       if (num < 2 || num > 200) { this.log("La matriz lleva de 2 a 200 elementos."); return; }
       this.arrayN = num; this.log(`Matriz de ${num} elementos.`); return;
+    }
+    if (this.tool === "arcwall" && this.draft?.pts.length === 2 && Number.isFinite(len)) {
+      const [a, b] = this.draft.pts, arc = len ? arcThrough(a, b, bulgePoint(a, b, -len)) : null;
+      if (!arc) { this.log("La flecha no puede ser 0."); return; }
+      this.addArcWall(arcPoints(arc));
+      return;
     }
     const lengthOk = this.draft?.pts.length &&
       (["wall", "line", "move", "copy", "mirror", "array", "slab", "stair", "run", "hatch", "measure"].includes(this.tool) || (this.tool === "dim" && this.draft.pts.length === 1));
