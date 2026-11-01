@@ -10,7 +10,7 @@ import { allSections, elevation, FACADES, section, type Elevation, type Facade }
 import { sheetBounds } from "../core/geometry";
 import { mepDef, type Discipline } from "../core/mep";
 import type { LayerId, Model } from "../core/model";
-import { computeRooms } from "../core/rooms";
+import { areaTable, computeRooms } from "../core/rooms";
 import { circuitSchedule, levelMarks, mepSchedule, openingSchedule, roomSchedule, runSchedule, sanitarySchedule, wallSchedule } from "../core/schedules";
 import type { Editor } from "../editor/Editor";
 import { drawElevation } from "../editor/elevationRenderer";
@@ -303,6 +303,7 @@ function Sheet({ ed, content, level, scale, zoom = 1, set, os = OVERSAMPLE }: { 
               <tbody>{walls.map((r) => <tr key={r.type}><td>{r.type}</td><td className="r">{n2(r.length)}</td><td className="r">{areaNum(r.area)}</td></tr>)}</tbody>
             </table>
           ) : <p className="empty">Sin muros.</p>}
+          {content === "plan" ? <AreaTable p={p} level={level} t={t} /> : <>
           <h4>{t("Superficies útiles", "Room areas")}</h4>
           {rooms.length ? (
             <table>
@@ -313,6 +314,7 @@ function Sheet({ ed, content, level, scale, zoom = 1, set, os = OVERSAMPLE }: { 
               </tbody>
             </table>
           ) : <p className="empty">{t("Sin habitaciones definidas.", "No rooms defined.")}</p>}
+          </>}
           <SheetLegend content={content} finishes={content === "fach" ? [] : usedFinishes(p.levels)} />
           {en ? <SheetNotes content={content} levels={p.levels} /> : <MxNotes content={content} />}
         </div>}
@@ -779,3 +781,31 @@ async function sheetJpeg(node: HTMLElement): Promise<PdfPage> {
   return page;
 }
 const BLANK_PX = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+ip1sAAAAASUVORK5CYII=";
+
+/** Cuadro de áreas de la planta: espacios del nivel con su superficie útil y construida, y el resumen por nivel. */
+function AreaTable({ p, level, t }: { p: Editor["project"]; level: number; t: (es: string, en: string) => string }) {
+  const all = areaTable(p.levels), a = all[level];
+  if (!a) return null;
+  return <>
+    <h4>{t("Cuadro de áreas", "Area schedule")} · {a.level}</h4>
+    <table>
+      <thead><tr><th>{t("Espacio", "Space")}</th><th className="r">{areaUnit()}</th></tr></thead>
+      <tbody>
+        {a.rooms.length ? a.rooms.map((r, i) => <tr key={i}><td>{r.name}</td><td className="r">{areaNum(r.area)}</td></tr>) : <tr><td colSpan={2} className="empty">{t("Sin habitaciones cerradas en este nivel.", "No closed rooms on this level.")}</td></tr>}
+        <tr className="tot"><td>{t("Superficie útil", "Net area")}</td><td className="r">{areaNum(a.useful)}</td></tr>
+        {a.built > a.useful && <tr><td>{t("Muros y otros", "Walls and other")}</td><td className="r">{areaNum(a.built - a.useful)}</td></tr>}
+        <tr className="tot"><td>{t("Superficie construida", "Gross area")}</td><td className="r">{areaNum(a.built)}</td></tr>
+      </tbody>
+    </table>
+    {all.length > 1 && <>
+      <h4>{t("Áreas por nivel", "Areas by level")}</h4>
+      <table>
+        <thead><tr><th>{t("Nivel", "Level")}</th><th className="r">{t("Útil", "Net")}</th><th className="r">{t("Construida", "Gross")}</th></tr></thead>
+        <tbody>
+          {all.map((l, i) => <tr key={i} className={i === level ? "cur" : undefined}><td>{l.level}</td><td className="r">{areaNum(l.useful)}</td><td className="r">{areaNum(l.built)}</td></tr>)}
+          <tr className="tot"><td>Total</td><td className="r">{areaNum(all.reduce((s, l) => s + l.useful, 0))}</td><td className="r">{areaNum(all.reduce((s, l) => s + l.built, 0))}</td></tr>
+        </tbody>
+      </table>
+    </>}
+  </>;
+}
