@@ -67,6 +67,8 @@ export interface Room {
   x: number;
   y: number;
   name: string;
+  /** Acabados interiores elegidos (interiorFinishes.ts); sin ellos se proponen según el nombre */
+  finishes?: { floor?: string; wall?: string; ceiling?: string };
 }
 
 export interface Slab {
