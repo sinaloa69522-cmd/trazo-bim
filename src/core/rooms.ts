@@ -85,3 +85,45 @@ export function roomAt(m: Model, g: RoomGrid | null, x: number, y: number) {
   }
   return null;
 }
+
+/**
+ * Superficie construida de un nivel: lo cerrado por los muros, con su espesor (huecos de puertas y ventanas
+ * cerrados). Se rellena el exterior desde el borde y se cuenta el resto.
+ */
+export function builtArea(m: Model): number {
+  if (!m.walls.length) return 0;
+  const xs = m.walls.flatMap((w) => [w.x1, w.x2]), ys = m.walls.flatMap((w) => [w.y1, w.y2]);
+  const C = 0.04, pad = 0.5, x0 = Math.min(...xs) - pad, y0 = Math.min(...ys) - pad;
+  const nx = Math.ceil((Math.max(...xs) + pad - x0) / C), ny = Math.ceil((Math.max(...ys) + pad - y0) / C);
+  if (nx * ny > 6e6) return 0;
+  const occ = new Uint8Array(nx * ny);
+  for (const w of m.walls) {
+    const h = w.thick / 2 + C * 0.5;
+    const i0 = Math.max(0, Math.floor((Math.min(w.x1, w.x2) - h - x0) / C)), i1 = Math.min(nx - 1, Math.ceil((Math.max(w.x1, w.x2) + h - x0) / C));
+    const j0 = Math.max(0, Math.floor((Math.min(w.y1, w.y2) - h - y0) / C)), j1 = Math.min(ny - 1, Math.ceil((Math.max(w.y1, w.y2) + h - y0) / C));
+    for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++)
+      if (distSeg(x0 + (i + 0.5) * C, y0 + (j + 0.5) * C, w.x1, w.y1, w.x2, w.y2).d <= w.thick / 2) occ[j * nx + i] = 1;
+  }
+  const out = new Uint8Array(nx * ny), q = new Int32Array(nx * ny);
+  let qt = 0, qh = 0;
+  for (let i = 0; i < nx; i++) for (const j of [0, ny - 1]) { const k = j * nx + i; if (!occ[k] && !out[k]) { out[k] = 1; q[qt++] = k; } }
+  for (let j = 0; j < ny; j++) for (const i of [0, nx - 1]) { const k = j * nx + i; if (!occ[k] && !out[k]) { out[k] = 1; q[qt++] = k; } }
+  while (qh < qt) {
+    const k = q[qh++], i = k % nx;
+    for (const n of [i > 0 ? k - 1 : -1, i < nx - 1 ? k + 1 : -1, k - nx, k + nx]) if (n >= 0 && n < nx * ny && !out[n] && !occ[n]) { out[n] = 1; q[qt++] = n; }
+  }
+  let inside = 0;
+  for (let k = 0; k < nx * ny; k++) if (!out[k]) inside++;
+  return inside * C * C;
+}
+
+export interface LevelAreas { level: string; rooms: { name: string; area: number }[]; useful: number; built: number }
+
+/** Cuadro de áreas: espacios de cada nivel, superficie útil (suma de espacios) y construida. */
+export function areaTable(levels: (Model & { name: string })[]): LevelAreas[] {
+  return levels.map((lv) => {
+    const g = computeRooms(lv);
+    const rooms = lv.rooms.map((r) => ({ name: r.name, area: g?.rooms.get(r.id)?.ok ? g.rooms.get(r.id)!.area : 0 })).filter((r) => r.area > 0);
+    return { level: lv.name, rooms, useful: rooms.reduce((s, r) => s + r.area, 0), built: builtArea(lv) };
+  });
+}
