@@ -186,9 +186,31 @@ function withLevel(ed: Editor, level: number, fn: () => void) {
   try { fn(); } finally { ed.active = saved.active; ed.rooms = saved.rooms; ed.hover = saved.hover; Object.assign(ed.view, saved.view); }
 }
 
+/** Achica (con zoom) cada bloque de tablas de la columna derecha hasta que entre completo, sin bajar del 45 %. */
+export function fitSide(side: HTMLElement) {
+  for (const t of side.querySelectorAll<HTMLElement>(".tables")) {
+    t.style.zoom = "";
+    let z = 1;
+    for (let i = 0; i < 12 && t.scrollHeight > t.clientHeight + 1 && z > 0.45; i++) {
+      z = Math.max(0.45, z * Math.min(0.97, Math.sqrt(t.clientHeight / t.scrollHeight)));
+      t.style.zoom = String(z);
+    }
+  }
+}
+
 /** Una lámina A3 completa: dibujo, tablas y cajetín. */
 function Sheet({ ed, content, level, scale, zoom = 1, set, os = OVERSAMPLE }: { ed: Editor; content: Content; level: number; scale: number; zoom?: number; set?: PermitEntry[]; os?: number }) {
-  const canvas = useRef<HTMLCanvasElement>(null);
+  const canvas = useRef<HTMLCanvasElement>(null), side = useRef<HTMLElement>(null);
+  // las tablas de la columna derecha se achican lo necesario para que quepan completas
+  useLayoutEffect(() => {
+    const el = side.current;
+    if (!el) return;
+    const fit = () => fitSide(el);
+    fit();
+    let live = true;
+    document.fonts?.ready.then(() => live && fit());
+    return () => { live = false; };
+  });
   const p = ed.project, info = p.info, lv = p.levels[level];
   const views = viewsOf(ed, content, level), secs = allSections(p), stacked = content === "fach";
   const doors = openingSchedule(p, "door").types, windows = openingSchedule(p, "window").types, rooms = roomSchedule(p), walls = wallSchedule(p);
@@ -291,7 +313,7 @@ function Sheet({ ed, content, level, scale, zoom = 1, set, os = OVERSAMPLE }: { 
         </>}
       </div>
       <div className="sheetnorth" style={{ left: `${planBox().x + planBox().w - 26}mm`, top: `${planBox().y + planBox().h - 9}mm` }}><NorthArrow /></div>
-      <aside className="sheetside" style={{ left: `${sheetSize().w - FRAME - SIDE}mm`, top: `${FRAME}mm`, width: `${SIDE}mm`, height: `${sheetSize().h - 2 * FRAME}mm` }}>
+      <aside ref={side} className="sheetside" style={{ left: `${sheetSize().w - FRAME - SIDE}mm`, top: `${FRAME}mm`, width: `${SIDE}mm`, height: `${sheetSize().h - 2 * FRAME}mm` }}>
         {permit ? <PermitSide ed={ed} content={content} level={level} set={set} /> : MX_EXTRA_SIDE.includes(content) ? <MxExtraSide ed={ed} content={content} set={set ?? mxSet(ed)} /> : !en && ((MX_KINDS as string[]).includes(content) || content === "elec") ? <MxSide ed={ed} content={content} level={level} /> : content === "elec" || content === "plum" ? <MepTables p={p} disc={content} level={level} notes={en} /> : <div className="tables">
           {content === "fach" && <>
             <h4>{t("Acabados de fachada", "Exterior finishes")}</h4>
