@@ -17,6 +17,7 @@ import { parseProjectFile, projectFileName, readProjectImages, serializeProject 
 import { SITE_ZOOM, type Site } from "../core/site";
 import { TEMPLATES } from "../core/templates";
 import { arcPoints, arcThrough, bulgePoint } from "../core/arc";
+import { DEFAULT_TERRAIN, earthwork, retainingWalls, terrainModel, type Terrain } from "../core/terrain";
 import { FURNITURE, furnitureDef, furnitureOutline } from "../core/furniture";
 import { autoRoute, discOfSystem, isElectric, MEP, mepDef, mepOf, runLength, sanitaryPoints, systemDef, type Discipline } from "../core/mep";
 import { breakLinear, extend, offset, trim, type Linear } from "../core/modify";
@@ -1171,6 +1172,14 @@ export class Editor {
 
   /** Cotas interiores (ancho y largo libres) de cada habitación, dentro del acotado automático. */
   get innerDims() { return this.project.innerDims !== false; }
+  /** Terreno con pendiente: cambia solo los datos dados. Pendiente 0 deja el terreno plano. */
+  setTerrain(t: Partial<Terrain>) {
+    this.edit(() => { this.project.terrain = { ...DEFAULT_TERRAIN, ...this.project.terrain, ...t }; });
+    const tm = terrainModel(this.project);
+    if (!tm) { this.message = "Terreno plano."; return; }
+    const ws = retainingWalls(tm), e = earthwork(tm);
+    this.message = `Terreno al ${tm.t.slope} %: ${ws.length ? `muros de contención de hasta ${fmtLen(Math.max(...ws.map((w) => w.max)))}` : "sin muros de contención"}; corte ${e.cut.toFixed(1)} m³ y relleno ${e.fill.toFixed(1)} m³ para la plataforma.`;
+  }
   setEntourage(on: boolean) {
     this.edit(() => { this.project.entourage = on; });
     this.message = on ? "Fachadas, cortes y alzados con personas, árboles y autos a escala." : "Ambientación quitada de fachadas, cortes y alzados.";

@@ -1,6 +1,7 @@
 // Modelo del proyecto. Coordenadas en metros; el eje Y crece hacia abajo en planta.
 
 import type { Site } from "./site";
+import type { Terrain } from "./terrain";
 import type { UnitSystem } from "./units";
 import { defaultBudget, type BudgetSettings } from "./budget";
 import type { PatLine } from "./hatch";
@@ -361,6 +362,8 @@ export interface Project {
   innerDims?: boolean;
   /** false: fachadas, cortes y alzados sin personas, árboles ni autos */
   entourage?: boolean;
+  /** Terreno con pendiente (terrain.ts); sin valor o pendiente 0: plano */
+  terrain?: Terrain;
 }
 
 export const defaultInfo = (): ProjectInfo => ({ name: "Vivienda unifamiliar", author: "", client: "", date: new Date().toISOString().slice(0, 10) });

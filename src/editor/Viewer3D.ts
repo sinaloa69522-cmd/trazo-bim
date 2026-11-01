@@ -16,6 +16,7 @@ import type { Editor } from "./Editor";
 import { grass, pavingMaterial, SKY, skyDome, skyEnvironment, tree, treeSpots } from "./scenery";
 import { IN } from "../core/units";
 import { sunVector } from "../core/sun";
+import { retainingWalls, terrainModel, type TerrainModel } from "../core/terrain";
 import { BODY, collide, EYE, floorAt, walkStart } from "./walk";
 
 /** Block de concreto (CMU) de la cimentación: piezas de 16" × 8" a hueso. */
@@ -350,6 +351,51 @@ export class Viewer3D {
     this.dirty = true;
   }
 
+  /** Terreno con pendiente del último build (null: plano). */
+  private terrain: TerrainModel | null = null;
+
+  /** Terreno inclinado con la plataforma de la casa y los muros de contención en sus orillas. */
+  private buildTerrain(tm: TerrainModel, gl: number, cx: number, cz: number, size: number, real: boolean) {
+    const r = tm.pad, X0 = cx - size / 2, Z0 = cz - size / 2, e = 0.03;
+    // el terreno es un plano fuera de la plataforma y horizontal dentro: basta con vértices en sus orillas
+    const cut = (a: number, b: number, lo: number) => [lo, a - e, a, b, b + e, lo + size].filter((v) => v >= lo && v <= lo + size).sort((p, q) => p - q);
+    const xs = [...new Set(cut(r.x0, r.x1, X0).flatMap((v, i, a) => i ? [...Array.from({ length: 8 }, (_, k) => a[i - 1] + ((v - a[i - 1]) * (k + 1)) / 8)] : [v]))];
+    const zs = [...new Set(cut(r.y0, r.y1, Z0).flatMap((v, i, a) => i ? [...Array.from({ length: 8 }, (_, k) => a[i - 1] + ((v - a[i - 1]) * (k + 1)) / 8)] : [v]))];
+    const pos: number[] = [], uv: number[] = [], idx: number[] = [];
+    for (const z of zs) for (const x of xs) {
+      pos.push(x, gl - 0.03 + tm.at({ x, y: z }), z);
+      uv.push((x - X0) / size, 1 - (z - Z0) / size);
+    }
+    const nx = xs.length;
+    for (let j = 0; j + 1 < zs.length; j++) for (let i = 0; i + 1 < nx; i++) {
+      const a = j * nx + i, b = a + 1, c = a + nx, d = c + 1;
+      idx.push(a, c, b, b, c, d);
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
+    g.setAttribute("uv", new THREE.Float32BufferAttribute(uv, 2));
+    g.setIndex(idx); g.computeVertexNormals();
+    const gm = grass(this.ren, cx, cz, 0, size), mat = real ? (gm.material as THREE.Material) : this.mat.floor;
+    gm.geometry.dispose();
+    const ground = new THREE.Mesh(g, mat);
+    ground.receiveShadow = true;
+    this.group.add(ground);
+    // muros de contención de concreto: tramos cortos que siguen el desnivel de cada orilla
+    for (const w of retainingWalls(tm)) {
+      const L = Math.hypot(w.b.x - w.a.x, w.b.y - w.a.y), n = Math.max(4, Math.ceil(L / 0.5)), ang = Math.atan2(w.b.y - w.a.y, w.b.x - w.a.x);
+      for (let i = 0; i < n; i++) {
+        const t = (i + 0.5) / n, h = w.ha + (w.hb - w.ha) * t;
+        if (Math.abs(h) < 0.05) continue;
+        const y0 = gl + Math.min(0, h) - 0.3, y1 = gl + Math.max(0, h) + 0.1;
+        const box = new THREE.Mesh(new THREE.BoxGeometry(L / n + 0.002, y1 - y0, 0.2), this.mat.coping);
+        box.position.set(w.a.x + (w.b.x - w.a.x) * t, (y0 + y1) / 2, w.a.y + (w.b.y - w.a.y) * t);
+        box.rotation.y = -ang;
+        box.castShadow = box.receiveShadow = true;
+        this.group.add(box);
+      }
+    }
+  }
+
   /** Estudio de asoleamiento: el sol en esa altura y acimut (grados). null vuelve al sol de siempre. */
   private study: { alt: number; az: number } | null = null;
   private sunArgs: [number, number, number, number] | null = null;
@@ -585,10 +631,12 @@ export class Viewer3D {
     floor.receiveShadow = true;
     this.group.add(floor);
     const span = Math.max(b.x1 - b.x0, b.y1 - b.y0, 10);
+    const tm = (this.terrain = this.ed.framing ? null : terrainModel(project));
+    if (tm) this.buildTerrain(tm, gl, cx, cz, real ? Math.max(160, span * 8) : span * 3, real);
     if (real) {
-      this.group.add(grass(this.ren, cx, cz, gl - 0.03, Math.max(400, span * 20)));
+      if (!tm) this.group.add(grass(this.ren, cx, cz, gl - 0.03, Math.max(400, span * 20)));
       const trees = project.entourage !== false ? treeSpots(b.x0, b.y0, b.x1, b.y1) : [];
-      trees.forEach((t, i) => this.group.add(tree(t.x, t.z, gl, t.h, i * 101 + 7)));
+      trees.forEach((t, i) => this.group.add(tree(t.x, t.z, gl + (tm ? tm.at({ x: t.x, y: t.z }) : 0), t.h, i * 101 + 7)));
       this.scene.fog = new THREE.Fog(SKY.horizon, span * 3, span * 14);
     } else this.scene.fog = null;
     this.placeSun(cx, cz, span / 2 + (real ? 10 : 4), floor.position.y);
@@ -834,7 +882,7 @@ export class Viewer3D {
     if (f || s) this.walkBy(f * 1.5 * run * dt, s * 1.2 * run * dt);
     const lv = this.ed.project.levels[w.level];
     if (lv) {
-      const target = floorAt(lv, w, gradeLevel(this.ed.project), w.level === 0) + EYE;
+      const target = floorAt(lv, w, gradeLevel(this.ed.project) + (this.terrain ? this.terrain.at(w) : 0), w.level === 0) + EYE;
       if (Math.abs(target - w.eye) > 1e-3) { w.eye += Math.sign(target - w.eye) * Math.min(Math.abs(target - w.eye), 2 * dt); this.dirty = true; }
     }
     // puertas abiertas a menos de 1.8 m (en el nivel por el que se camina)
