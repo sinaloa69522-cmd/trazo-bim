@@ -20,6 +20,7 @@ import { drawPermitOverlay, type PermitPlan } from "../editor/permitRenderer";
 import { site } from "../core/permit";
 import { FoundationDetails, StairDetails } from "./PermitDetails";
 import { ElecDetails, MechDetails, PlumbDetails } from "./MepDetails";
+import { drawFinishPlan } from "../editor/finishRenderer";
 import { CoverBody, DetailsBody, isDetails, NotesBody, PERMIT_KINDS, PermitSide, SheetNotes, SHEET_TITLES, TEXT_SHEETS, type PermitKind } from "./PermitSheets";
 import { SymbolIcon, SystemIcon } from "./MepIcons";
 import { MX_KINDS, MX_TITLES, MxFoundationDetails, MxNotes, MxSide, MxStructDetails, type MxKind } from "./MxSheets";
@@ -74,7 +75,7 @@ export function fitElevScale(els: Elevation[], stacked = false) {
 /** plan, elec y plum son plantas de un nivel; fach son dos fachadas (part 0: sur y norte, 1: este y oeste). */
 export type Content = "plan" | "elec" | "plum" | "elev" | "fach" | "sec" | PermitKind | MxKind;
 const PERMIT_PLANS: Content[] = ["site", "found", "floorfr", "wallfr", "rooffr", "hvac"];
-const MX_PLANS: Content[] = ["mxazo", "mxcim", "mxest", "hid", "san"];
+const MX_PLANS: Content[] = ["mxazo", "mxacab", "mxcim", "mxest", "hid", "san"];
 const isPlan = (c: Content) => c === "plan" || c === "elec" || c === "plum" || PERMIT_PLANS.includes(c) || MX_PLANS.includes(c);
 /** Láminas que van siempre con la planta baja. */
 const groundOnly = (c: Content) => c === "site" || c === "found" || c === "mxcim";
@@ -151,6 +152,7 @@ const PLAN_LAYERS: Partial<Record<Content, Partial<Record<LayerId, boolean>>>> =
   mxcim: ONLY_WALLS,
   mxest: { ...ONLY_WALLS, escaleras: true },
   mxazo: { ...ONLY_WALLS, escaleras: true },
+  mxacab: { ...ONLY_WALLS, puertas: true, ventanas: true, escaleras: true },
   hid: { ejes: false, electricidad: false, plomeria: true, cotas: false, losas: false, cubiertas: false, secciones: false },
   san: { ejes: false, electricidad: false, plomeria: true, cotas: false, losas: false, cubiertas: false, secciones: false },
 };
@@ -242,6 +244,9 @@ function Sheet({ ed, content, level, scale, zoom = 1, set, os = OVERSAMPLE }: { 
         drawPlan(ctx, ed, LIGHT, W, H, { print: true });
         ctx.restore();
         drawRoofPlan(ctx, ed, W, H);
+      } else if (content === "mxacab") {
+        drawPlan(ctx, ed, LIGHT, W, H, { print: true });
+        drawFinishPlan(ctx, ed);
       } else if (content === "mxcim" || content === "mxest") {
         drawPlan(ctx, ed, LIGHT, W, H, { print: true, roomLabelDy: 0.9 });
         drawMxOverlay(ctx, ed, content);
@@ -395,6 +400,7 @@ export function mxSet(ed: Editor): PermitEntry[] {
   if (allSections(ed.project).length) add("sec", 0, "ARQ", autoScaleOf(ed, "sec", 0));
   add("elev", 0, "ARQ", autoScaleOf(ed, "elev", 0));
   add("mxazo", roofLevel(ed.project), "ARQ", planScale);
+  lvs.forEach((lv, i) => { if (lv.rooms.length) add("mxacab", i, "ARQ", planScale, lvTitle("mxacab", i)); });
   add("mxarq", 0, "ARQ", 10);
   add("mxcim", 0, "EST");
   lvs.forEach((_, i) => add("mxest", i, "EST", planScale, lvTitle("mxest", i)));

@@ -1,3 +1,4 @@
+import { FINISH_LISTS, PART_LABEL, roomFinish, type FinishPart } from "../core/interiorFinishes";
 import { DEFAULT_TERRAIN, earthwork, retainingWalls, terrainModel } from "../core/terrain";
 import { Fragment, useState } from "react";
 import { dimGeom, dir, fits, polygonArea, PARAPET, roofGeom, slabArea } from "../core/geometry";
@@ -244,6 +245,15 @@ function Properties({ ed, onFocusCommand }: { ed: Editor; onFocusCommand: () => 
       <input id={`${key}-n`} type="text" defaultValue={r.name}
         onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
         onBlur={(e) => { const v = e.target.value.trim(); if (v && v !== r.name) ed.edit(() => { r.name = v; }); }} />
+      {(["floor", "wall", "ceiling"] as FinishPart[]).map((part) => (
+        <Fragment key={part}>
+          <label htmlFor={`${key}-${part}`}>{PART_LABEL[part]}</label>
+          <select id={`${key}-${part}`} value={r.finishes?.[part] ?? ""} onChange={(e) => ed.edit(() => { const v = e.target.value; r.finishes = { ...r.finishes, [part]: v || undefined }; })}>
+            <option value="">Según el espacio ({roomFinish({ ...r, finishes: undefined }, part).code} {roomFinish({ ...r, finishes: undefined }, part).name})</option>
+            {FINISH_LISTS[part].map((f) => <option key={f.id} value={f.id}>{f.code} {f.name}</option>)}
+          </select>
+        </Fragment>
+      ))}
     </>;
   } else if (sel && o && sel.type === "slab") {
     const sl = o as Model["slabs"][number];

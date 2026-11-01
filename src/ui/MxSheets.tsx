@@ -1,3 +1,4 @@
+import { finishTable, PART_LABEL, type FinishPart } from "../core/interiorFinishes";
 // Juego ejecutivo en metros al estilo de México: títulos, columna lateral (cuadros, simbología y notas)
 // de cada lámina y las dos láminas de detalles estructurales dibujadas en SVG (medidas en cm).
 import { Fragment, type ReactNode } from "react";
@@ -13,8 +14,8 @@ import type { Editor } from "../editor/Editor";
 import { SymbolIcon, SystemIcon } from "./MepIcons";
 import { box, Ln, map, Note, Shape, type Frame, type XY } from "./PermitSheets";
 
-export type MxKind = "mxport" | "mxnotas" | "mxazo" | "mxcim" | "mxest" | "mxdet1" | "mxdet2" | "mxdet3" | "mxarq" | "hid" | "san" | "mxinst" | "mxdie" | "mxdih" | "mxdaa";
-export const MX_KINDS: MxKind[] = ["mxport", "mxnotas", "mxazo", "mxcim", "mxest", "mxdet1", "mxdet2", "mxdet3", "mxarq", "hid", "san", "mxinst", "mxdie", "mxdih", "mxdaa"];
+export type MxKind = "mxport" | "mxnotas" | "mxazo" | "mxacab" | "mxcim" | "mxest" | "mxdet1" | "mxdet2" | "mxdet3" | "mxarq" | "hid" | "san" | "mxinst" | "mxdie" | "mxdih" | "mxdaa";
+export const MX_KINDS: MxKind[] = ["mxport", "mxnotas", "mxazo", "mxacab", "mxcim", "mxest", "mxdet1", "mxdet2", "mxdet3", "mxarq", "hid", "san", "mxinst", "mxdie", "mxdih", "mxdaa"];
 export const MX_TEXT = ["mxport", "mxnotas", "mxdet1", "mxdet2", "mxdet3", "mxarq", "mxinst", "mxdie", "mxdih", "mxdaa"];
 
 /** Título de cada lámina del juego en metros (también las de arquitectura e instalación eléctrica). */
@@ -23,6 +24,7 @@ export const MX_TITLES: Record<string, string> = {
   mxnotas: "Notas generales y abreviaturas",
   plan: "Planta arquitectónica",
   mxazo: "Planta de techos",
+  mxacab: "Plano de acabados",
   fach: "Fachadas",
   sec: "Cortes arquitectónicos",
   elev: "Elevaciones",
@@ -66,6 +68,13 @@ export const NOTES: Record<string, string[]> = {
   elev: [
     "Alzados de las cuatro fachadas con sus niveles en metros.",
     "Vanos de puertas y ventanas según la tabla de carpintería y cancelería.",
+  ],
+  mxacab: [
+    "Claves de la etiqueta de cada espacio: piso / muros / plafón (ver la tabla de acabados).",
+    "Los colores de la planta indican el acabado de piso de cada espacio.",
+    "Pisos y lambrines nivelados, a hueso o con junta según el fabricante; boquilla a juego.",
+    "Zoclo de 10 cm del mismo material del piso en todos los espacios, salvo indicación.",
+    "Superficies de muro y plafón medidas a cara de aplanado, con los vanos descontados.",
   ],
   mxazo: [
     "Cotas en metros; niveles sobre el N.P.T. ±0.00. N.L.A.: lecho alto de losa; N.T.P.: tope de pretil.",
@@ -356,6 +365,7 @@ function Unifilar({ rows }: { rows: LoadRow[] }) {
 export function MxSide({ ed, content, level }: { ed: Editor; content: string; level: number }) {
   const p = ed.project, lv = p.levels[level];
   if (content === "mxazo") return <RoofSide lv={lv} />;
+  if (content === "mxacab") return <FinishSide lv={lv} />;
   if (content === "mxcim") {
     const zs = stripFootings(p), pads = padFootings(p), c1 = stripSize(p, "ZC-1"), c2 = stripSize(p, "ZC-2"), za = padSize(p);
     const has = (m: string) => zs.some((z) => z.mark === m);
@@ -697,4 +707,22 @@ export function MxStructDetails({ box: b, p, sheet }: { box: Box; p: Project; sh
     ]} />
     <Title x={at(3).x + 6} y={at(3).y + ch - 7} n={8} title="Pretil y azotea" scale="1:20" sheet={sheet} />
   </Grid>;
+}
+
+/** Tabla de acabados por espacio y leyenda de claves usadas. */
+function FinishSide({ lv }: { lv: Level }) {
+  const rows = finishTable(lv);
+  const used = (part: FinishPart) => [...new Map(rows.map((r) => [r[part].id, r[part]])).values()].sort((a, b) => a.code.localeCompare(b.code));
+  return <div className="tables">
+    <h4>Tabla de acabados · {lv.name}</h4>
+    {rows.length ? <table><thead><tr><th>Espacio</th><th>Piso</th><th>Muros</th><th>Plafón</th><th className="r">Piso m²</th><th className="r">Muro m²</th></tr></thead><tbody>
+      {rows.map((r) => <tr key={r.room.id}><td>{r.name}</td><td><b>{r.floor.code}</b></td><td><b>{r.wall.code}</b></td><td><b>{r.ceiling.code}</b></td><td className="r">{r.area.toFixed(2)}</td><td className="r">{r.wallArea.toFixed(2)}</td></tr>)}
+      <tr className="tot"><td colSpan={4}>Total</td><td className="r">{rows.reduce((s, r) => s + r.area, 0).toFixed(2)}</td><td className="r">{rows.reduce((s, r) => s + r.wallArea, 0).toFixed(2)}</td></tr>
+    </tbody></table> : <p className="empty">Sin habitaciones cerradas en este nivel.</p>}
+    {(["floor", "wall", "ceiling"] as FinishPart[]).map((part) => used(part).length > 0 && <Fragment key={part}>
+      <h4>{PART_LABEL[part]}</h4>
+      <table className="legend"><tbody>{used(part).map((f) => <tr key={f.id}><td><span className="sw" style={{ background: f.color, display: "inline-block", width: 12, height: 12, border: "1px solid #888" }} /></td><td style={{ whiteSpace: "nowrap" }}><b>{f.code}</b></td><td>{f.spec}</td></tr>)}</tbody></table>
+    </Fragment>)}
+    <MxNotes content="mxacab" />
+  </div>;
 }
