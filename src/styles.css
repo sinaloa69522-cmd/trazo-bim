@@ -90,6 +90,16 @@ button,input,select,textarea{font:inherit;color:inherit}
 #view3d{position:absolute;inset:0}
 .tag{position:absolute;top:10px;left:12px;font-family:var(--f-mono);font-size:11px;color:var(--muted);background:var(--panel);border:1px solid var(--line);padding:2px 7px;border-radius:4px;pointer-events:none}
 .paneover{position:absolute;right:10px;top:10px;display:flex;gap:6px}
+.sunpanel{position:absolute;left:12px;top:44px;width:min(330px,calc(100% - 24px));background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:10px 12px;display:grid;gap:8px;font-size:12px;color:var(--fg);box-shadow:0 4px 18px rgba(0,0,0,.12)}
+.sunpanel .sunhead{display:flex;justify-content:space-between;align-items:center;font-size:13px}
+.sunpanel .sunhead .btn{padding:0 8px}
+.sunpanel .sunrow{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+.sunpanel .sunrow .btn{padding:2px 7px;font-size:11px}
+.sunpanel input[type=number]{width:72px}
+.sunpanel .sunhour{display:grid;gap:4px}
+.sunpanel .sunhour input{width:100%}
+.sunpanel .sunread{font-family:var(--f-mono);font-size:11px}
+.sunpanel small{color:var(--muted)}
 .walkhelp{position:absolute;left:50%;transform:translateX(-50%);top:46px;max-width:calc(100% - 24px);font-size:12px;color:var(--fg);background:var(--panel);border:1px solid var(--line);padding:4px 10px;border-radius:6px;pointer-events:none;text-align:center}
 .walkpad{position:absolute;right:12px;bottom:12px;display:grid;grid-template-columns:repeat(3,44px);gap:6px;touch-action:none;user-select:none;-webkit-user-select:none}
 .walkpad .btn{height:44px;padding:0;font-size:18px;touch-action:none}
