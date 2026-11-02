@@ -114,3 +114,33 @@ export function readImage(file: Blob): Promise<{ url: string; w: number; h: numb
     img.src = src;
   });
 }
+
+/**
+ * Logo o firma: PNG con transparencia, lado mayor de max px. Con knockout, el fondo casi blanco
+ * (una firma escaneada o fotografiada en papel) se vuelve transparente.
+ */
+export function readMark(file: Blob, max = 500, knockout = false): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const src = URL.createObjectURL(file), img = new Image();
+    img.onload = () => {
+      const k = Math.min(1, max / Math.max(img.naturalWidth, img.naturalHeight));
+      const cv = document.createElement("canvas");
+      cv.width = Math.max(1, Math.round(img.naturalWidth * k)); cv.height = Math.max(1, Math.round(img.naturalHeight * k));
+      const ctx = cv.getContext("2d")!;
+      ctx.drawImage(img, 0, 0, cv.width, cv.height);
+      URL.revokeObjectURL(src);
+      if (knockout) {
+        const d = ctx.getImageData(0, 0, cv.width, cv.height), a = d.data;
+        for (let i = 0; i < a.length; i += 4) {
+          const l = (a[i] + a[i + 1] + a[i + 2]) / 3;
+          // blanco y grises claros del papel a transparente, con borde suave
+          a[i + 3] = Math.round(a[i + 3] * Math.max(0, Math.min(1, (215 - l) / 50)));
+        }
+        ctx.putImageData(d, 0, 0);
+      }
+      resolve(cv.toDataURL("image/png"));
+    };
+    img.onerror = () => { URL.revokeObjectURL(src); reject(new Error("no es una imagen que el navegador pueda leer.")); };
+    img.src = src;
+  });
+}

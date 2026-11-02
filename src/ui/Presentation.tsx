@@ -5,6 +5,7 @@ import { budget, defaultBudget } from "../core/budget";
 import { roomUse, type RoomUse } from "../core/codeCheck";
 import { sheetBounds } from "../core/geometry";
 import { program } from "../core/obra";
+import { officeOf, responsibleLine } from "../core/office";
 import { jpegPdf, type PdfPage } from "../core/pdf";
 import { projectFileName } from "../core/projectFile";
 import { areaTable } from "../core/rooms";
@@ -48,7 +49,7 @@ export function presentationData(p: Editor["project"]) {
 }
 
 export function Presentation({ ed, shot, onClose }: { ed: Editor; shot: string | null; onClose: () => void }) {
-  const p = ed.project, info = p.info, d = useMemo(() => presentationData(p), [p]);
+  const p = ed.project, info = p.info, d = useMemo(() => presentationData(p), [p]), office = officeOf(p);
   const cur = p.budget?.currency ?? "MXN";
   const money = useMemo(() => { const f = new Intl.NumberFormat("es-MX", { style: "currency", currency: cur, maximumFractionDigits: 0 }); return (v: number) => f.format(v); }, [cur]);
   const host = useRef<HTMLDivElement>(null);
@@ -90,7 +91,7 @@ export function Presentation({ ed, shot, onClose }: { ed: Editor; shot: string |
     <header className="ph"><span>{info.name || "Proyecto"}</span><b>{title}</b></header>
   );
   const Foot = ({ n }: { n: number }) => (
-    <footer className="pf"><span>{[info.author, info.date].filter(Boolean).join(" · ")}</span><span>{n}</span></footer>
+    <footer className="pf"><span>{[office?.name || info.author, info.date].filter(Boolean).join(" · ")}</span><span>{n}</span></footer>
   );
   const page = (key: string, body: React.ReactNode) => (
     <div key={key} className="preswrap" style={{ width: PAGE.w * PX_MM * zoom, height: PAGE.h * PX_MM * zoom }}>
@@ -115,7 +116,15 @@ export function Presentation({ ed, shot, onClose }: { ed: Editor; shot: string |
             <h1>{info.name || "Proyecto"}</h1>
             {info.client && <p className="pc-for">Para {info.client}</p>}
             <dl>{facts.map(([k, v]) => <div key={k}><dt>{k}</dt><dd>{v}</dd></div>)}</dl>
-            <p className="pc-by">{[info.author, info.date].filter(Boolean).join(" · ")}</p>
+            <div className="pc-by">
+              {office?.logo && <img src={office.logo} alt="" />}
+              <div>
+                {office?.name && <b>{office.name}</b>}
+                <span>{responsibleLine(office, info.author)}</span>
+                {office?.contact && <span>{office.contact}</span>}
+                <span>{info.date}</span>
+              </div>
+            </div>
           </div>
         </div>)}
         {levels.map(({ l, i }, k) => page(`lv${i}`, <>

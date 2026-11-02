@@ -1,5 +1,6 @@
 // Láminas complementarias del juego en metros (México): portada con índice, notas generales con
 // abreviaturas y simbología, y tres láminas más de detalles (estructurales, arquitectónicos e instalaciones).
+import { officeOf, responsibleLine } from "../core/office";
 import type { ReactNode } from "react";
 import { foundationType } from "../core/foundation";
 import { projectAreas } from "../core/permit";
@@ -79,8 +80,8 @@ export function MxCoverBody({ ed, box: b }: { ed: Editor; box: Box }) {
         <SiteMap ed={ed} h={38} empty="UBICACIÓN DEL PREDIO · ponla en «Datos del proyecto»" />
         <h4>Responsables</h4>
         <table><tbody>
-          <tr><td>Proyectista</td><td>{info.author || "—"}</td></tr>
-          <tr><td>D.R.O.</td><td>Nombre, firma y registro</td></tr>
+          <tr><td>Proyectista</td><td>{responsibleLine(officeOf(ed.project), info.author) || "—"}</td></tr>
+          <tr><td>D.R.O.</td><td>{officeOf(ed.project)?.dro ? `${officeOf(ed.project)!.responsible} · ${officeOf(ed.project)!.dro}` : "Nombre, firma y registro"}</td></tr>
           <tr><td>Corresp. estructural</td><td>Nombre, firma y cédula</td></tr>
         </tbody></table>
       </div>

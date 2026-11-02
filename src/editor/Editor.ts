@@ -3,7 +3,7 @@ import { deckGeom, deckType, fitDecks } from "../core/decks";
 import { bounds, sheetBounds, dimOffset, dir, distSeg, dimGeom, fits, loc, onSlab, pointInPolygon, polygonArea, roofGeom, textBox, type Pt } from "../core/geometry";
 import { IDEAL_TREAD, POST_R, shortTread, sizedByTread, stairGeom, stairLabel, stairLenFor, stairSteps, stairTypeName } from "../core/stairs";
 import {
-  attachWalls, liftBuriedRoofs, cloneModel, emptyProject, newLevel, nextId, nextSectionName, normalizeProject, sampleProject, type Level, type Project, type ProjectInfo,
+  attachWalls, liftBuriedRoofs, cloneModel, emptyProject, newLevel, nextId, nextSectionName, normalizeProject, sampleProject, type Level, type Project, type ProjectInfo, type Office,
   type Deck, type DeckKind, type Dim, type Dormer, type LayerId, type MarkKind, type Model, type Roof, type RoofKind, type RunSystem, type Stair, type StairKind, type Wall,
 } from "../core/model";
 import { DORMER, dormerAt, dormerGeom, frontWindow, roofAxes, sideWindow } from "../core/dormers";
@@ -11,6 +11,7 @@ import { allAutoDims } from "../core/autodim";
 import { axes } from "../core/mxStruct";
 import { fmtArea, fmtElev, fmtLen, fmtSmall, imperial, parseLen, setUnitSystem, FT, IN, type UnitSystem } from "../core/units";
 import { levelText, MARK_KINDS, markHit, markPts, nextDetailNum, currentRev } from "../core/marks";
+import { emptyOffice, saveOffice, savedOffice } from "../core/office";
 import type { CadImportResult } from "../core/cadImport";
 import { parseDxf } from "../core/dxfImport";
 import { parseProjectFile, projectFileName, readProjectImages, serializeProject } from "../core/projectFile";
@@ -328,6 +329,12 @@ export class Editor {
   }
 
   /** Cambia los datos del cajetín. */
+  /** Datos del despacho: se guardan en el proyecto y como valor por omisión en este navegador. */
+  setOffice(patch: Partial<Office>) {
+    const next = { ...emptyOffice(), ...(this.project.info.office ?? savedOffice() ?? {}), ...patch };
+    saveOffice(next);
+    this.setInfo({ office: next });
+  }
   setInfo(patch: Partial<ProjectInfo>) { this.edit(() => { this.project.info = { ...this.project.info, ...patch }; }); }
   /** Ubicación del predio del croquis de localización; null la quita. */
   setSite(patch: Partial<Site> | null) {

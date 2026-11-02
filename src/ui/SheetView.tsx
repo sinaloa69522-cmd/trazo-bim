@@ -31,6 +31,8 @@ import { clipToRoofs, drawRoofPlan } from "../editor/roofRenderer";
 import { roofLevel } from "../core/roofPlan";
 import { SiteEditor } from "./SiteMap";
 import { RevisionBlock, RevisionsEditor } from "./Revisions";
+import { OfficeEditor, OfficeHead, OfficeSign } from "./OfficeEditor";
+import { officeOf } from "../core/office";
 import { FinishSym, mepEn, NorthArrow, SheetLegend } from "./SheetLegend";
 
 /** Lámina apaisada, en milímetros: A3, o en EE.UU. Tabloid (ANSI B, 11" × 17"). */
@@ -217,7 +219,7 @@ function Sheet({ ed, content, level, scale, zoom = 1, set, os = OVERSAMPLE }: { 
   const views = viewsOf(ed, content, level), secs = allSections(p), stacked = content === "fach";
   const doors = openingSchedule(p, "door").types, windows = openingSchedule(p, "window").types, rooms = roomSchedule(p), walls = wallSchedule(p);
   const sheetNo = sheetNumber(p.levels.length, content, level, set);
-  const en = imperial(), permit = (PERMIT_KINDS as string[]).includes(content);
+  const en = imperial(), permit = (PERMIT_KINDS as string[]).includes(content), office = officeOf(p);
   const planName = en || permit ? (SHEET_TITLES[content]?.en ?? "") : content === "plum" ? "Fontanería y saneamiento" : (MX_TITLES[content] ?? "");
   const finishes = content === "fach" ? [...new Map(views.flatMap((v) => v.el.faces.filter((f) => f.mat && !f.cut).map((f) => [f.mat!.name, f.mat!.finish] as const))).entries()] : [];
 
@@ -350,6 +352,7 @@ function Sheet({ ed, content, level, scale, zoom = 1, set, os = OVERSAMPLE }: { 
           {en ? <SheetNotes content={content} levels={p.levels} /> : <MxNotes content={content} />}
         </div>}
         <div className="cajetin">
+          {office && <OfficeHead o={office} />}
           <RevisionBlock revs={info.revisions ?? []} en={en} />
           <div className="c-proj"><small>{t("Proyecto", "Project")}</small>{info.name || "—"}</div>
           <div className="c-row">
@@ -359,6 +362,7 @@ function Sheet({ ed, content, level, scale, zoom = 1, set, os = OVERSAMPLE }: { 
             <div><small>{t("Autor", "Designer")}</small>{info.author || "—"}</div>
             <div><small>{t("Cliente", "Owner")}</small>{info.client || "—"}</div>
           </div>
+          {office && <OfficeSign o={office} en={en} />}
           <div className="c-row">
             <div><small>{t("Escala", "Scale")}</small>{content === "mxiso" ? "Sin escala" : isText(content) ? t("Indicada", isDetails(content) ? "As noted" : "N.T.S.") : scaleLabel(scale)}</div>
             <div><small>{t("Fecha", "Date")}</small>{info.date}</div>
@@ -486,6 +490,7 @@ export function SheetView({ ed }: { ed: Editor }) {
   const [info_, setInfo] = useState(false);
   const [siteOpen, setSiteOpen] = useState(false);
   const [revOpen, setRevOpen] = useState(false);
+  const [offOpen, setOffOpen] = useState(false);
   const [printSet, setPrintSet] = useState(false);
   /** PDF del juego completo en curso: láminas hechas de total */
   const [pdf, setPdf] = useState<{ done: number; total: number } | null>(null);
@@ -657,6 +662,9 @@ export function SheetView({ ed }: { ed: Editor }) {
         <button className="btn" aria-expanded={revOpen} onClick={() => { setRevOpen(!revOpen); setSiteOpen(false); }}
           title="Tabla de revisiones del cajetín y nubes de cambio">Revisiones{(ed.project.info.revisions ?? []).length ? ` (${ed.project.info.revisions!.length})` : ""}</button>
         {revOpen && <RevisionsEditor ed={ed} onClose={() => setRevOpen(false)} />}
+        <button className={`btn${officeOf(ed.project) ? "" : " primary"}`} aria-expanded={offOpen} onClick={() => { setOffOpen(!offOpen); setRevOpen(false); setSiteOpen(false); }}
+          title="Logo, nombre del despacho, responsable con cédula profesional y firma para el cajetín de todas las láminas">Despacho</button>
+        {offOpen && <OfficeEditor ed={ed} onClose={() => setOffOpen(false)} />}
         <label className="chk" title="Personas, árboles y autos a escala en fachadas, cortes, alzados y portada">
           <input type="checkbox" checked={ed.project.entourage !== false} onChange={(e) => ed.setEntourage(e.currentTarget.checked)} /> Personas, árboles y autos
         </label>
