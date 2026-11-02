@@ -72,12 +72,17 @@ export function finish(id: string | undefined): Finish | undefined {
   return id ? ALL.get(id) : undefined;
 }
 
+/** Acabados que solo se usan en EE.UU. (siding de madera o vinil, teja asfáltica, membranas) y en México no. */
+const US_ONLY = new Set(["vinyl-lap", "vinyl-dutch", "fiber-lap", "smart-lap", "cedar-bevel", "board-batten", "t111", "shake-siding", "asphalt-3tab", "asphalt-arch", "cedar-shake", "tpo", "epdm"]);
+/** Acabados del país del proyecto. */
+export const finishesFor = (list: Finish[], us: boolean) => list.filter((f) => us || !US_ONLY.has(f.id));
+
 /** Nombre del acabado en el idioma de las láminas. */
 export const finishName = (f: Finish) => (imperial() ? f.en : f.name);
 
 /** Material de una cubierta: el elegido o, si no hay, teja cerámica en las inclinadas; las planas sin elegir no llevan. */
 export function roofFinish(r: Roof): Finish | undefined {
-  return finish(r.finish) ?? (r.kind === "flat" ? undefined : ALL.get("clay"));
+  return finish(r.finish) ?? (r.kind === "flat" ? undefined : ALL.get(imperial() ? "asphalt-arch" : "clay"));
 }
 
 /**

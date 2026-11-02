@@ -260,8 +260,8 @@ export class Editor {
     this.project = { ...this.project, units: u, budget };
     Object.assign(this.defaults, u === "imperial" ? US_DEFAULTS : METRIC_DEFAULTS);
     this.log(u === "imperial"
-      ? `Unidades de EE.UU.: pies y pulgadas. Teclea 12'6", 12' o 6" (un número solo son pies). Muro por defecto 2x6, puerta 3'-0" × 6'-8".`
-      : "Unidades métricas: metros.");
+      ? `Proyecto en EE.UU.: wood frame, IRC, juego de permiso en inglés y dólares. Medidas en pies y pulgadas: teclea 12'6", 12' o 6" (un número solo son pies). Muro por defecto 2x6, puerta 3'-0" × 6'-8".`
+      : "Proyecto en México: block y concreto, Reglamento de Construcciones, juego ejecutivo, pesos y metros.");
     this.changed();
   }
   log(t: string) { this.message = t; this.emit(); }
@@ -274,8 +274,11 @@ export class Editor {
     this.snapshot();
     // la plantilla de EE.UU. trae sus unidades y moneda; las demás conservan las del proyecto
     const b = t.build(), us = b.units === "imperial";
-    this.project = { ...b, info: us ? { ...this.project.info, name: this.project.info.name === "Vivienda unifamiliar" ? b.info.name : this.project.info.name } : this.project.info, budget: us ? { ...this.project.budget, currency: b.budget.currency, tax: b.budget.tax } : this.project.budget, units: us ? "imperial" : this.project.units };
-    if (us) Object.assign(this.defaults, US_DEFAULTS);
+    // cada plantilla trae su país: la de México vuelve a metros, pesos e IVA
+    const wasUs = this.project.units === "imperial", cur = this.project.budget;
+    const budget = us ? { ...cur, currency: b.budget.currency, tax: b.budget.tax } : wasUs ? { ...cur, currency: cur.currency === "USD" ? "MXN" : cur.currency, tax: cur.tax === 0 ? 16 : cur.tax } : cur;
+    this.project = { ...b, info: us ? { ...this.project.info, name: this.project.info.name === "Vivienda unifamiliar" ? b.info.name : this.project.info.name } : this.project.info, budget, units: us ? "imperial" : "metric" };
+    Object.assign(this.defaults, us ? US_DEFAULTS : METRIC_DEFAULTS);
     this.active = 0; this.sel = null;
     this.log(`Plantilla «${t.name}» cargada (${t.desc.split(" · ")[0]}). Todo se puede editar; Deshacer vuelve al dibujo anterior.`);
     this.changed();
