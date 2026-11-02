@@ -26,6 +26,7 @@ import { GENERIC, wallType } from "../core/wallTypes";
 import { finish } from "../core/finishes";
 import { openingStyle } from "../core/openingStyles";
 import { foundationType, type FoundationKind } from "../core/foundation";
+import type { Finding } from "../core/codeCheck";
 import { computeRooms, RC, roomAt, type RoomGrid } from "../core/rooms";
 import { hatchArea, hatchPattern, inHatch, maskLoops, IMPORTED } from "../core/hatch";
 import { DEFAULT_SNAPS, resolveSnap, snapGeometry, SNAP_MODES, SNAP_NAME, type SnapKind, type SnapPt } from "./snaps";
@@ -129,6 +130,10 @@ export class Editor {
   /** La selección cuando hay exactamente un elemento; null si no hay ninguno o hay varios. */
   get sel(): Selection | null { return this.sels.length === 1 ? this.sels[0] : null; }
   set sel(s: Selection | null) { this.sels = s ? [s] : []; }
+  /** Observaciones de la revisión de reglamento marcadas en la planta (todas las de todos los niveles) */
+  review: Finding[] | null = null;
+  /** Tamaño en pantalla de la planta, para centrar en un punto */
+  screen = { w: 0, h: 0 };
   /** Medición terminada que se sigue viendo hasta el siguiente clic (cerrada: con su área). */
   measured: { pts: Pt[]; closed: boolean } | null = null;
   /** Distancia de desfase (equidistancia) y elemento elegido para desfasar. */
@@ -512,6 +517,19 @@ export class Editor {
       plomeria: m.fixtures.filter((f) => mepDef(f.kind).disc === "plum").length + m.runs.filter((r) => r.system !== "elec").length,
       calcos: m.underlays.length, sombreados: m.hatches.length, ejes: (({ x, y }) => x.length + y.length)(axes(m)),
     };
+  }
+
+  /** Marca en la planta las observaciones de la revisión (null las quita). */
+  setReview(f: Finding[] | null) { this.review = f; this.emit(); }
+  /** Lleva la planta a un punto de un nivel: lo activa y centra la vista ahí, con al menos 40 px por metro. */
+  focusAt(level: number, p: Pt) {
+    this.setActiveLevel(level);
+    const { w, h } = this.screen;
+    if (!w) return;
+    this.view.scale = Math.max(this.view.scale, 40);
+    this.view.ox = w / 2 - p.x * this.view.scale;
+    this.view.oy = h / 2 - p.y * this.view.scale;
+    this.emit();
   }
 
   // ---------- vista ----------

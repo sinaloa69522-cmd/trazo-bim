@@ -1,6 +1,7 @@
 import { saveFile } from "./saveFile";
 import { projectFileName } from "../core/projectFile";
 import { TemplateDialog } from "./TemplateDialog";
+import { ReviewPanel } from "./ReviewPanel";
 import { VersionsDialog } from "./VersionsDialog";
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { Editor, type Tool } from "../editor/Editor";
@@ -144,6 +145,7 @@ export function App() {
   };
   const view3d = useRef<View3DHandle>(null);
   const [sun3d, setSun3d] = useState(false);
+  const [review, setReview] = useState(false);
   const [templates, setTemplates] = useState(false);
   const [versions, setVersions] = useState(false);
   const [real3d, setReal3d] = useState(() => { try { return localStorage.getItem("trazo-3d-real") !== "0"; } catch { return true; } });
@@ -223,6 +225,8 @@ export function App() {
             <button key={v} className="tb" aria-pressed={view === v} onClick={() => setView(v)}>{label}</button>
           ))}
         </div>
+        <button className="btn" aria-pressed={review} onClick={() => { if (review) ed.setReview(null); else if (view !== "plan" && view !== "split") setView("plan"); setReview(!review); }}
+          title="Revisa áreas y lados mínimos, iluminación, ventilación, alturas, puertas y escaleras contra el reglamento">Reglamento</button>
         <div className="spacer" />
         {app.show && <button className="btn primary" onClick={() => void app.install().then((m) => m && ed.log(m))} title="Instalar Smartarchitect como aplicación: abre en su propia ventana y funciona sin internet">Instalar app</button>}
         <button className="btn" onClick={() => ed.undo()} title="Deshacer (Ctrl+Z)">Deshacer</button>
@@ -267,6 +271,7 @@ export function App() {
         <section className="work" data-view={view}>
           <div className="pane paneplan">
             <PlanView ed={ed} spaceDown={spaceDown} />
+            {review && <ReviewPanel ed={ed} onClose={() => setReview(false)} />}
             <span className="tag">PLANTA · {ed.model.name}{ed.project.units === "imperial" ? "" : " · 1:100"}</span>
           </div>
           {view === "sheet" && <SheetView ed={ed} />}

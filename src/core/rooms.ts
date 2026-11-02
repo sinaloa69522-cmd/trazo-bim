@@ -91,11 +91,22 @@ export function roomAt(m: Model, g: RoomGrid | null, x: number, y: number) {
  * cerrados). Se rellena el exterior desde el borde y se cuenta el resto.
  */
 export function builtArea(m: Model): number {
-  if (!m.walls.length) return 0;
+  const g = outsideGrid(m);
+  if (!g) return 0;
+  let inside = 0;
+  for (let k = 0; k < g.nx * g.ny; k++) if (!g.out[k]) inside++;
+  return inside * g.C * g.C;
+}
+
+export interface OutsideGrid { x0: number; y0: number; C: number; nx: number; ny: number; out: Uint8Array; occ: Uint8Array }
+
+/** Rejilla con lo que queda fuera del edificio (relleno desde el borde, sin cruzar muros ni vanos). */
+export function outsideGrid(m: Model): OutsideGrid | null {
+  if (!m.walls.length) return null;
   const xs = m.walls.flatMap((w) => [w.x1, w.x2]), ys = m.walls.flatMap((w) => [w.y1, w.y2]);
   const C = 0.04, pad = 0.5, x0 = Math.min(...xs) - pad, y0 = Math.min(...ys) - pad;
   const nx = Math.ceil((Math.max(...xs) + pad - x0) / C), ny = Math.ceil((Math.max(...ys) + pad - y0) / C);
-  if (nx * ny > 6e6) return 0;
+  if (nx * ny > 6e6) return null;
   const occ = new Uint8Array(nx * ny);
   for (const w of m.walls) {
     const h = w.thick / 2 + C * 0.5;
@@ -112,9 +123,61 @@ export function builtArea(m: Model): number {
     const k = q[qh++], i = k % nx;
     for (const n of [i > 0 ? k - 1 : -1, i < nx - 1 ? k + 1 : -1, k - nx, k + nx]) if (n >= 0 && n < nx * ny && !out[n] && !occ[n]) { out[n] = 1; q[qt++] = n; }
   }
-  let inside = 0;
-  for (let k = 0; k < nx * ny; k++) if (!out[k]) inside++;
-  return inside * C * C;
+  return { x0, y0, C, nx, ny, out, occ };
+}
+
+/** ¿El punto queda fuera del edificio? (fuera de la rejilla también cuenta como fuera) */
+export function isOutside(g: OutsideGrid, x: number, y: number) {
+  const i = Math.floor((x - g.x0) / g.C), j = Math.floor((y - g.y0) / g.C);
+  return i < 0 || j < 0 || i >= g.nx || j >= g.ny || g.out[j * g.nx + i] === 1;
+}
+
+/** ¿El punto cae dentro del espacio calculado? */
+export function inRoom(g: RoomGrid, c: RoomInfo, x: number, y: number) {
+  const i = Math.floor((x - g.x0) / RC), j = Math.floor((y - g.y0) / RC);
+  return !!c.mask && i >= 0 && j >= 0 && i < g.nx && j < g.ny && c.mask[j * g.nx + i] === 1;
+}
+
+/** Puntos a uno y otro lado del centro de un vano, justo fuera del espesor del muro. */
+export function openingSides(m: Model, o: Model["openings"][number], extra = RC * 1.5): [{ x: number; y: number }, { x: number; y: number }] | null {
+  const w = m.walls.find((x) => x.id === o.wallId);
+  if (!w) return null;
+  const L = Math.hypot(w.x2 - w.x1, w.y2 - w.y1) || 1, ux = (w.x2 - w.x1) / L, uy = (w.y2 - w.y1) / L, s = o.t * L, off = w.thick / 2 + extra;
+  const cx = w.x1 + ux * s, cy = w.y1 + uy * s;
+  return [{ x: cx - uy * off, y: cy + ux * off }, { x: cx + uy * off, y: cy - ux * off }];
+}
+
+/**
+ * Lado libre mínimo de un espacio: el lado del mayor cuadrado que cabe dentro (distancia de tablero
+ * a la orilla). En un rectángulo es su lado corto.
+ */
+export function minSide(g: RoomGrid, c: RoomInfo): number {
+  if (!c.mask) return 0;
+  const { nx, ny } = g, m = c.mask, d = new Int32Array(nx * ny);
+  const big = nx + ny;
+  for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) {
+    const k = j * nx + i;
+    if (!m[k]) { d[k] = 0; continue; }
+    let v = big;
+    if (i > 0) v = Math.min(v, d[k - 1] + 1); else v = 1;
+    if (j > 0) { v = Math.min(v, d[k - nx] + 1); if (i > 0) v = Math.min(v, d[k - nx - 1] + 1); if (i < nx - 1) v = Math.min(v, d[k - nx + 1] + 1); } else v = 1;
+    d[k] = v;
+  }
+  let best = 0;
+  for (let j = ny - 1; j >= 0; j--) for (let i = nx - 1; i >= 0; i--) {
+    const k = j * nx + i;
+    if (!m[k]) continue;
+    let v = d[k];
+    if (i === nx - 1 || j === ny - 1) v = 1;
+    else {
+      v = Math.min(v, d[k + 1] + 1, d[k + nx] + 1, d[k + nx + 1] + 1);
+      if (i > 0) v = Math.min(v, d[k + nx - 1] + 1);
+    }
+    d[k] = v;
+    best = Math.max(best, v);
+  }
+  // un cuadrado de lado n celdas tiene distancia máxima ceil(n/2); el relleno ya pierde media celda en cada muro
+  return 2 * best * RC;
 }
 
 export interface LevelAreas { level: string; rooms: { name: string; area: number }[]; useful: number; built: number }

@@ -440,3 +440,23 @@ dialog .err{color:var(--danger);font-size:13px}
 .seg button:disabled{opacity:.4;cursor:default}
 .deckchip{display:block;width:100%;height:6px;border-radius:2px;margin-bottom:2px}
 .stairchip{display:block;width:100%;height:26px;margin-bottom:2px;fill:none;stroke:currentColor;stroke-width:1.2}
+
+/* revisión de reglamento */
+.reviewpanel{position:absolute;right:12px;top:12px;z-index:12;width:min(380px,calc(100% - 24px));max-height:calc(100% - 24px);overflow:auto;background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:10px 12px;display:grid;gap:8px;font-size:12px;color:var(--fg);box-shadow:0 4px 18px rgba(0,0,0,.14);align-content:start}
+.reviewpanel .rvhead{display:flex;justify-content:space-between;align-items:center;font-size:13px}
+.reviewpanel .rvhead .btn{padding:0 8px}
+.reviewpanel .rvsum{margin:0;padding:6px 8px;border-radius:5px;font-weight:600}
+.reviewpanel .rvsum.bad{background:rgba(214,51,108,.12);color:#c2255c}
+.reviewpanel .rvsum.warn{background:rgba(232,165,12,.15);color:#a86b00}
+.reviewpanel .rvsum.good{background:rgba(47,158,68,.13);color:#2b8a3e}
+.reviewpanel .rvnone,.reviewpanel .rvnote{margin:0;color:var(--muted);line-height:1.4}
+.reviewpanel .rvnote{font-size:10.5px}
+.rvlist{list-style:none;margin:0;padding:0;display:grid;gap:4px}
+.rvlist button{display:flex;gap:8px;align-items:flex-start;width:100%;text-align:left;background:transparent;border:1px solid var(--line);border-radius:5px;padding:5px 7px;color:var(--fg);font:inherit;cursor:pointer;line-height:1.35}
+.rvlist button:hover{border-color:var(--accent)}
+.rvlist .rvn{flex:none;width:18px;height:18px;border-radius:50%;display:grid;place-items:center;color:#fff;font:600 10px var(--f-mono);background:#d6336c}
+.rvlist .warn .rvn{background:#e8a50c}
+.rvrooms summary{cursor:pointer;color:var(--muted)}
+.rvrooms table{width:100%;border-collapse:collapse;margin-top:4px;font-size:11px}
+.rvrooms th,.rvrooms td{padding:2px 4px;border-bottom:1px solid var(--line);text-align:left}
+.rvrooms .r{text-align:right;font-family:var(--f-mono)}
