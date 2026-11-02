@@ -34,6 +34,8 @@ export interface PlanOpts {
   circuits?: boolean;
   /** Baja el rótulo de las habitaciones (en metros) para que no tape el punto de luz del centro. */
   roomLabelDy?: number;
+  /** Presentación: color de relleno de cada habitación por su nombre (null: el tenue de siempre). */
+  roomFill?: (name: string) => string | null;
 }
 
 /** Imágenes de los calcos ya decodificadas; al terminar de cargar una se vuelve a dibujar. */
@@ -188,7 +190,8 @@ export function drawPlan(ctx: CanvasRenderingContext2D, ed: Editor, C: PlanColor
   if (ed.vis.hab && rg) for (const r of m.rooms) {
     const c = rg.rooms.get(r.id);
     if (!c?.ok) continue;
-    ctx.fillStyle = C.accent; ctx.globalAlpha = isSel("room", r.id) ? 0.2 : 0.07;
+    const fill = opts.roomFill?.(r.name);
+    ctx.fillStyle = fill ?? C.accent; ctx.globalAlpha = fill ? 1 : isSel("room", r.id) ? 0.2 : 0.07;
     const px = RC * ed.view.scale;
     ctx.beginPath();
     for (const [j, i0, i1] of c.runs) { const s = toS(rg.x0 + i0 * RC, rg.y0 + j * RC); ctx.rect(s.x, s.y, (i1 - i0) * px + 0.6, px + 0.6); }
