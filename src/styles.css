@@ -490,3 +490,18 @@ dialog.docdlg[open]{display:flex}
 @media print{html.print-budget .printbudget.landscape .budgetdoc{width:297mm}}
 
 .budgetdoc td.ins-note{font-size:7.5pt;color:#666}
+.cajetin .c-rev{padding:0}
+.cajetin .c-rev table{width:100%;border-collapse:collapse;font-size:6.5pt}
+.cajetin .c-rev th{font-size:5.5pt;letter-spacing:.08em;text-transform:uppercase;color:#666;font-weight:500;text-align:left;padding:.6mm 1.5mm;border-bottom:.2mm solid #111}
+.cajetin .c-rev td{padding:.5mm 1.5mm;border-top:.1mm solid #bbb;vertical-align:top}
+.cajetin .c-rev td:first-child,.cajetin .c-rev th:first-child{width:7mm;text-align:center;font-weight:600}
+.cajetin .c-rev td:nth-child(2),.cajetin .c-rev th:nth-child(2){width:16mm;white-space:nowrap}
+.cajetin .c-row>.c-rv{flex:0 0 auto;min-width:9mm;font-family:var(--f-display);font-weight:600;font-size:12pt;text-align:center}
+.reved{width:min(560px,calc(100vw - 32px))}
+.reved table{width:100%;border-collapse:collapse}
+.reved th{text-align:left;font-weight:500;color:var(--muted);font-size:11px;padding:2px 4px}
+.reved th.r,.reved td.r{text-align:right}
+.reved td{padding:2px 4px}
+.reved td input{width:100%;min-width:0}
+.reved .rv-no{width:52px}
+.reved .rv-date{width:130px}

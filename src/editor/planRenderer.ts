@@ -10,7 +10,7 @@ import { drawAxes } from "./mxRenderer";
 import { furnitureStrokes, type Stroke } from "../core/furniture";
 import { discOfSystem, fixtureStrokes, fixtureTextAt, mepDef, systemDef, type SymStroke } from "../core/mep";
 import type { Column, Deck, Dim, Fixture, HatchRegion, Mark, Model, Roof, Run, Section, Stair, Wall } from "../core/model";
-import { levelText, MARK_PX, textPx } from "../core/marks";
+import { cloudPoints, currentRev, levelText, MARK_PX, textPx } from "../core/marks";
 import { hatchSegments, isSolid, patternLines, patternSpacing, type HatchSegments } from "../core/hatch";
 import { RC } from "../core/rooms";
 import { openingSymbol } from "../core/openingStyles";
@@ -525,6 +525,7 @@ export function drawPlan(ctx: CanvasRenderingContext2D, ed: Editor, C: PlanColor
     const d = ed.defaults, pts = draft?.pts ?? [], gh: Mark | null =
       ed.noteAt ? { id: 0, kind: "nota", x: ed.noteAt.p.x, y: ed.noteAt.p.y, ax: ed.noteAt.a.x, ay: ed.noteAt.a.y, label: "…" }
       : d.markKind === "nivel" ? { id: 0, kind: "nivel", x: p.x, y: p.y, label: d.markLabel, dz: 0 }
+      : d.markKind === "nube" ? (pts.length ? { id: 0, kind: "nube", x: p.x, y: p.y, ax: pts[0].x, ay: pts[0].y, label: currentRev(ed.project) } : null)
       : d.markKind === "nota" ? (pts.length ? { id: 0, kind: "nota", x: p.x, y: p.y, ax: pts[0].x, ay: pts[0].y, label: "Nota" } : null)
       : pts.length === 1 ? { id: 0, kind: "detalle", x: p.x, y: p.y, ax: pts[0].x, ay: pts[0].y, r: Math.hypot(p.x - pts[0].x, p.y - pts[0].y), label: "", sheet: "" }
       : pts.length === 2 ? { id: 0, kind: "detalle", x: p.x, y: p.y, ax: pts[0].x, ay: pts[0].y, r: Math.hypot(pts[1].x - pts[0].x, pts[1].y - pts[0].y), label: "?", sheet: d.detailSheet } : null;
@@ -836,6 +837,18 @@ export function drawMark(ctx: CanvasRenderingContext2D, ed: Editor, mk: Mark, el
     ctx.lineWidth = 0.8 * lw; ctx.strokeRect(c.x - w / 2, c.y - h / 2, w, h);
     ctx.fillStyle = col; ctx.font = `600 ${MARK_PX.font}px ${F}`; ctx.textAlign = "center"; ctx.textBaseline = "middle";
     ctx.fillText(txt, c.x, c.y + 0.5);
+  } else if (mk.kind === "nube") {
+    // contorno de arcos de ~9 px de papel y triángulo con el número de revisión en la segunda esquina
+    const pts = cloudPoints({ x: mk.ax ?? mk.x, y: mk.ay ?? mk.y }, mk, 9 / ed.view.scale);
+    ctx.beginPath();
+    pts.forEach((q, i) => { const v = ed.toS(q.x, q.y); if (i) ctx.lineTo(v.x, v.y); else ctx.moveTo(v.x, v.y); });
+    ctx.lineWidth = 1.1 * lw; ctx.lineJoin = "round"; ctx.stroke();
+    const R = MARK_PX.bubble;
+    ctx.beginPath(); ctx.moveTo(c.x, c.y - R); ctx.lineTo(c.x + R * 0.95, c.y + R * 0.6); ctx.lineTo(c.x - R * 0.95, c.y + R * 0.6); ctx.closePath();
+    if (bg) { ctx.fillStyle = bg; ctx.fill(); }
+    ctx.lineWidth = 1 * lw; ctx.stroke();
+    ctx.fillStyle = col; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    ctx.font = `600 ${mk.label.length > 1 ? 7.5 : 9}px 'IBM Plex Sans', system-ui, sans-serif`; ctx.fillText(mk.label, c.x, c.y + R * 0.2);
   } else if (mk.kind === "detalle") {
     const R = MARK_PX.bubble, a = ed.toS(mk.ax ?? mk.x, mk.ay ?? mk.y), rz = (mk.r ?? 0) * ed.view.scale;
     // zona que se detalla

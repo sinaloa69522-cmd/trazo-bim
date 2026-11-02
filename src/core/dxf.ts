@@ -8,7 +8,7 @@ import { stairGeom } from "./stairs";
 import { deckGeom } from "./decks";
 import { hatchSegments, isSolid, patternLines, solidTrapezoids } from "./hatch";
 import type { Model } from "./model";
-import { levelText } from "./marks";
+import { cloudPoints, levelText } from "./marks";
 import type { RoomGrid } from "./rooms";
 
 /**
@@ -112,6 +112,14 @@ export function toDxf(m: Model, rooms: RoomGrid | null, u: UnitSystem = unitSyst
       if (L > rz + R) line("A-ANOTACION", { x: a.x + ux * rz, y: a.y + uy * rz }, { x: c.x - ux * R, y: c.y - uy * R });
       text("A-ANOTACION", { x: c.x, y: c.y - 0.1 }, 0.2, mk.label);
       text("A-ANOTACION", { x: c.x, y: c.y + 0.25 }, 0.12, mk.sheet || "-");
+    } else if (mk.kind === "nube") {
+      const pts = cloudPoints(a, c, 0.25);
+      for (let i = 1; i < pts.length; i++) line("A-REVISION", pts[i - 1], pts[i]);
+      const R = 0.35;
+      line("A-REVISION", { x: c.x, y: c.y - R }, { x: c.x + R * 0.95, y: c.y + R * 0.6 });
+      line("A-REVISION", { x: c.x + R * 0.95, y: c.y + R * 0.6 }, { x: c.x - R * 0.95, y: c.y + R * 0.6 });
+      line("A-REVISION", { x: c.x - R * 0.95, y: c.y + R * 0.6 }, { x: c.x, y: c.y - R });
+      text("A-REVISION", { x: c.x, y: c.y + 0.12 }, 0.18, mk.label);
     } else {
       const sg = mk.x >= a.x ? 1 : -1;
       line("A-ANOTACION", a, c); line("A-ANOTACION", c, { x: c.x + sg * 0.25, y: c.y });

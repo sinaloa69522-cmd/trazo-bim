@@ -439,6 +439,14 @@ function Properties({ ed, onFocusCommand }: { ed: Editor; onFocusCommand: () => 
         <NumberField id={`${key}-r`} label="Radio (m)" value={mk.r ?? 0.5} min={0.1} onCommit={(v) => ed.edit(() => { mk.r = v; })} />
         <p className="hint">El globo lleva el número del detalle arriba y la lámina donde está dibujado abajo.</p>
       </>;
+    } else if (mk.kind === "nube") {
+      ro.push(["Tamaño", `${fmtLen(Math.abs(mk.x - (mk.ax ?? mk.x)))} × ${fmtLen(Math.abs(mk.y - (mk.ay ?? mk.y)))}`]);
+      const rv = (ed.project.info.revisions ?? []).find((r) => r.no === mk.label);
+      if (rv) ro.push(["Fecha", rv.date], ["Cambio", rv.desc]);
+      body = <>
+        {textField("Revisión", mk.label, (v) => { mk.label = v || mk.label; })}
+        <p className="hint">{rv ? "La revisión está en la tabla del cajetín." : "Esta revisión no está en la tabla: agrégala en Láminas › Revisiones."}</p>
+      </>;
     } else body = textField("Texto", mk.label, (v) => { mk.label = v || mk.label; });
   } else if (sel && o && sel.type === "fixture") {
     const f = o as Model["fixtures"][number], d = mepDef(f.kind);
@@ -663,7 +671,7 @@ function MarkTools({ ed }: { ed: Editor }) {
           onBlur={(e) => { d.detailSheet = e.target.value.trim(); ed.emit(); }} />
       </div>}
       <p className="hint">{k.hint}</p>
-      <p className="hint">Comandos: NV nivel, LD llamada de detalle, NT nota. En cortes y fachadas los niveles salen solos.</p>
+      <p className="hint">Comandos: NV nivel, LD llamada de detalle, NT nota, NB nube de revisión. En cortes y fachadas los niveles salen solos.</p>
     </section>
   );
 }
@@ -672,6 +680,7 @@ const MARK_ICON = {
   nivel: "M2 8h20v8H2zM5 12h14",
   detalle: "M14 13a7 7 0 1 1 0.01 0M7 13h14M2 3l6 4",
   nota: "M3 20l9-9h9M3 20l1-4M3 20l4-1",
+  nube: "M4 8a2 2 0 0 1 4-1a2 2 0 0 1 4 0a2 2 0 0 1 4 0a2 2 0 0 1 3 3a2 2 0 0 1 0 4a2 2 0 0 1-3 3a2 2 0 0 1-4 0a2 2 0 0 1-4 0a2 2 0 0 1-4-1a2 2 0 0 1 0-4a2 2 0 0 1 0-4z",
 } as const;
 
 /** Iconos de planta de cada tipo de escalera. */

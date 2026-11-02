@@ -30,6 +30,7 @@ import { drawMxOverlay } from "../editor/mxRenderer";
 import { clipToRoofs, drawRoofPlan } from "../editor/roofRenderer";
 import { roofLevel } from "../core/roofPlan";
 import { SiteEditor } from "./SiteMap";
+import { RevisionBlock, RevisionsEditor } from "./Revisions";
 import { FinishSym, mepEn, NorthArrow, SheetLegend } from "./SheetLegend";
 
 /** Lámina apaisada, en milímetros: A3, o en EE.UU. Tabloid (ANSI B, 11" × 17"). */
@@ -349,6 +350,7 @@ function Sheet({ ed, content, level, scale, zoom = 1, set, os = OVERSAMPLE }: { 
           {en ? <SheetNotes content={content} levels={p.levels} /> : <MxNotes content={content} />}
         </div>}
         <div className="cajetin">
+          <RevisionBlock revs={info.revisions ?? []} en={en} />
           <div className="c-proj"><small>{t("Proyecto", "Project")}</small>{info.name || "—"}</div>
           <div className="c-row">
             <div><small>{t("Plano", "Sheet title")}</small>{en && !permit && !isPlan(content) ? (SHEET_TITLES[content]?.en ?? "") : content === "elev" ? "Alzados norte, sur, este y oeste" : content === "fach" ? views.map((v) => v.label).join(" y ") : content === "sec" ? (views.length ? `Secciones ${secs.slice(0, 4).map((x) => `${x.name}-${x.name}'`).join(", ")}` : "Secciones") : isText(content) || content === "site" || content === "mxiso" ? planName : planName ? `${planName} · ${lv.name}` : lv.name}</div>
@@ -360,6 +362,7 @@ function Sheet({ ed, content, level, scale, zoom = 1, set, os = OVERSAMPLE }: { 
           <div className="c-row">
             <div><small>{t("Escala", "Scale")}</small>{content === "mxiso" ? "Sin escala" : isText(content) ? t("Indicada", isDetails(content) ? "As noted" : "N.T.S.") : scaleLabel(scale)}</div>
             <div><small>{t("Fecha", "Date")}</small>{info.date}</div>
+            {(info.revisions ?? []).length > 0 && <div className="c-rv"><small>Rev.</small>{info.revisions![info.revisions!.length - 1].no}</div>}
             <div className="c-no"><small>{t("Lámina", "Sheet")}</small>{sheetNo}</div>
           </div>
         </div>
@@ -482,6 +485,7 @@ export function SheetView({ ed }: { ed: Editor }) {
   const [all, setAll] = useState(false);
   const [info_, setInfo] = useState(false);
   const [siteOpen, setSiteOpen] = useState(false);
+  const [revOpen, setRevOpen] = useState(false);
   const [printSet, setPrintSet] = useState(false);
   /** PDF del juego completo en curso: láminas hechas de total */
   const [pdf, setPdf] = useState<{ done: number; total: number } | null>(null);
@@ -650,6 +654,9 @@ export function SheetView({ ed }: { ed: Editor }) {
         <button className={`btn${ed.project.info.site ? "" : " primary"}`} aria-expanded={siteOpen} onClick={() => setSiteOpen(!siteOpen)}
           title="Croquis de localización de la portada: busca la dirección, usa tu ubicación o sube una imagen">Ubicación del predio</button>
         {siteOpen && <SiteEditor ed={ed} onClose={() => setSiteOpen(false)} />}
+        <button className="btn" aria-expanded={revOpen} onClick={() => { setRevOpen(!revOpen); setSiteOpen(false); }}
+          title="Tabla de revisiones del cajetín y nubes de cambio">Revisiones{(ed.project.info.revisions ?? []).length ? ` (${ed.project.info.revisions!.length})` : ""}</button>
+        {revOpen && <RevisionsEditor ed={ed} onClose={() => setRevOpen(false)} />}
         <label className="chk" title="Personas, árboles y autos a escala en fachadas, cortes, alzados y portada">
           <input type="checkbox" checked={ed.project.entourage !== false} onChange={(e) => ed.setEntourage(e.currentTarget.checked)} /> Personas, árboles y autos
         </label>
