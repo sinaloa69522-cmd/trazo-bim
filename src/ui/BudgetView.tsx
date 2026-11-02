@@ -2,6 +2,8 @@ import { saveFile } from "./saveFile";
 import { Fragment, useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { budget, budgetCsv, CURRENCIES } from "../core/budget";
+import { program } from "../core/obra";
+import { ProgramDoc, programXlsx } from "./ProgramDoc";
 
 const qty = (v: number) => v.toLocaleString("es-MX", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 import type { Editor } from "../editor/Editor";
@@ -41,6 +43,7 @@ export function BudgetView({ ed }: { ed: Editor }) {
   const b = useMemo(() => budget(ed.project, s), [ed.version, s]); // eslint-disable-line react-hooks/exhaustive-deps
   const own = Object.keys(s.prices).length;
   const [printing, setPrinting] = useState(false);
+  const [tab, setTab] = useState<"budget" | "program">("budget");
 
   useEffect(() => {
     if (!printing) return;
@@ -57,9 +60,23 @@ export function BudgetView({ ed }: { ed: Editor }) {
     ed.log("Presupuesto exportado en CSV: ábrelo con Excel o Google Sheets.");
   };
 
+  const downloadProgram = () => {
+    const g = program(ed.project), name = (info.name || "proyecto").toLowerCase().replace(/[^a-z0-9áéíóúñü]+/gi, "-");
+    void saveFile(`programa-de-obra-${name}.xlsx`, new Blob([programXlsx(g, `Programa de obra · ${info.name}`, info.date, s.currency)], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }));
+    ed.log("Programa de obra exportado a Excel.");
+  };
+
   return (
     <div className="budgetpane">
       <div className="sheetbar">
+        <div className="group" role="tablist" aria-label="Documento">
+          <button className="tb" role="tab" aria-pressed={tab === "budget"} onClick={() => setTab("budget")}>Presupuesto</button>
+          <button className="tb" role="tab" aria-pressed={tab === "program"} onClick={() => setTab("program")}>Programa de obra</button>
+        </div>
+        {tab === "program" ? <>
+          <button className="btn primary" onClick={downloadProgram}>Descargar Excel</button>
+          <button className="btn" onClick={() => setPrinting(true)} disabled={printing}>Imprimir / PDF</button>
+        </> : <>
         <label>Moneda
           <select value={s.currency} onChange={(e) => ed.setBudget({ currency: e.target.value })}>
             {CURRENCIES.map((c) => <option key={c} value={c}>{c}</option>)}
@@ -70,11 +87,12 @@ export function BudgetView({ ed }: { ed: Editor }) {
         <button className="btn primary" onClick={download} title="Separado por punto y coma, con coma decimal, para Excel en español">Exportar a Excel (CSV)</button>
         <button className="btn" onClick={() => setPrinting(true)} disabled={printing}>Imprimir / PDF</button>
         {own > 0 && <button className="btn" onClick={() => ed.setBudget({ prices: {} })}>Volver a precios de referencia ({own})</button>}
+        </>}
       </div>
       <div className="budgethost">
-        <BudgetDoc ed={ed} editable />
+        {tab === "program" ? <ProgramDoc ed={ed} /> : <BudgetDoc ed={ed} editable />}
       </div>
-      {printing && createPortal(<div className="printbudget"><BudgetDoc ed={ed} editable={false} /></div>, document.body)}
+      {printing && createPortal(<div className={`printbudget${tab === "program" ? " landscape" : ""}`}>{tab === "program" ? <ProgramDoc ed={ed} /> : <BudgetDoc ed={ed} editable={false} />}</div>, document.body)}
     </div>
   );
 }
