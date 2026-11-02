@@ -228,11 +228,12 @@ export interface Text {
   rot: number;
 }
 
-export type MarkKind = "nivel" | "detalle" | "nota";
+export type MarkKind = "nivel" | "detalle" | "nota" | "nube";
 
 /**
  * Símbolo de anotación (marks.ts), de tamaño fijo en el papel:
- * nivel en planta (rótulo N.P.T. con la cota), llamada de detalle (zona y globo) o nota con flecha.
+ * nivel en planta (rótulo N.P.T. con la cota), llamada de detalle (zona y globo), nota con flecha
+ * o nube de revisión (rectángulo de (ax, ay) a (x, y) con el triángulo del número de revisión en (x, y)).
  */
 export interface Mark {
   id: number;
@@ -245,7 +246,7 @@ export interface Mark {
   ay?: number;
   /** Detalle: radio de la zona */
   r?: number;
-  /** Nivel: prefijo (N.P.T., N.T.N.…); detalle: número; nota: texto */
+  /** Nivel: prefijo (N.P.T., N.T.N.…); detalle: número; nota: texto; nube: número de revisión */
   label: string;
   /** Nivel: desnivel respecto a la cota del nivel (p. ej. -0.15 en un patio) */
   dz?: number;
@@ -347,6 +348,15 @@ export interface ProjectInfo {
   date: string;
   /** Ubicación del predio para el croquis de localización de la portada */
   site?: Site;
+  /** Revisiones del juego, de la más antigua a la más reciente; van en el cajetín de todas las láminas */
+  revisions?: Revision[];
+}
+
+/** Una revisión del juego de planos: número (o letra), fecha y qué cambió. */
+export interface Revision {
+  no: string;
+  date: string;
+  desc: string;
 }
 
 export interface Project {
@@ -441,6 +451,10 @@ export function normalizeProject(raw: unknown): Project {
   const info = { ...defaultInfo(), ...(r?.info ?? {}) };
   const st = info.site;
   if (st && !(Number.isFinite(st.lat) && Number.isFinite(st.lon))) delete info.site;
+  if (info.revisions !== undefined) {
+    const rv = Array.isArray(info.revisions) ? info.revisions.filter((x) => x && typeof x === "object").map((x) => ({ no: String(x.no ?? ""), date: String(x.date ?? ""), desc: String(x.desc ?? "") })) : [];
+    if (rv.length) info.revisions = rv; else delete info.revisions;
+  }
   const budget = { ...defaultBudget(), ...(r?.budget ?? {}) };
   const units = { ...(r?.units === "imperial" ? { units: "imperial" as const } : {}), ...(r?.foundation ? { foundation: r.foundation } : {}) };
   if (Array.isArray(r?.levels) && r.levels.length) {

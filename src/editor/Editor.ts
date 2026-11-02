@@ -10,7 +10,7 @@ import { DORMER, dormerAt, dormerGeom, frontWindow, roofAxes, sideWindow } from 
 import { allAutoDims } from "../core/autodim";
 import { axes } from "../core/mxStruct";
 import { fmtArea, fmtElev, fmtLen, fmtSmall, imperial, parseLen, setUnitSystem, FT, IN, type UnitSystem } from "../core/units";
-import { levelText, MARK_KINDS, markHit, markPts, nextDetailNum } from "../core/marks";
+import { levelText, MARK_KINDS, markHit, markPts, nextDetailNum, currentRev } from "../core/marks";
 import type { CadImportResult } from "../core/cadImport";
 import { parseDxf } from "../core/dxfImport";
 import { parseProjectFile, projectFileName, readProjectImages, serializeProject } from "../core/projectFile";
@@ -87,7 +87,7 @@ const COMMANDS: Record<string, Tool> = {
 const pathLength = (pts: Pt[]) => pts.slice(1).reduce((s, q, i) => s + Math.hypot(q.x - pts[i].x, q.y - pts[i].y), 0);
 /** Comandos de los símbolos de anotación. */
 const MARK_COMMANDS: Record<string, MarkKind> = {
-  NV: "nivel", NIVEL: "nivel", LD: "detalle", LLAMADA: "detalle", DETALLE: "detalle", NT: "nota", NOTA: "nota",
+  NV: "nivel", NIVEL: "nivel", LD: "detalle", LLAMADA: "detalle", DETALLE: "detalle", NT: "nota", NOTA: "nota", NB: "nube", NUBE: "nube", REVCLOUD: "nube",
 };
 /** Comandos que abren la biblioteca de instalaciones de una disciplina. */
 const DISC_COMMANDS: Record<string, Discipline> = {
@@ -473,6 +473,7 @@ export class Editor {
       case "stair": return d.stairKind === "caracol" ? (n ? "ESCALERA  Radio exterior:" : "ESCALERA  Centro del caracol:") : n ? (sizedByTread(d.stairKind) ? "ESCALERA  Dirección de subida:" : "ESCALERA  Punto de llegada (o longitud):") : `ESCALERA  ${stairTypeName(d.stairKind)}: punto de arranque (ancho ${fmtLen(d.stairW)}):`;
       case "text": return this.textAt ? "TEXTO  Escribe el texto y pulsa Intro [Esc cancela]:" : `TEXTO  Punto de inserción (altura ${fmtLen(d.textSize)}):`;
       case "mark": return d.markKind === "nivel" ? `NIVEL  Punto del rótulo (${d.markLabel} ${fmtElev(this.model.elev)}):`
+        : d.markKind === "nube" ? (n ? "NUBE DE REVISIÓN  Esquina opuesta (ahí va el triángulo):" : `NUBE DE REVISIÓN  Primera esquina (revisión ${currentRev(this.project)}):`)
         : d.markKind === "detalle" ? (n === 0 ? "LLAMADA DE DETALLE  Centro de la zona que se detalla:" : n === 1 ? "LLAMADA DE DETALLE  Radio de la zona:" : "LLAMADA DE DETALLE  Posición del globo:")
         : this.noteAt ? "NOTA  Escribe el texto y pulsa Intro [Esc cancela]:" : n ? "NOTA  Punto donde va el texto:" : "NOTA  Punta de la flecha (lo que se señala):";
       case "hole": return n ? "HUECO  Esquina opuesta del hueco:" : "HUECO EN LOSA  Primera esquina (sobre una escalera, el hueco va a la losa o azotea de arriba):";
@@ -2080,6 +2081,18 @@ export class Editor {
     if (this.noteAt) { this.log("Escribe el texto de la nota y pulsa Intro."); return; }
     const pts = [...(this.draft?.pts ?? []), p];
     if (pts.length > 1 && Math.hypot(p.x - pts[pts.length - 2].x, p.y - pts[pts.length - 2].y) < 1e-3) return;
+    if (d.markKind === "nube") {
+      if (pts.length < 2) { this.draft = { pts }; this.emit(); return; }
+      const [a] = pts;
+      if (Math.abs(p.x - a.x) < 0.1 || Math.abs(p.y - a.y) < 0.1) { this.draft = null; this.log("La nube es demasiado angosta: marca dos esquinas opuestas de lo que cambió."); return; }
+      this.snapshot();
+      const id = nextId(m), rev = currentRev(this.project);
+      m.marks.push({ id, kind: "nube", x: p.x, y: p.y, ax: a.x, ay: a.y, label: rev });
+      this.draft = null;
+      this.message = (this.project.info.revisions ?? []).length ? `Nube de la revisión ${rev}. Marca otra o Esc para terminar.` : "Nube de la revisión 1. Escribe qué cambió en Láminas › Revisiones para que salga en el cajetín.";
+      this.changed();
+      return;
+    }
     if (d.markKind === "nota") {
       if (pts.length < 2) { this.draft = { pts }; this.emit(); return; }
       this.noteAt = { a: pts[0], p };
