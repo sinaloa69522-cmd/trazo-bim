@@ -27,7 +27,7 @@ const SF = FT * FT, LF = FT;
 const r2 = (v: number) => Math.round(v * 100) / 100;
 
 /** Precio por dispositivo eléctrico y de plomería, con su nombre en inglés. */
-const MEP_US: Record<string, [string, number]> = {
+export const MEP_US: Record<string, [string, number]> = {
   luz: ["Ceiling light outlet with box and fixture allowance", 185], aplique: ["Wall sconce outlet", 165], interruptor: ["Single-pole switch", 120],
   conmutador: ["3-way switch", 150], enchufe: ["Duplex receptacle 15/20 A (TR, AFCI/GFCI as required)", 135], "enchufe-fuerza": ["240 V receptacle (range / dryer)", 320],
   cuadro: ["200 A main panel with breakers", 3600], acometida: ["Electrical service entrance and meter base", 2800],

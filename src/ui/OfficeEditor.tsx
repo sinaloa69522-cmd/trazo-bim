@@ -8,6 +8,7 @@ import type { Office } from "../core/model";
 export function OfficeEditor({ ed, onClose }: { ed: Editor; onClose: () => void }) {
   const o: Office = { ...emptyOffice(), ...(ed.project.info.office ?? savedOffice() ?? {}) };
   const [msg, setMsg] = useState("");
+  const us = ed.project.units === "imperial";
   const field = (k: "name" | "responsible" | "license" | "dro" | "contact", label: string, ph: string) => (
     <label key={`${k}-${o[k] ?? ""}`} className="of-f">{label}
       <input type="text" defaultValue={o[k] ?? ""} placeholder={ph}
@@ -37,8 +38,8 @@ export function OfficeEditor({ ed, onClose }: { ed: Editor; onClose: () => void 
       {field("name", "Despacho", "p. ej. Taller de Arquitectura Ruiz")}
       {field("responsible", "Responsable del proyecto", "p. ej. Arq. Ana Ruiz Pérez")}
       <div className="se-row">
-        {field("license", "Cédula profesional", "1234567")}
-        {field("dro", "Registro D.R.O. (opcional)", "DRO-0000")}
+        {us ? field("license", "Licencia estatal (architect / engineer)", "ARC 12345") : field("license", "Cédula profesional", "1234567")}
+        {!us && field("dro", "Registro D.R.O. (opcional)", "DRO-0000")}
       </div>
       {field("contact", "Contacto (opcional)", "Tel. 55 1234 5678 · ana@despacho.mx")}
       {img("logo", "Logo", "PNG o JPG")}

@@ -319,7 +319,7 @@ export function App() {
       {dragging && <div className="dropzone">Suelta un proyecto .trazo para abrirlo, o un DWG, DXF, PDF o imagen para importarlo</div>}
       {pdfFile && <ImportPdfDialog ed={ed} file={pdfFile} onClose={() => { setPdfFile(null); view3d.current?.fit(); }} />}
       {pres && <Presentation ed={ed} shot={pres.shot} onClose={() => { if (pres.shot) URL.revokeObjectURL(pres.shot); setPres(null); }} />}
-      {doc === "memoria" && <DocDialog make={() => memoria(ed.project)} file={`${projectFileName(ed.project.info.name).replace(/\.trazo$/i, "")}-memoria`} onClose={() => setDoc(null)}
+      {doc === "memoria" && <DocDialog make={() => memoria(ed.project)} file={`${projectFileName(ed.project.info.name).replace(/\.trazo$/i, "")}-${ed.project.units === "imperial" ? "narrative" : "memoria"}`} onClose={() => setDoc(null)}
         hint="Armada con los datos del proyecto: áreas, sistema constructivo, acabados, puertas y ventanas, instalaciones y revisión de reglamento. Descárgala en Word para completarla o imprímela." />}
       {versions && <VersionsDialog ed={ed} onClose={() => setVersions(false)} />}
       {templates && <TemplateDialog ed={ed} onClose={() => setTemplates(false)} onLoaded={() => { ed.fitRequest?.(); view3d.current?.fit(); }} />}

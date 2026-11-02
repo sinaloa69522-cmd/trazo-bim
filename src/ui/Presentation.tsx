@@ -28,6 +28,10 @@ const USE_NAME: Record<RoomUse, string> = {
   "recamara-principal": "Recámaras", recamara: "Recámaras", estancia: "Estar y comedor", comedor: "Estar y comedor", "estancia-comedor": "Estar y comedor",
   cocina: "Cocina", bano: "Baños", lavado: "Lavado y servicio", estudio: "Estudio", circulacion: "Circulaciones", cochera: "Cochera", otro: "Otros espacios",
 };
+const USE_NAME_EN: Record<RoomUse, string> = {
+  "recamara-principal": "Bedrooms", recamara: "Bedrooms", estancia: "Living & dining", comedor: "Living & dining", "estancia-comedor": "Living & dining",
+  cocina: "Kitchen", bano: "Bathrooms", lavado: "Laundry & utility", estudio: "Study", circulacion: "Circulation", cochera: "Garage", otro: "Other spaces",
+};
 const roomFill = (name: string) => USE_COLOR[roomUse(name)];
 
 /** Capas que se ven en la planta de presentación: arquitectura y muebles, sin cotas ni instalaciones. */
@@ -45,13 +49,16 @@ export function presentationData(p: Editor["project"]) {
   const b = budget(p, p.budget ?? defaultBudget()), k = 1 + (p.budget?.indirect ?? 20) / 100;
   const chapters = b.chapters.filter((c) => c.total > 0).map((c) => ({ name: c.name.replace(/^\d+\s*/, ""), total: c.total * k }));
   const weeks = p.levels.some((l) => l.walls.length) ? program(p).weeks : 0;
-  return { areas, beds, baths, built, useful, budget: b, chapters, weeks, perM2: built ? b.total / built : 0 };
+  // en EE.UU. el costo se da por pie cuadrado
+  const unitArea = p.units === "imperial" ? 0.3048 * 0.3048 : 1;
+  return { areas, beds, baths, built, useful, budget: b, chapters, weeks, perM2: built ? (b.total / built) * unitArea : 0 };
 }
 
 export function Presentation({ ed, shot, onClose }: { ed: Editor; shot: string | null; onClose: () => void }) {
   const p = ed.project, info = p.info, d = useMemo(() => presentationData(p), [p]), office = officeOf(p);
-  const cur = p.budget?.currency ?? "MXN";
-  const money = useMemo(() => { const f = new Intl.NumberFormat("es-MX", { style: "currency", currency: cur, maximumFractionDigits: 0 }); return (v: number) => f.format(v); }, [cur]);
+  const cur = p.budget?.currency ?? "MXN", en = p.units === "imperial", L = (es: string, x: string) => (en ? x : es);
+  const UN = en ? USE_NAME_EN : USE_NAME;
+  const money = useMemo(() => { const f = new Intl.NumberFormat(en ? "en-US" : "es-MX", { style: "currency", currency: cur, maximumFractionDigits: 0 }); return (v: number) => f.format(v); }, [cur, en]);
   const host = useRef<HTMLDivElement>(null);
   const [zoom, setZoom] = useState(1);
   const [busy, setBusy] = useState<string | null>(null);
@@ -74,7 +81,7 @@ export function Presentation({ ed, shot, onClose }: { ed: Editor; shot: string |
         try { pages.push(await sheetJpeg(n)); } finally { n.style.transform = t; }
       }
       const pt = 72 / 25.4, bytes = jpegPdf(pages, PAGE.w * pt, PAGE.h * pt, info.name);
-      const name = `${projectFileName(info.name).replace(/\.[^.]+$/, "")}-presentacion.pdf`;
+      const name = `${projectFileName(info.name).replace(/\.[^.]+$/, "")}-${en ? "presentation" : "presentacion"}.pdf`;
       const r = await saveFile(name, new Blob([bytes], { type: "application/pdf" }));
       if (r === "saved") ed.log(`Presentación guardada: ${name} (${pages.length} hojas).`);
     } catch (e) { ed.log(`No se pudo crear el PDF: ${(e as Error).message}`); }
@@ -82,13 +89,13 @@ export function Presentation({ ed, shot, onClose }: { ed: Editor; shot: string |
   };
 
   const facts: [string, string][] = [
-    ["Superficie construida", fmtArea(d.built)],
-    ...(d.beds ? [["Recámaras", String(d.beds)] as [string, string]] : []),
-    ...(d.baths ? [["Baños", String(d.baths)] as [string, string]] : []),
-    ["Niveles", String(p.levels.length)],
+    [L("Superficie construida", "Total area"), fmtArea(d.built)],
+    ...(d.beds ? [[L("Recámaras", "Bedrooms"), String(d.beds)] as [string, string]] : []),
+    ...(d.baths ? [[L("Baños", "Bathrooms"), String(d.baths)] as [string, string]] : []),
+    [L("Niveles", "Stories"), String(p.levels.length)],
   ];
   const Head = ({ title }: { title: string }) => (
-    <header className="ph"><span>{info.name || "Proyecto"}</span><b>{title}</b></header>
+    <header className="ph"><span>{info.name || L("Proyecto", "Project")}</span><b>{title}</b></header>
   );
   const Foot = ({ n }: { n: number }) => (
     <footer className="pf"><span>{[office?.name || info.author, info.date].filter(Boolean).join(" · ")}</span><span>{n}</span></footer>
@@ -110,17 +117,17 @@ export function Presentation({ ed, shot, onClose }: { ed: Editor; shot: string |
       </div>
       <div className="presbody" ref={host}>
         {page("cover", <div className="pcover">
-          <div className="pc-img">{shot ? <img src={shot} alt="Vista 3D del proyecto" /> : <div className="pc-noimg">Vista 3D</div>}</div>
+          <div className="pc-img">{shot ? <img src={shot} alt="Vista 3D del proyecto" /> : <div className="pc-noimg">{L("Vista 3D", "3D view")}</div>}</div>
           <div className="pc-side">
-            <p className="pc-kicker">Propuesta arquitectónica</p>
-            <h1>{info.name || "Proyecto"}</h1>
-            {info.client && <p className="pc-for">Para {info.client}</p>}
+            <p className="pc-kicker">{L("Propuesta arquitectónica", "Design proposal")}</p>
+            <h1>{info.name || L("Proyecto", "Project")}</h1>
+            {info.client && <p className="pc-for">{L("Para", "Prepared for")} {info.client}</p>}
             <dl>{facts.map(([k, v]) => <div key={k}><dt>{k}</dt><dd>{v}</dd></div>)}</dl>
             <div className="pc-by">
               {office?.logo && <img src={office.logo} alt="" />}
               <div>
                 {office?.name && <b>{office.name}</b>}
-                <span>{responsibleLine(office, info.author)}</span>
+                <span>{responsibleLine(office, info.author, en)}</span>
                 {office?.contact && <span>{office.contact}</span>}
                 <span>{info.date}</span>
               </div>
@@ -134,49 +141,50 @@ export function Presentation({ ed, shot, onClose }: { ed: Editor; shot: string |
           <div className="pplan">
             <PresPlan ed={ed} level={i} />
             <aside>
-              <h3>Espacios</h3>
+              <h3>{L("Espacios", "Spaces")}</h3>
               <table><tbody>
                 {d.areas[i].rooms.map((r, j) => <tr key={j}><td><i style={{ background: roomFill(r.name) }} />{r.name}</td><td className="r">{fmtArea(r.area)}</td></tr>)}
-                <tr className="tot"><td>Superficie útil</td><td className="r">{fmtArea(d.areas[i].useful)}</td></tr>
-                <tr className="tot"><td>Construida</td><td className="r">{fmtArea(d.areas[i].built)}</td></tr>
+                <tr className="tot"><td>{L("Superficie útil", "Net area")}</td><td className="r">{fmtArea(d.areas[i].useful)}</td></tr>
+                <tr className="tot"><td>{L("Construida", "Gross area")}</td><td className="r">{fmtArea(d.areas[i].built)}</td></tr>
               </tbody></table>
-              <ul className="plegend">{[...new Set(d.areas[i].rooms.map((r) => roomUse(r.name)))].map((u) => USE_NAME[u]).filter((v, j, a) => a.indexOf(v) === j).map((n) => {
-                const u = (Object.keys(USE_NAME) as RoomUse[]).find((x) => USE_NAME[x] === n)!;
+              <ul className="plegend">{[...new Set(d.areas[i].rooms.map((r) => roomUse(r.name)))].map((u) => UN[u]).filter((v, j, a) => a.indexOf(v) === j).map((n) => {
+                const u = (Object.keys(UN) as RoomUse[]).find((x) => UN[x] === n)!;
                 return <li key={n}><i style={{ background: USE_COLOR[u] }} />{n}</li>;
               })}</ul>
             </aside>
           </div>
         </>))}
         {page("num", <>
-          <Head title="Áreas y presupuesto" />
+          <Head title={L("Áreas y presupuesto", "Areas & cost estimate")} />
           <div className="pnums">
             <section>
-              <h3>Cuadro de áreas</h3>
+              <h3>{L("Cuadro de áreas", "Area summary")}</h3>
               <table>
-                <thead><tr><th>Nivel</th><th className="r">Útil</th><th className="r">Construida</th></tr></thead>
+                <thead><tr><th>{L("Nivel", "Level")}</th><th className="r">{L("Útil", "Net")}</th><th className="r">{L("Construida", "Gross")}</th></tr></thead>
                 <tbody>
                   {d.areas.map((a, i) => <tr key={i}><td>{a.level}</td><td className="r">{fmtArea(a.useful)}</td><td className="r">{fmtArea(a.built)}</td></tr>)}
                   <tr className="tot"><td>Total</td><td className="r">{fmtArea(d.useful)}</td><td className="r">{fmtArea(d.built)}</td></tr>
                 </tbody>
               </table>
               <div className="pkpi">
-                <div><small>Costo estimado</small><b>{money(d.budget.total)}</b></div>
-                <div><small>Por m² construido</small><b>{money(d.perM2)}</b></div>
-                {d.weeks > 0 && <div><small>Tiempo de obra</small><b>{d.weeks} semanas</b></div>}
+                <div><small>{L("Costo estimado", "Estimated cost")}</small><b>{money(d.budget.total)}</b></div>
+                <div><small>{L("Por m² construido", "Per sq ft")}</small><b>{money(d.perM2)}</b></div>
+                {d.weeks > 0 && <div><small>{L("Tiempo de obra", "Construction time")}</small><b>{d.weeks} {L("semanas", "weeks")}</b></div>}
               </div>
             </section>
             <section>
-              <h3>Presupuesto resumido</h3>
+              <h3>{L("Presupuesto resumido", "Cost summary")}</h3>
               <table>
-                <thead><tr><th>Concepto</th><th className="r">Importe</th><th className="r">%</th></tr></thead>
+                <thead><tr><th>{L("Concepto", "Category")}</th><th className="r">{L("Importe", "Amount")}</th><th className="r">%</th></tr></thead>
                 <tbody>
                   {d.chapters.map((c) => <tr key={c.name}><td>{c.name}</td><td className="r">{money(c.total)}</td><td className="r">{d.budget.subtotal ? ((c.total / d.budget.subtotal) * 100).toFixed(1) : "0"}</td></tr>)}
                   <tr className="tot"><td>Subtotal</td><td className="r">{money(d.budget.subtotal)}</td><td /></tr>
-                  <tr><td>IVA ({p.budget?.tax ?? 16} %)</td><td className="r">{money(d.budget.tax)}</td><td /></tr>
+                  <tr><td>{L("IVA", "Sales tax")} ({p.budget?.tax ?? 16} %)</td><td className="r">{money(d.budget.tax)}</td><td /></tr>
                   <tr className="tot"><td>Total</td><td className="r">{money(d.budget.total)}</td><td /></tr>
                 </tbody>
               </table>
-              <p className="pnote">Estimación paramétrica con las cantidades del modelo y precios unitarios de referencia, con indirectos y utilidad incluidos en cada concepto. Sirve para decidir; el presupuesto definitivo se cierra con el catálogo de conceptos y las cotizaciones de obra.</p>
+              <p className="pnote">{L("Estimación paramétrica con las cantidades del modelo y precios unitarios de referencia, con indirectos y utilidad incluidos en cada concepto. Sirve para decidir; el presupuesto definitivo se cierra con el catálogo de conceptos y las cotizaciones de obra.",
+                "Parametric estimate from the model quantities and national-average unit costs, with overhead and profit included in each category. It is meant for decisions; the final price comes from the contractor's bids.")}</p>
             </section>
           </div>
           <Foot n={levels.length + 2} />
