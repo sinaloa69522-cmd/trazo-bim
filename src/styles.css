@@ -488,3 +488,5 @@ dialog.docdlg[open]{display:flex}
 .gantt tfoot td.r{text-align:right}
 .gantt tfoot tr:first-child td{border-top:.4mm solid #111}
 @media print{html.print-budget .printbudget.landscape .budgetdoc{width:297mm}}
+
+.budgetdoc td.ins-note{font-size:7.5pt;color:#666}
