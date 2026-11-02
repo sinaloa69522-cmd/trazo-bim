@@ -49,6 +49,13 @@ function finish(m: Model, w: number, d: number, roof: RoofKind, cutY: number, pa
   Fx("cuadro", panel.x, panel.y, panel.rot);
   for (const r of m.rooms) Fx("luz", r.x, r.y);
   for (const f of m.furniture) for (const q of sanitaryPoints(f)) Fx(q.kind, q.x, q.y);
+  // contador de agua y calentador junto a la entrada de servicios; una bajante detrás de cada inodoro
+  Fx("contador", panel.x, panel.y + 0.7, panel.rot);
+  Fx("termo", panel.x, panel.y + 1.4, panel.rot);
+  for (const f of m.furniture.filter((x) => x.kind === "wc")) {
+    const a = (f.rot * Math.PI) / 180;
+    Fx("bajante", f.x + Math.sin(a) * 0.3, f.y - Math.cos(a) * 0.3);
+  }
   for (const disc of ["elec", "plum"] as const) for (const r of autoRoute(m.fixtures, disc)) m.runs.push({ id: nextId(m), ...r });
   return { levels: [newLevel("Planta baja", 0, m)], info: defaultInfo(), budget: defaultBudget() };
 }

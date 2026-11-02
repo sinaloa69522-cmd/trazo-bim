@@ -14,8 +14,8 @@ import type { Editor } from "../editor/Editor";
 import { SymbolIcon, SystemIcon } from "./MepIcons";
 import { box, Ln, map, Note, Shape, type Frame, type XY } from "./PermitSheets";
 
-export type MxKind = "mxport" | "mxnotas" | "mxazo" | "mxacab" | "mxcim" | "mxest" | "mxdet1" | "mxdet2" | "mxdet3" | "mxarq" | "hid" | "san" | "mxinst" | "mxdie" | "mxdih" | "mxdaa";
-export const MX_KINDS: MxKind[] = ["mxport", "mxnotas", "mxazo", "mxacab", "mxcim", "mxest", "mxdet1", "mxdet2", "mxdet3", "mxarq", "hid", "san", "mxinst", "mxdie", "mxdih", "mxdaa"];
+export type MxKind = "mxport" | "mxnotas" | "mxazo" | "mxacab" | "mxcim" | "mxest" | "mxdet1" | "mxdet2" | "mxdet3" | "mxarq" | "hid" | "san" | "mxiso" | "mxinst" | "mxdie" | "mxdih" | "mxdaa";
+export const MX_KINDS: MxKind[] = ["mxport", "mxnotas", "mxazo", "mxacab", "mxcim", "mxest", "mxdet1", "mxdet2", "mxdet3", "mxarq", "hid", "san", "mxiso", "mxinst", "mxdie", "mxdih", "mxdaa"];
 export const MX_TEXT = ["mxport", "mxnotas", "mxdet1", "mxdet2", "mxdet3", "mxarq", "mxinst", "mxdie", "mxdih", "mxdaa"];
 
 /** Título de cada lámina del juego en metros (también las de arquitectura e instalación eléctrica). */
@@ -41,11 +41,20 @@ export const MX_TITLES: Record<string, string> = {
   elec: "Instalación eléctrica",
   hid: "Instalación hidráulica (plomería)",
   san: "Instalación sanitaria (hidrosanitario)",
+  mxiso: "Isométricos hidráulico y sanitario",
 };
 
 // ---------- notas ----------
 
 export const NOTES: Record<string, string[]> = {
+  mxiso: [
+    "Isométricos sin escala; las longitudes y posiciones rigen en las plantas de instalación hidráulica y sanitaria.",
+    "Agua fría y caliente en CPVC Ø 13 mm a cada salida; alimentación general Ø 19 mm desde el medidor.",
+    "Drenaje en PVC sanitario: Ø 100 mm en W.C., colectores y bajadas; Ø 50 mm en lavabos, regaderas y fregaderos.",
+    "Pendiente mínima del 2 % en el sentido de las flechas, hacia la bajante y el registro.",
+    "Ramales de agua a 0.15 m sobre el piso terminado; drenaje a 0.35 m bajo el N.P.T. al inicio de cada ramal.",
+    "Salidas: lavabo y fregadero a 0.55 m, regadera a 1.80 m, W.C. a 0.20 m sobre el piso.",
+  ],
   plan: [
     "Cotas en metros; niveles en metros referidos al nivel de piso terminado (N.P.T. ±0.00).",
     "Las cotas rigen sobre el dibujo. Verificar medidas y niveles en obra antes de construir.",
@@ -366,6 +375,7 @@ export function MxSide({ ed, content, level }: { ed: Editor; content: string; le
   const p = ed.project, lv = p.levels[level];
   if (content === "mxazo") return <RoofSide lv={lv} />;
   if (content === "mxacab") return <FinishSide lv={lv} />;
+  if (content === "mxiso") return <IsoSide ed={ed} />;
   if (content === "mxcim") {
     const zs = stripFootings(p), pads = padFootings(p), c1 = stripSize(p, "ZC-1"), c2 = stripSize(p, "ZC-2"), za = padSize(p);
     const has = (m: string) => zs.some((z) => z.mark === m);
@@ -724,5 +734,26 @@ function FinishSide({ lv }: { lv: Level }) {
       <table className="legend"><tbody>{used(part).map((f) => <tr key={f.id}><td><span className="sw" style={{ background: f.color, display: "inline-block", width: 12, height: 12, border: "1px solid #888" }} /></td><td style={{ whiteSpace: "nowrap" }}><b>{f.code}</b></td><td>{f.spec}</td></tr>)}</tbody></table>
     </Fragment>)}
     <MxNotes content="mxacab" />
+  </div>;
+}
+
+/** Columna de los isométricos: simbología, salidas por mueble y notas. */
+function IsoSide({ ed }: { ed: Editor }) {
+  const p = ed.project, n = (k: string) => p.levels.reduce((s, l) => s + l.fixtures.filter((f) => f.kind === k).length, 0);
+  const line = (c: string, dash = "", w = 1.2) => <svg width="15mm" height="3mm" viewBox="0 0 15 3"><line x1="1" y1="1.5" x2="14" y2="1.5" stroke={c} strokeWidth={w * 0.5} strokeDasharray={dash} /></svg>;
+  return <div className="tables">
+    <h4>Simbología</h4>
+    <table className="symleg"><tbody>
+      <tr><td>{line("#1f5fd1")}</td><td>Agua fría (CPVC)</td></tr>
+      <tr><td>{line("#d1352b", "2.2 0.8")}</td><td>Agua caliente (CPVC)</td></tr>
+      <tr><td>{line("#7a4a22", "", 1.6)}</td><td>Drenaje sanitario (PVC)</td></tr>
+      <tr><td><svg width="15mm" height="3mm" viewBox="0 0 15 3"><path d="M5 1.5h6M11 1.5l-2 -0.9v1.8z" stroke="#7a4a22" strokeWidth="0.4" fill="#7a4a22" /></svg></td><td>Sentido del flujo, pendiente 2 %</td></tr>
+      <tr><td>BAP</td><td>Bajada de aguas negras</td></tr>
+    </tbody></table>
+    <h4>Salidas</h4>
+    <table><thead><tr><th>Salida</th><th className="r">Pzas</th></tr></thead><tbody>
+      {[["toma-af", "Agua fría"], ["toma-ac", "Agua caliente"], ["desague", "Desagüe de mueble"], ["sumidero", "Coladera"], ["bajante", "Bajada"]].map(([k, t]) => n(k) ? <tr key={k}><td>{t}</td><td className="r">{n(k)}</td></tr> : null)}
+    </tbody></table>
+    <MxNotes content="mxiso" />
   </div>;
 }
