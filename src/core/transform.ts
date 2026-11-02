@@ -186,3 +186,36 @@ export function deleteElements(m: Model, refs: ElementRef[]) {
   const hat = ids("hatch");
   m.hatches = m.hatches.filter((r) => !hat.has(r.id));
 }
+
+/**
+ * Copia los elementos indicados de un nivel a otro, en la misma posición en planta, con ids nuevos.
+ * Los muros llevan sus puertas y ventanas; un hueco suelto pasa solo si en el destino hay un muro en el
+ * mismo sitio que lo reciba. Las secciones cortan todo el edificio y no se pasan. Con move, se borran del origen.
+ */
+export function transferElements(src: Model, dst: Model, refs: ElementRef[], move: boolean): ElementRef[] {
+  const out: ElementRef[] = [], done: ElementRef[] = [];
+  const wallIds = new Set(refs.filter((r) => r.type === "wall").map((r) => r.id));
+  for (const r of refs) {
+    if (r.type === "section") continue;
+    const el = findElement(src, r);
+    if (!el) continue;
+    const c = JSON.parse(JSON.stringify(el));
+    if (r.type === "opening") {
+      if (wallIds.has(c.wallId)) continue;
+      const w0 = src.walls.find((w) => w.id === c.wallId);
+      const host = w0 && dst.walls.find((w) => Math.abs(w.x1 - w0.x1) + Math.abs(w.y1 - w0.y1) + Math.abs(w.x2 - w0.x2) + Math.abs(w.y2 - w0.y2) < 0.02
+        || Math.abs(w.x1 - w0.x2) + Math.abs(w.y1 - w0.y2) + Math.abs(w.x2 - w0.x1) + Math.abs(w.y2 - w0.y1) < 0.02);
+      if (!host) continue;
+      // el muro del destino puede ir al revés: el hueco queda en el mismo punto
+      if (Math.abs(host.x1 - w0!.x1) + Math.abs(host.y1 - w0!.y1) > 0.02) c.t = 1 - c.t;
+      c.wallId = host.id;
+    }
+    c.id = nextId(dst);
+    listOf(dst, r.type).push(c);
+    if (r.type === "wall") for (const op of src.openings.filter((o) => o.wallId === r.id)) dst.openings.push({ ...JSON.parse(JSON.stringify(op)), id: nextId(dst), wallId: c.id });
+    out.push({ type: r.type, id: c.id });
+    done.push(r);
+  }
+  if (move) deleteElements(src, done);
+  return out;
+}

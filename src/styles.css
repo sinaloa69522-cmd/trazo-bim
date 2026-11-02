@@ -505,3 +505,4 @@ dialog.docdlg[open]{display:flex}
 .reved td input{width:100%;min-width:0}
 .reved .rv-no{width:52px}
 .reved .rv-date{width:130px}
+.lvxfer{display:flex;gap:6px;align-items:center;flex-wrap:wrap}.lvxfer select{flex:1;min-width:0}.lvxfer label{color:var(--muted)}
