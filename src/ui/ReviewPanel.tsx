@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { checkProject, LIMITS, RULES } from "../core/codeCheck";
+import { checkProject, codeOf, codeRules, LIMITS } from "../core/codeCheck";
+import { fmtArea, fmtLen } from "../core/units";
 import type { Editor } from "../editor/Editor";
 
 /**
@@ -17,7 +18,7 @@ export function ReviewPanel({ ed, onClose }: { ed: Editor; onClose: () => void }
     return () => { off(); clearTimeout(t); ed.setReview(null); };
   }, [ed]);
   const errors = res.findings.filter((f) => f.sev === "error").length, warns = res.findings.length - errors;
-  const multi = ed.project.levels.length > 1;
+  const multi = ed.project.levels.length > 1, US = codeOf(ed.project) === "us", RULES = codeRules(codeOf(ed.project)).rules;
   return (
     <div className="reviewpanel" role="dialog" aria-label="Revisión de reglamento">
       <div className="rvhead">
@@ -43,10 +44,11 @@ export function ReviewPanel({ ed, onClose }: { ed: Editor; onClose: () => void }
         <summary>Espacios revisados</summary>
         <table>
           <thead><tr><th>Espacio</th><th>Uso</th><th className="r">Área</th><th className="r">Lado</th><th className="r">Vidrio</th><th /></tr></thead>
-          <tbody>{res.rooms.map((r, i) => <tr key={i}><td>{r.name}</td><td>{RULES[r.use].label}</td><td className="r">{r.area.toFixed(2)}</td><td className="r">{r.side.toFixed(2)}</td><td className="r">{r.area ? `${Math.round((r.glass / r.area) * 100)} %` : ""}</td><td>{r.ok ? "✓" : "✗"}</td></tr>)}</tbody>
+          <tbody>{res.rooms.map((r, i) => <tr key={i}><td>{r.name}</td><td>{RULES[r.use].label}</td><td className="r">{fmtArea(r.area).replace(/ (m²|sq ft)$/, "")}</td><td className="r">{fmtLen(r.side).replace(/ m$/, "")}</td><td className="r">{r.area ? `${Math.round((r.glass / r.area) * 100)} %` : ""}</td><td>{r.ok ? "✓" : "✗"}</td></tr>)}</tbody>
         </table>
       </details>}
-      <p className="rvnote">Criterios de las Normas Técnicas Complementarias para el Proyecto Arquitectónico (CDMX): áreas y lados mínimos por espacio, ventanas de {LIMITS.light * 100} % del piso para iluminar y {LIMITS.vent * 100} % para ventilar (se supone que abre la mitad de cada ventana), altura libre de {LIMITS.height.toFixed(2)} m, puertas de {LIMITS.entry.toFixed(2)} m al acceso, 0.75 m a recámaras y 0.60 m a baños y cocinas, escaleras de huella ≥ {LIMITS.tread * 100} cm y peralte ≤ {LIMITS.riser * 100} cm. El uso se toma del nombre del espacio. Confirma con el reglamento de tu municipio.</p>
+      {US ? <p className="rvnote">Criterios del International Residential Code (IRC 2021): locales habitables de 70 sq ft y 7' de lado mínimo (R304), altura de 7' (R305), vidrio del 8 % del piso y ventilación del 4 % (R303, se supone que abre la mitad de cada ventana), ventana de escape en cada recámara de 5.7 sq ft libres con antepecho ≤ 44" (R310, calculada como guillotina), baños con 3 sq ft de vidrio o extractor (R303.3), puerta de entrada de 36" (R311.2), pasillos de 3' (R311.6) y escaleras de 36" con peralte ≤ 7¾" y huella ≥ 10" (R311.7). El uso se toma del nombre del espacio, en español o inglés. Confirma con las enmiendas de tu condado o ciudad.</p>
+      : <p className="rvnote">Criterios de las Normas Técnicas Complementarias para el Proyecto Arquitectónico (CDMX): áreas y lados mínimos por espacio, ventanas de {LIMITS.light * 100} % del piso para iluminar y {LIMITS.vent * 100} % para ventilar (se supone que abre la mitad de cada ventana), altura libre de {LIMITS.height.toFixed(2)} m, puertas de {LIMITS.entry.toFixed(2)} m al acceso, 0.75 m a recámaras y 0.60 m a baños y cocinas, escaleras de huella ≥ {LIMITS.tread * 100} cm y peralte ≤ {LIMITS.riser * 100} cm. El uso se toma del nombre del espacio. Confirma con el reglamento de tu municipio.</p>}
     </div>
   );
 }
