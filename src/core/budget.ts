@@ -7,6 +7,9 @@ import { stairSteps } from "./stairs";
 import { MEP, runLength, SYSTEMS } from "./mep";
 import type { Project } from "./model";
 import { roomSchedule } from "./schedules";
+import { builtArea } from "./rooms";
+import { finishTable } from "./interiorFinishes";
+import { stripFootings } from "./mxStruct";
 import { GENERIC, WALL_TYPES, wallType, wallTypeLabel } from "./wallTypes";
 
 /** Ajustes del presupuesto que se guardan con el proyecto. */
@@ -47,8 +50,9 @@ export interface Budget {
 
 /** Capítulos, en el orden en que se ejecuta la obra. */
 export const CHAPTERS: [string, string][] = [
-  ["01", "Estructura"], ["02", "Muros y tabiques"], ["03", "Cubiertas"], ["04", "Carpintería"], ["05", "Escaleras"],
+  ["00", "Preliminares y cimentación"], ["01", "Estructura"], ["02", "Muros y tabiques"], ["03", "Cubiertas"], ["04", "Carpintería"], ["05", "Escaleras"],
   ["06", "Pisos"], ["07", "Instalación eléctrica"], ["08", "Plomería y saneamiento"], ["09", "Muebles sanitarios"],
+  ["10", "Aplanados, recubrimientos y pintura"],
 ];
 
 /**
@@ -74,6 +78,10 @@ export function budget(p: Project, s: BudgetSettings = defaultBudget()): Budget 
     if (qty > 1e-9) items.push({ code, chapter: code.slice(0, 2), desc, unit, qty: r2(qty), base });
   };
   const lv = p.levels;
+
+  // preliminares y cimentación: trazo sobre la huella y zapatas corridas bajo los muros de planta baja
+  add("00.01", "Limpieza, trazo y nivelación del terreno", "m²", builtArea(lv[0] ?? { walls: [] } as never), 35);
+  add("00.02", "Zapata corrida de concreto armado con cadena de desplante, incluye excavación y relleno", "m", stripFootings(p).reduce((t, z) => t + dir(z.wall).L, 0), 1450);
 
   // estructura: volumen de losas, descontando huecos
   add("01.01", "Losa maciza de concreto armado, incluye cimbra y acero", "m³", lv.reduce((t, l) => t + l.slabs.reduce((u, sl) => u + slabArea(sl) * sl.thick, 0), 0), 4800);
@@ -139,6 +147,15 @@ export function budget(p: Project, s: BudgetSettings = defaultBudget()): Budget 
   add("09.21", "Cocina integral: gabinetes altos (alacenas)", "m", ml((k) => k.startsWith("cab-w")), 4600);
   add("09.22", "Torre para horno", "pza", furn.filter((f) => f.kind === "cab-oven").length, 9500);
   add("09.23", "Campana extractora, instalada", "pza", furn.filter((f) => f.kind === "cab-hood").length, 6500);
+
+  // aplanados en las dos caras de los muros, azulejo en baños y cocinas, pintura en muros y plafones, limpieza final
+  const fins = lv.flatMap((l) => finishTable(l));
+  const wallNet = lv.reduce((t, l) => t + l.walls.reduce((u, w) => u + dir(w).L * w.height, 0) - l.openings.reduce((u, o) => u + o.width * o.height, 0), 0);
+  const tiled = fins.filter((r) => r.wall.id === "azulejo").reduce((t, r) => t + r.perimeter * 2.1, 0);
+  add("10.01", "Aplanado de mortero en exteriores y de yeso en interiores", "m²", wallNet * 2, 210);
+  add("10.02", "Azulejo cerámico en baños y cocina, con adhesivo y boquilla", "m²", tiled, 480);
+  add("10.03", "Pintura vinílica en muros y plafones, sellador y dos manos", "m²", Math.max(0, wallNet * 2 - tiled) + fins.reduce((t, r) => t + r.area, 0), 75);
+  add("10.04", "Limpieza final de obra", "m²", lv.reduce((t, l) => t + builtArea(l), 0), 25);
 
   const priced: BudgetItem[] = items.map((it) => {
     const price = s.prices[it.code] ?? it.base;

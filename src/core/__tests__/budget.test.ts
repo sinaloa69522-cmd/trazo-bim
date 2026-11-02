@@ -9,7 +9,7 @@ const item = (b: ReturnType<typeof budget>, code: string) => b.chapters.flatMap(
 describe("presupuesto", () => {
   it("mide el proyecto de ejemplo por capítulos", () => {
     const p = sampleProject(), b = budget(p);
-    expect(b.chapters.map((c) => c.name)).toEqual(["Estructura", "Muros y tabiques", "Cubiertas", "Carpintería", "Pisos", "Instalación eléctrica", "Plomería y saneamiento", "Muebles sanitarios"]);
+    expect(b.chapters.map((c) => c.name)).toEqual(["Preliminares y cimentación", "Estructura", "Muros y tabiques", "Cubiertas", "Carpintería", "Pisos", "Instalación eléctrica", "Plomería y saneamiento", "Muebles sanitarios", "Aplanados, recubrimientos y pintura"]);
     // losa de 10 x 7 x 0,20
     expect(item(b, "01.01")!.qty).toBeCloseTo(14);
     // los muros coinciden con la tabla de muros de las láminas
