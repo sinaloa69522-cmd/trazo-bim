@@ -9,6 +9,7 @@ import type { Project } from "./model";
 import { castillos, padFootings, stripFootings, stripSize } from "./mxStruct";
 import { builtArea } from "./rooms";
 import { wallType } from "./wallTypes";
+import { GROUPS_US, insumosUs } from "./insumosUs";
 
 export interface Insumo {
   group: string;
@@ -30,6 +31,7 @@ const r = (v: number, d = 2) => Math.round(v * 10 ** d) / 10 ** d;
 
 /** Consumos de toda la obra. */
 export function insumos(p: Project): Insumo[] {
+  if (p.units === "imperial") return insumosUs(p);
   const L = p.levels, out: Insumo[] = [];
   const acc = new Map<string, Insumo>();
   const add = (group: string, name: string, unit: string, qty: number, note: string) => {
@@ -166,3 +168,6 @@ export function insumos(p: Project): Insumo[] {
 
 /** Orden de los grupos en la tabla */
 export const GROUPS = ["Concreto y agregados", "Acero de refuerzo", "Cimbra", "Muros", "Cubierta", "Azotea", "Aplanados", "Pisos y recubrimientos", "Pintura", "Instalaciones", "Limpieza"];
+
+/** Grupos en el orden del documento, en inglés para EE.UU. */
+export const insumoGroups = (p: Project) => (p.units === "imperial" ? GROUPS_US : GROUPS);

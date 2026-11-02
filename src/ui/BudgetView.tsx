@@ -5,7 +5,7 @@ import { budget, budgetCsv, CURRENCIES } from "../core/budget";
 import { program } from "../core/obra";
 import { ProgramDoc, programXlsx } from "./ProgramDoc";
 import { InsumosDoc, insumosXlsx } from "./InsumosDoc";
-import { insumos } from "../core/insumos";
+import { insumoGroups, insumos } from "../core/insumos";
 
 const qty = (v: number) => v.toLocaleString("es-MX", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 import type { Editor } from "../editor/Editor";
@@ -41,6 +41,7 @@ function Pct({ label, value, onCommit }: { label: string; value: number; onCommi
 
 export function BudgetView({ ed }: { ed: Editor }) {
   const s = ed.project.budget, info = ed.project.info;
+  const us = ed.project.units === "imperial";
   // se recalcula con cada versión del modelo
   const b = useMemo(() => budget(ed.project, s), [ed.version, s]); // eslint-disable-line react-hooks/exhaustive-deps
   const own = Object.keys(s.prices).length;
@@ -57,20 +58,20 @@ export function BudgetView({ ed }: { ed: Editor }) {
   }, [printing]);
 
   const download = () => {
-    const blob = new Blob([budgetCsv(b, s, `Presupuesto · ${info.name}`)], { type: "text/csv;charset=utf-8" });
-    void saveFile(`presupuesto-${(info.name || "proyecto").toLowerCase().replace(/[^a-z0-9áéíóúñü]+/gi, "-")}.csv`, blob);
+    const blob = new Blob([budgetCsv(b, s, `${us ? "Cost estimate" : "Presupuesto"} · ${info.name}`)], { type: "text/csv;charset=utf-8" });
+    void saveFile(`${us ? "estimate" : "presupuesto"}-${(info.name || "proyecto").toLowerCase().replace(/[^a-z0-9áéíóúñü]+/gi, "-")}.csv`, blob);
     ed.log("Presupuesto exportado en CSV: ábrelo con Excel o Google Sheets.");
   };
 
   const downloadProgram = () => {
     const g = program(ed.project), name = (info.name || "proyecto").toLowerCase().replace(/[^a-z0-9áéíóúñü]+/gi, "-");
-    void saveFile(`programa-de-obra-${name}.xlsx`, new Blob([programXlsx(g, `Programa de obra · ${info.name}`, info.date, s.currency)], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }));
+    void saveFile(`${us ? "schedule" : "programa-de-obra"}-${name}.xlsx`, new Blob([programXlsx(g, `${us ? "Construction schedule" : "Programa de obra"} · ${info.name}`, info.date, s.currency, us)], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }));
     ed.log("Programa de obra exportado a Excel.");
   };
 
   const downloadInsumos = () => {
     const name = (info.name || "proyecto").toLowerCase().replace(/[^a-z0-9áéíóúñü]+/gi, "-");
-    void saveFile(`insumos-${name}.xlsx`, new Blob([insumosXlsx(insumos(ed.project), `Explosión de insumos · ${info.name}`)], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }));
+    void saveFile(`${us ? "takeoff" : "insumos"}-${name}.xlsx`, new Blob([insumosXlsx(insumos(ed.project), `${us ? "Material takeoff" : "Explosión de insumos"} · ${info.name}`, insumoGroups(ed.project), us)], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }));
     ed.log("Explosión de insumos exportada a Excel.");
   };
 
@@ -95,7 +96,7 @@ export function BudgetView({ ed }: { ed: Editor }) {
           </select>
         </label>
         <Pct label="Indirectos y utilidad %" value={s.indirect} onCommit={(v) => ed.setBudget({ indirect: v })} />
-        <Pct label="IVA %" value={s.tax} onCommit={(v) => ed.setBudget({ tax: v })} />
+        <Pct label={us ? "Impuesto %" : "IVA %"} value={s.tax} onCommit={(v) => ed.setBudget({ tax: v })} />
         <button className="btn primary" onClick={download} title="Separado por punto y coma, con coma decimal, para Excel en español">Exportar a Excel (CSV)</button>
         <button className="btn" onClick={() => setPrinting(true)} disabled={printing}>Imprimir / PDF</button>
         {own > 0 && <button className="btn" onClick={() => ed.setBudget({ prices: {} })}>Volver a precios de referencia ({own})</button>}
@@ -112,25 +113,26 @@ export function BudgetView({ ed }: { ed: Editor }) {
 /** El documento del presupuesto; en la copia para imprimir los precios son texto. */
 function BudgetDoc({ ed, editable }: { ed: Editor; editable: boolean }) {
   const s = ed.project.budget, info = ed.project.info;
+  const us = ed.project.units === "imperial", L = (es: string, en: string) => (us ? en : es);
   const b = useMemo(() => budget(ed.project, s), [ed.version, s]); // eslint-disable-line react-hooks/exhaustive-deps
   const money = useMemo(() => {
-    const f = new Intl.NumberFormat("es-MX", { style: "currency", currency: s.currency, minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const f = new Intl.NumberFormat(us ? "en-US" : "es-MX", { style: "currency", currency: s.currency, minimumFractionDigits: 2, maximumFractionDigits: 2 });
     return (v: number) => f.format(v);
   }, [s.currency]);
   return (
     <article className="budgetdoc">
       <header>
         <div>
-          <small>Presupuesto de obra</small>
+          <small>{L("Presupuesto de obra", "Construction cost estimate")}</small>
           <h1>{info.name || "Proyecto"}</h1>
-          <p>{[info.client && `Cliente: ${info.client}`, info.author && `Autor: ${info.author}`, info.date].filter(Boolean).join(" · ")}</p>
+          <p>{[info.client && `${L("Cliente", "Owner")}: ${info.client}`, info.author && `${L("Autor", "Prepared by")}: ${info.author}`, info.date].filter(Boolean).join(" · ")}</p>
         </div>
-        <div className="tot-head"><small>Total con IVA</small><b>{money(b.total)}</b></div>
+        <div className="tot-head"><small>{us ? "Total" : "Total con IVA"}</small><b>{money(b.total)}</b></div>
       </header>
       {b.chapters.length ? (
         <table>
           <thead>
-            <tr><th>Código</th><th>Descripción</th><th>Ud.</th><th className="r">Cantidad</th><th className="r">Precio</th><th className="r">Importe</th></tr>
+            <tr><th>{L("Código", "Item")}</th><th>{L("Descripción", "Description")}</th><th>{L("Ud.", "Unit")}</th><th className="r">{L("Cantidad", "Qty")}</th><th className="r">{L("Precio", "Unit cost")}</th><th className="r">{L("Importe", "Amount")}</th></tr>
           </thead>
           <tbody>
             {b.chapters.map((c) => (
@@ -147,18 +149,19 @@ function BudgetDoc({ ed, editable }: { ed: Editor; editable: boolean }) {
             ))}
           </tbody>
           <tfoot>
-            <tr><td colSpan={5}>Costo directo</td><td className="r">{money(b.direct)}</td></tr>
-            <tr><td colSpan={5}>Indirectos y utilidad ({s.indirect} %)</td><td className="r">{money(b.indirect)}</td></tr>
+            <tr><td colSpan={5}>{L("Costo directo", "Direct cost")}</td><td className="r">{money(b.direct)}</td></tr>
+            <tr><td colSpan={5}>{L("Indirectos y utilidad", "General conditions, overhead & profit")} ({s.indirect} %)</td><td className="r">{money(b.indirect)}</td></tr>
             <tr><td colSpan={5}>Subtotal</td><td className="r">{money(b.subtotal)}</td></tr>
-            <tr><td colSpan={5}>IVA ({s.tax} %)</td><td className="r">{money(b.tax)}</td></tr>
+            <tr><td colSpan={5}>{L("IVA", "Sales tax")} ({s.tax} %)</td><td className="r">{money(b.tax)}</td></tr>
             <tr className="grand"><td colSpan={5}>Total</td><td className="r">{money(b.total)}</td></tr>
           </tfoot>
         </table>
-      ) : <p className="empty">Dibuja muros, losas o instalaciones para generar las partidas.</p>}
+      ) : <p className="empty">{L("Dibuja muros, losas o instalaciones para generar las partidas.", "Draw walls, slabs or MEP to generate the line items.")}</p>}
       <p className="note">
+        {us ? <>Quantities are taken from the model. Unit costs are U.S. national-average references in dollars for a general contractor (subcontract direct cost), not adjusted for location: replace them with local bids by clicking each price. Your own prices show in blue and are saved with the project.</> : <>
         Las cantidades salen del modelo y se actualizan solas. Los precios de referencia son orientativos, en pesos mexicanos y sin
         regionalizar{s.currency !== "MXN" && ` (al cambiar a ${s.currency} no se convierten)`}: cámbialos por los tuyos haciendo clic en cada
-        precio. Los propios se marcan en azul y se guardan con el proyecto.
+        precio. Los propios se marcan en azul y se guardan con el proyecto.</>}
       </p>
     </article>
   );

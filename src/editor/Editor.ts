@@ -253,7 +253,11 @@ export class Editor {
   setUnits(u: UnitSystem) {
     if ((this.project.units ?? "metric") === u) return;
     this.snapshot();
-    this.project = { ...this.project, units: u };
+    // la moneda y el impuesto siguen al país mientras no se hayan cambiado a mano
+    const b = this.project.budget;
+    const budget = u === "imperial" && b.currency === "MXN" ? { ...b, currency: "USD", tax: b.tax === 16 ? 0 : b.tax }
+      : u === "metric" && b.currency === "USD" ? { ...b, currency: "MXN", tax: b.tax === 0 ? 16 : b.tax } : b;
+    this.project = { ...this.project, units: u, budget };
     Object.assign(this.defaults, u === "imperial" ? US_DEFAULTS : METRIC_DEFAULTS);
     this.log(u === "imperial"
       ? `Unidades de EE.UU.: pies y pulgadas. Teclea 12'6", 12' o 6" (un número solo son pies). Muro por defecto 2x6, puerta 3'-0" × 6'-8".`
