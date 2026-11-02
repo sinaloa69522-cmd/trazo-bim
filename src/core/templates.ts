@@ -5,6 +5,7 @@ import { allAutoDims } from "./autodim";
 import { defaultBudget } from "./budget";
 import { autoRoute, mepDef, sanitaryPoints } from "./mep";
 import { defaultInfo, emptyModel, newLevel, nextId, type Model, type OpeningKind, type Project, type RoofKind, type Wall } from "./model";
+import { FT, IN } from "./units";
 import { typeForThick } from "./wallTypes";
 
 export interface HouseTemplate {
@@ -127,8 +128,48 @@ function narrowTwoBed(): Project {
   return finish(m, 6, 12, "gable", 1.7, { x: 5.805, y: 6.0, rot: 90 });
 }
 
+/**
+ * Casa de EE.UU. de 48' × 32' (1,536 sq ft), una planta en wood frame: muros exteriores 2x6 e interiores 2x4
+ * de 9', losa de 4", cubierta a dos aguas 6/12, tres recámaras con ventana de escape, dos baños y great room
+ * abierto con cocina. Nombres en inglés, en pies y pulgadas, presupuesto en dólares.
+ */
+function usRanch(): Project {
+  const { m, W, O, R, F } = plan(), f = (v: number) => v * FT, X = 6.5 * IN, I = 4.5 * IN;
+  const a = W(0, 0, f(48), 0, X), b = W(f(48), 0, f(48), f(32), X), c = W(f(48), f(32), 0, f(32), X), d = W(0, f(32), 0, 0, X);
+  const h = W(0, f(12), f(48), f(12), I);
+  W(f(13), 0, f(13), f(12), I); W(f(26), 0, f(26), f(12), I);
+  const b1 = W(f(8), f(12), f(8), f(19), I), b2 = W(f(38), f(12), f(38), f(19), I);
+  W(0, f(19), f(8), f(19), I); W(f(38), f(19), f(48), f(19), I);
+  const hung = { height: f(5), sill: f(2) };
+  // ventanas de guillotina de 3' × 5' a 2' del piso: 34" × 28" libres, sirven de escape
+  O(a, f(6.5), "window", f(3), hung); O(a, f(19.5), "window", f(3), hung); O(a, f(33), "window", f(3), hung); O(a, f(41), "window", f(3), hung);
+  O(h, f(10.5), "door", f(2.67), { height: 80 * IN }); O(h, f(15.5), "door", f(2.67), { height: 80 * IN }); O(h, f(28.5), "door", f(2.67), { height: 80 * IN });
+  O(b1, f(3.5), "door", f(2.5), { height: 80 * IN }); O(b2, f(3.5), "door", f(2.5), { height: 80 * IN });
+  O(d, f(15.5), "window", f(2), { sill: f(4), height: f(3) }); O(b, f(15.5), "window", f(2), { sill: f(4), height: f(3) });
+  O(b, f(25), "window", f(4), { sill: f(3.5), height: f(4) });
+  O(c, f(20), "door", f(3), { height: 80 * IN }); O(c, f(31), "window", f(6), { sill: f(2), height: f(5) });
+  O(c, f(9), "window", f(3), hung); O(c, f(40), "window", f(3), hung);
+  O(d, f(5), "window", f(3), hung);
+  R(f(6.5), f(6), "Bedroom 2"); R(f(19.5), f(6), "Bedroom 3"); R(f(37), f(6), "Primary Bedroom");
+  R(f(4), f(15.5), "Bath 2"); R(f(43), f(15.5), "Primary Bath"); R(f(24), f(25), "Great Room");
+  F("bed1", f(6.5), 1.13); F("wardrobe", 0.43, f(10.5), 270);
+  F("bed1", f(19.5), 1.13); F("wardrobe", f(25.3), f(10.5), 90);
+  F("bed2", f(37), 1.13); F("wardrobe", f(47.3), f(9), 90);
+  F("wc", 0.48, f(14), 270); F("basin", f(4), f(18.4), 180); F("bath", f(6.6), f(15.5), 90);
+  F("wc", f(47.4), f(14), 90); F("basin", f(43), f(18.4), 180); F("shower", f(39.2), f(13.3));
+  F("sofa", 0.58, f(26), 270); F("dining", f(22), f(24)); F("kitchen", f(47.4), f(26), 90); F("fridge", f(47.4), f(30.5), 90);
+  const p = finish(m, f(48), f(32), "gable", f(6), { x: f(48) - 0.1, y: f(21), rot: 90 });
+  const lv = p.levels[0];
+  lv.name = "First Floor";
+  for (const w of lv.walls) { w.height = f(9); w.type = typeForThick(w.thick); }
+  for (const sl of lv.slabs) sl.thick = 4 * IN;
+  for (const r of lv.roofs) { r.pitch = 26.57; r.overhang = 18 * IN; r.base = f(9); }
+  return { ...p, units: "imperial", info: { ...p.info, name: "Single-family residence" }, budget: { ...p.budget, currency: "USD", tax: 0 } };
+}
+
 export const TEMPLATES: HouseTemplate[] = [
   { id: "2rec", name: "Casa de 2 recámaras", desc: "8 × 9 m · 72 m² · 2 recámaras, 1 baño, sala-comedor-cocina abierta", build: twoBed },
   { id: "3rec", name: "Casa de 3 recámaras", desc: "10 × 10 m · 100 m² · 3 recámaras, 2 baños, estancia abierta con cocina", build: threeBed },
+  { id: "us3", name: "Casa en EE.UU. de 3 recámaras (pies)", desc: "48' × 32' · 1,536 sq ft · 3 recámaras, 2 baños, wood frame, para permiso en EE.UU.", build: usRanch },
   { id: "angosta", name: "Casa en lote angosto", desc: "6 × 12 m · 72 m² · 2 recámaras, 1 baño, cocina-comedor y sala", build: narrowTwoBed },
 ];

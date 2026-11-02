@@ -608,7 +608,7 @@ function Levels({ ed }: { ed: Editor }) {
       </div>
       <div className="props" key={`lv-${ed.active}-${levels.length}`}>
         <label htmlFor="lv-name">Nombre</label>
-        <input id="lv-name" type="text" defaultValue={cur.name}
+        <input id="lv-name" key={`${ed.active}-${cur.name}`} type="text" defaultValue={cur.name}
           onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
           onBlur={(e) => { const v = e.target.value.trim(); if (v && v !== cur.name) ed.renameLevel(v); }} />
         <NumberField id="lv-elev" label="Cota (m)" value={cur.elev} onCommit={(v) => ed.setLevelElevation(v)} />

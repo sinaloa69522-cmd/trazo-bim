@@ -55,4 +55,30 @@ describe("revisión de reglamento", () => {
   it("las plantillas cumplen", () => {
     for (const t of TEMPLATES) expect(checkProject(t.build()).findings.filter((f) => f.sev === "error")).toEqual([]);
   });
+
+  it("en pies se revisa con el IRC: escape de recámara y área de 70 sq ft", () => {
+    const FT = 0.3048, IN = 0.0254;
+    expect(roomUse("Primary Bedroom")).toBe("recamara-principal");
+    expect(roomUse("Bedroom 2")).toBe("recamara");
+    expect(roomUse("Great Room")).toBe("estancia");
+    expect(roomUse("Walk-in closet")).toBe("otro");
+    // 12' × 11' con ventana de 3' × 5' a 2' del piso: cumple el escape (34" × 28" libres = 6.6 sq ft)
+    const ok = box(12 * FT, 11 * FT, "Bedroom 2", 3 * FT, 32 * IN);
+    ok.openings[0].height = 5 * FT; ok.openings[0].sill = 2 * FT;
+    ok.walls.forEach((w) => { w.height = 9 * FT; });
+    expect(checkLevel(newLevel("L1", 0, ok), 0, "us").findings.filter((f) => f.where === "Bedroom 2")).toEqual([]);
+    // 8' × 8' con ventana chica: área, iluminación y escape
+    const bad = box(8 * FT, 8 * FT, "Bedroom 3", 2 * FT, 30 * IN);
+    bad.openings[0].height = 2 * FT; bad.openings[0].sill = 4 * FT;
+    const topics = checkLevel(newLevel("L1", 0, bad), 0, "us").findings.filter((f) => f.where === "Bedroom 3").map((f) => f.topic);
+    expect(topics).toEqual(expect.arrayContaining(["Área", "Escape", "Iluminación"]));
+    // en métrico la misma recámara no pide ventana de escape
+    expect(checkLevel(newLevel("PB", 0, bad), 0).findings.some((f) => f.topic === "Escape")).toBe(false);
+  });
+  it("con IRC la escalera pide 36\" de ancho", () => {
+    const m = box(4, 4, "Storage", 0, 0);
+    m.stairs.push({ id: 9, x1: 0.5, y1: 0.5, x2: 2.5, y2: 0.5, width: 0.86, height: 2.8 });
+    const msgs = checkLevel(newLevel("L1", 0, m), 0, "us").findings.filter((f) => f.topic === "Escalera").map((f) => f.msg).join(" | ");
+    expect(msgs).toMatch(/R311\.7\.1/);
+  });
 });

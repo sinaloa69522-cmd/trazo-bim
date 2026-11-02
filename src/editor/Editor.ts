@@ -268,7 +268,10 @@ export class Editor {
     const t = TEMPLATES.find((x) => x.id === id);
     if (!t) return;
     this.snapshot();
-    this.project = { ...t.build(), info: this.project.info, budget: this.project.budget, units: this.project.units };
+    // la plantilla de EE.UU. trae sus unidades y moneda; las demás conservan las del proyecto
+    const b = t.build(), us = b.units === "imperial";
+    this.project = { ...b, info: us ? { ...this.project.info, name: this.project.info.name === "Vivienda unifamiliar" ? b.info.name : this.project.info.name } : this.project.info, budget: us ? { ...this.project.budget, currency: b.budget.currency, tax: b.budget.tax } : this.project.budget, units: us ? "imperial" : this.project.units };
+    if (us) Object.assign(this.defaults, US_DEFAULTS);
     this.active = 0; this.sel = null;
     this.log(`Plantilla «${t.name}» cargada (${t.desc.split(" · ")[0]}). Todo se puede editar; Deshacer vuelve al dibujo anterior.`);
     this.changed();
