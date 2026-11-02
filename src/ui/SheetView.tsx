@@ -45,7 +45,7 @@ const OVERSAMPLE = 3;
 const SET_OVERSAMPLE = 1.6;
 
 /** El papel siempre es blanco, aunque la interfaz esté en modo oscuro. */
-const PAPER: PlanColors = {
+export const PAPER: PlanColors = {
   "plan-bg": "#ffffff", grid: "#ffffff", "grid-major": "#ffffff", wall: "#1a1a1a", door: "#1a1a1a", window: "#1a1a1a",
   dim: "#1a1a1a", anno: "#555555", accent: "#7d7d7d", fg: "#111111", muted: "#6b6b6b", danger: "#111111", panel: "#ffffff",
 };
@@ -159,7 +159,7 @@ const PLAN_LAYERS: Partial<Record<Content, Partial<Record<LayerId, boolean>>>> =
   san: { ejes: false, electricidad: false, plomeria: true, cotas: false, losas: false, cubiertas: false, secciones: false },
 };
 
-function withVis(ed: Editor, patch: Partial<Record<LayerId, boolean>> | undefined, fn: () => void) {
+export function withVis(ed: Editor, patch: Partial<Record<LayerId, boolean>> | undefined, fn: () => void) {
   const saved = { ...ed.vis };
   Object.assign(ed.vis, patch ?? {});
   try { fn(); } finally { ed.vis = saved; }
@@ -181,7 +181,7 @@ export function sheetNumber(nLevels: number, content: Content, level: number, se
  * Dibuja con el editor puesto un momento en otro nivel (y con otra vista), para poder sacar
  * la planta de cualquier nivel sin tocar lo que el usuario tiene en pantalla.
  */
-function withLevel(ed: Editor, level: number, fn: () => void) {
+export function withLevel(ed: Editor, level: number, fn: () => void) {
   const saved = { active: ed.active, rooms: ed.rooms, hover: ed.hover, view: { ...ed.view } };
   ed.active = level; ed.hover = null;
   if (level !== saved.active) ed.rooms = computeRooms(ed.model);
@@ -810,7 +810,7 @@ function MepTables({ p, disc, level, notes }: { p: Editor["project"]; disc: Disc
 }
 
 /** Una lámina del DOM a JPEG a unos 150 ppp. Si las fuentes web no se pueden incrustar, se repite sin ellas. */
-async function sheetJpeg(node: HTMLElement): Promise<PdfPage> {
+export async function sheetJpeg(node: HTMLElement): Promise<PdfPage> {
   const opts = { pixelRatio: 150 / 96, backgroundColor: "#ffffff", cacheBust: false, imagePlaceholder: BLANK_PX };
   let cv: HTMLCanvasElement;
   try { cv = await toCanvas(node, opts); } catch { cv = await toCanvas(node, { ...opts, skipFonts: true }); }

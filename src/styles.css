@@ -506,3 +506,45 @@ dialog.docdlg[open]{display:flex}
 .reved .rv-no{width:52px}
 .reved .rv-date{width:130px}
 .lvxfer{display:flex;gap:6px;align-items:center;flex-wrap:wrap}.lvxfer select{flex:1;min-width:0}.lvxfer label{color:var(--muted)}
+.presdlg{position:fixed;inset:0;z-index:60;display:flex;flex-direction:column;background:var(--bg)}
+.presbar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:10px 16px;border-bottom:1px solid var(--line);background:var(--panel)}
+.presbar .hint{color:var(--muted);font-size:12px}
+.presbody{flex:1;overflow:auto;padding:16px;display:flex;flex-direction:column;align-items:center;gap:16px;background:#8a8f8d}
+.preswrap{position:relative;flex:none}
+.prespage{position:absolute;left:0;top:0;transform-origin:0 0;background:#fff;color:#1d1d1d;font-family:'IBM Plex Sans',system-ui,sans-serif;box-shadow:0 2px 12px rgba(0,0,0,.25);overflow:hidden;display:flex;flex-direction:column}
+.prespage .ph{display:flex;justify-content:space-between;align-items:baseline;padding:9mm 12mm 3mm;border-bottom:.3mm solid #1d1d1d;margin:0 12mm;padding-left:0;padding-right:0}
+.prespage .ph span{font-size:9pt;letter-spacing:.12em;text-transform:uppercase;color:#777}
+.prespage .ph b{font-family:var(--f-display);font-size:18pt;font-weight:600}
+.prespage .pf{position:absolute;left:12mm;right:12mm;bottom:6mm;height:4mm;font-size:8pt;color:#888}
+.prespage .pf span{position:absolute;top:0;left:0}
+.prespage .pf span+span{left:auto;right:0}
+.pcover{display:flex;height:100%}
+.pcover .pc-img{flex:0 0 66%;background:#e8ecef;overflow:hidden}
+.pcover .pc-img img{width:100%;height:100%;object-fit:cover;display:block}
+.pcover .pc-noimg{height:100%;display:grid;place-items:center;color:#999;font-size:14pt}
+.pcover .pc-side{flex:1;padding:16mm 11mm 10mm;display:flex;flex-direction:column}
+.pcover .pc-kicker{margin:0;font-size:8.5pt;letter-spacing:.16em;text-transform:uppercase;color:#8a6a3c}
+.pcover h1{font-family:var(--f-display);font-size:24pt;line-height:1.1;margin:4mm 0 3mm;font-weight:600}
+.pcover .pc-for{margin:0 0 10mm;color:#555;font-size:11pt}
+.pcover dl{margin:0;display:grid;gap:4mm}
+.pcover dl div{border-top:.2mm solid #ccc;padding-top:2mm}
+.pcover dt{font-size:7.5pt;letter-spacing:.1em;text-transform:uppercase;color:#888}
+.pcover dd{margin:1mm 0 0;font-size:15pt;font-weight:600}
+.pcover .pc-by{margin-top:auto;font-size:9pt;color:#666}
+.pplan{display:flex;gap:8mm;padding:5mm 12mm 0;min-height:0}
+.pplan canvas{flex:none}
+.pplan aside{flex:1;min-width:0;font-size:9pt}
+.prespage h3{font-size:8pt;letter-spacing:.12em;text-transform:uppercase;color:#777;margin:2mm 0 2mm;font-weight:600}
+.prespage table{width:100%;border-collapse:collapse;font-size:9pt}
+.prespage th{text-align:left;font-weight:500;font-size:7.5pt;letter-spacing:.06em;text-transform:uppercase;color:#888;border-bottom:.3mm solid #1d1d1d;padding:1.2mm 1mm}
+.prespage td{padding:1.4mm 1mm;border-bottom:.15mm solid #ddd}
+.prespage td i,.plegend i{display:inline-block;width:3mm;height:3mm;border:.15mm solid #999;margin-right:2mm;vertical-align:-.3mm}
+.prespage .r{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+.prespage tr.tot td{font-weight:600;border-top:.3mm solid #1d1d1d}
+.plegend{list-style:none;padding:0;margin:6mm 0 0;display:grid;gap:1.5mm;color:#555}
+.pnums{display:grid;grid-template-columns:1fr 1.25fr;gap:12mm;padding:6mm 12mm 0}
+.pkpi{display:grid;gap:4mm;margin-top:10mm}
+.pkpi div{background:#f3f1ec;padding:4mm 5mm;border-radius:1.5mm}
+.pkpi small{display:block;font-size:7.5pt;letter-spacing:.1em;text-transform:uppercase;color:#777}
+.pkpi b{font-family:var(--f-display);font-size:17pt;font-weight:600}
+.pnote{font-size:7.5pt;color:#777;line-height:1.4;margin:4mm 0 0}

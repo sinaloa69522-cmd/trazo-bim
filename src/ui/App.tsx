@@ -2,6 +2,7 @@ import { saveFile } from "./saveFile";
 import { projectFileName } from "../core/projectFile";
 import { TemplateDialog } from "./TemplateDialog";
 import { ReviewPanel } from "./ReviewPanel";
+import { Presentation } from "./Presentation";
 import { DocDialog } from "./DocDialog";
 import { memoria } from "../core/memoria";
 import { VersionsDialog } from "./VersionsDialog";
@@ -149,6 +150,23 @@ export function App() {
   const [sun3d, setSun3d] = useState(false);
   const [review, setReview] = useState(false);
   const [doc, setDoc] = useState<"memoria" | null>(null);
+  /** Presentación abierta, con la foto del 3D tomada al abrirla (null: sin foto) */
+  const [pres, setPres] = useState<{ shot: string | null } | null>(null);
+  const openPresentation = async () => {
+    const grab = () => { const b = view3d.current?.snapshot(2400); return b ? URL.createObjectURL(b) : null; };
+    let shot = grab();
+    // con el 3D oculto (planta, lámina, presupuesto) se muestra un momento para tomar la foto
+    if (!shot) {
+      const prev = view;
+      setView("split");
+      await new Promise((r) => setTimeout(r, 700));
+      view3d.current?.fit();
+      await new Promise((r) => setTimeout(r, 300));
+      shot = grab();
+      setView(prev);
+    }
+    setPres({ shot });
+  };
   const [templates, setTemplates] = useState(false);
   const [versions, setVersions] = useState(false);
   const [real3d, setReal3d] = useState(() => { try { return localStorage.getItem("trazo-3d-real") !== "0"; } catch { return true; } });
@@ -239,6 +257,7 @@ export function App() {
         <button className="btn" onClick={() => ed.clear()}>Nuevo</button>
         <button className="btn" onClick={() => setTemplates(true)} title="Casas de 2 y 3 recámaras listas para editar">Plantillas</button>
         <button className="btn" onClick={() => setVersions(true)} title="Guardar versiones con nombre y volver a una anterior">Versiones</button>
+        <button className="btn" onClick={() => void openPresentation()} title="PDF corto para el cliente: imagen 3D, plantas amuebladas a color, áreas y presupuesto resumido">Presentación</button>
         <button className="btn" onClick={() => setDoc("memoria")} title="Memoria descriptiva del proyecto para el permiso, en Word o PDF">Memoria</button>
         <button className="btn" onClick={() => openRef.current?.click()} title="Abrir un proyecto .trazo (Ctrl+O). También puedes arrastrarlo a la ventana.">Abrir</button>
         <button className="btn" onClick={save} title={`Guardar el proyecto en un archivo .trazo (Ctrl+S)${ed.dirty ? ": hay cambios sin guardar en archivo" : ""}`}>
@@ -299,6 +318,7 @@ export function App() {
       <CommandLine ed={ed} inputRef={cmdRef} onExport={setExporting} />
       {dragging && <div className="dropzone">Suelta un proyecto .trazo para abrirlo, o un DWG, DXF, PDF o imagen para importarlo</div>}
       {pdfFile && <ImportPdfDialog ed={ed} file={pdfFile} onClose={() => { setPdfFile(null); view3d.current?.fit(); }} />}
+      {pres && <Presentation ed={ed} shot={pres.shot} onClose={() => { if (pres.shot) URL.revokeObjectURL(pres.shot); setPres(null); }} />}
       {doc === "memoria" && <DocDialog make={() => memoria(ed.project)} file={`${projectFileName(ed.project.info.name).replace(/\.trazo$/i, "")}-memoria`} onClose={() => setDoc(null)}
         hint="Armada con los datos del proyecto: áreas, sistema constructivo, acabados, puertas y ventanas, instalaciones y revisión de reglamento. Descárgala en Word para completarla o imprímela." />}
       {versions && <VersionsDialog ed={ed} onClose={() => setVersions(false)} />}
