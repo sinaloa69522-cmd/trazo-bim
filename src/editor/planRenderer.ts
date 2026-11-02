@@ -93,6 +93,7 @@ function drawHatch(ctx: CanvasRenderingContext2D, ed: Editor, h: HatchRegion, co
 /** Dibuja la planta completa en un canvas 2D. W y H en píxeles CSS. */
 export function drawPlan(ctx: CanvasRenderingContext2D, ed: Editor, C: PlanColors, W: number, H: number, opts: PlanOpts = {}) {
   const m = ed.model, P = !!opts.print, hover = P ? null : ed.hover;
+  if (!P) ed.screen = { w: W, h: H };
   const toS = (x: number, y: number) => ed.toS(x, y);
   ctx.fillStyle = C["plan-bg"];
   ctx.fillRect(0, 0, W, H);
@@ -618,6 +619,20 @@ export function drawPlan(ctx: CanvasRenderingContext2D, ed: Editor, C: PlanColor
     ctx.stroke(); ctx.setLineDash([]); ctx.globalAlpha = 1;
     const s = toS(ed.snap.x, ed.snap.y);
     ctx.beginPath(); ctx.moveTo(s.x - 5, s.y - 5); ctx.lineTo(s.x + 5, s.y + 5); ctx.moveTo(s.x + 5, s.y - 5); ctx.lineTo(s.x - 5, s.y + 5); ctx.stroke();
+  }
+  // observaciones de la revisión de reglamento: globo numerado (rojo: no cumple, ámbar: aviso)
+  if (!P && ed.review) {
+    ed.review.forEach((f, i) => {
+      if (f.level !== ed.active) return;
+      const s = toS(f.at.x, f.at.y), col = f.sev === "error" ? "#d6336c" : "#e8a50c";
+      // varias en el mismo espacio: en fila hacia la derecha
+      const k = ed.review!.slice(0, i).filter((g) => g.level === f.level && Math.hypot(g.at.x - f.at.x, g.at.y - f.at.y) < 0.01).length;
+      const x = s.x + k * 20, y = s.y - 26;
+      ctx.fillStyle = col; ctx.beginPath(); ctx.arc(x, y, 9, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = "#fff"; ctx.lineWidth = 1.5; ctx.stroke();
+      ctx.fillStyle = "#fff"; ctx.font = "bold 10px 'IBM Plex Mono', ui-monospace, monospace"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+      ctx.fillText(String(i + 1), x, y + 0.5); ctx.textAlign = "left"; ctx.textBaseline = "alphabetic";
+    });
   }
   if (aiding && ed.snap?.kind) snapMarker(ctx, ed.snap.kind, toS(ed.snap.x, ed.snap.y), C.accent);
   if (aiding && ed.snap?.tip) {
