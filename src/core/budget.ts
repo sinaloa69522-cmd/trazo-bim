@@ -1,3 +1,4 @@
+import { usBudget } from "./budgetUs";
 import { DOOR_STYLES, openingStyle } from "./openingStyles";
 import { deckTakeoff, deckType } from "./decks";
 import { furnitureDef } from "./furniture";
@@ -73,6 +74,8 @@ const r2 = (v: number) => Math.round(v * 100) / 100;
 
 /** Mediciones de todo el proyecto, partida por partida, valoradas con los precios del usuario o los de referencia. */
 export function budget(p: Project, s: BudgetSettings = defaultBudget()): Budget {
+  // en pies y pulgadas: partidas y precios de EE.UU.
+  if (p.units === "imperial") return usBudget(p, s);
   const items: Omit<BudgetItem, "price" | "amount">[] = [];
   const add = (code: string, desc: string, unit: string, qty: number, base: number) => {
     if (qty > 1e-9) items.push({ code, chapter: code.slice(0, 2), desc, unit, qty: r2(qty), base });
@@ -183,6 +186,6 @@ export function budgetCsv(b: Budget, s: BudgetSettings, title: string): string {
     rows.push(["", `Total ${c.name}`, "", "", "", dec(c.total)]);
   }
   rows.push([], ["", "Costo directo", "", "", "", dec(b.direct)], ["", `Indirectos y utilidad (${s.indirect} %)`, "", "", "", dec(b.indirect)],
-    ["", "Subtotal", "", "", "", dec(b.subtotal)], ["", `IVA (${s.tax} %)`, "", "", "", dec(b.tax)], ["", "TOTAL", "", "", "", dec(b.total)]);
+    ["", "Subtotal", "", "", "", dec(b.subtotal)], ["", `${s.currency === "USD" ? "Impuesto (sales tax)" : "IVA"} (${s.tax} %)`, "", "", "", dec(b.tax)], ["", "TOTAL", "", "", "", dec(b.total)]);
   return "﻿" + rows.map((r) => r.map(q).join(";")).join("\r\n") + "\r\n";
 }

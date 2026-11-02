@@ -9,6 +9,7 @@ import { mepDef } from "./mep";
 import type { Project } from "./model";
 import { stripFootings } from "./mxStruct";
 import { builtArea } from "./rooms";
+import { programUs } from "./obraUs";
 
 /** Días de trabajo por semana (lunes a sábado) */
 export const WEEK = 6;
@@ -34,6 +35,8 @@ export interface Program {
   weekly: number[];
   cumulative: number[];
   total: number;
+  /** Días de trabajo por semana: 6 en México, 5 en EE.UU. */
+  week: number;
 }
 
 const ceil = (v: number, min = 1) => Math.max(min, Math.ceil(v - 1e-9));
@@ -44,6 +47,7 @@ const ceil = (v: number, min = 1) => Math.max(min, Math.ceil(v - 1e-9));
  * aplanados 20 m² · pisos 12 m² · azulejo 8 m² · pintura 50 m².
  */
 export function program(p: Project): Program {
+  if (p.units === "imperial") return programUs(p);
   const b = budget(p, p.budget ?? defaultBudget()), k = 1 + (p.budget?.indirect ?? 20) / 100;
   const chap = (code: string) => (b.chapters.find((c) => c.code === code)?.total ?? 0) * k;
   const item = (code: string) => (b.chapters.flatMap((c) => c.items).find((i) => i.code === code)?.amount ?? 0) * k;
@@ -119,26 +123,32 @@ export function program(p: Project): Program {
   const pin = add("pin", "Pintura", Math.max(end(apl), end(car) - 3), ceil(paint / 50, 4), `${paint.toFixed(0)} m²`, item("10.03"));
   add("lim", "Limpieza y entrega", Math.max(end(pin), end(mue), end(car)), 3, "", item("10.04"));
 
-  // estructura de días y semanas
+  return finishProgram(acts, WEEK);
+}
+
+/** Ordena las actividades y reparte su importe por semana. */
+export function finishProgram(acts: Activity[], week: number): Program {
+  const end = (a: Activity) => a.start + a.days;
   acts.sort((a, b) => a.start - b.start || (a.id < b.id ? -1 : 1));
-  const days = Math.max(...acts.map(end)), weeks = Math.ceil(days / WEEK);
+  const days = Math.max(...acts.map(end)), weeks = Math.ceil(days / week);
   const weekly = Array(weeks).fill(0);
   for (const a of acts) {
     if (!a.cost) continue;
-    for (let d = a.start; d < end(a); d++) weekly[Math.floor(d / WEEK)] += a.cost / a.days;
+    for (let d = a.start; d < end(a); d++) weekly[Math.floor(d / week)] += a.cost / a.days;
   }
   const total = weekly.reduce((s, v) => s + v, 0);
   let acc = 0;
   const cumulative = weekly.map((v) => { acc += v; return total ? acc / total : 0; });
-  return { acts, days, weeks, weekly, cumulative, total };
+  return { acts, days, weeks, weekly, cumulative, total, week };
 }
 
-/** Fecha (ISO) del día hábil n contando desde start (lunes a sábado). */
-export function workDate(startIso: string, n: number): Date {
+/** Fecha (ISO) del día hábil n contando desde start (lunes a sábado, o lunes a viernes con week 5). */
+export function workDate(startIso: string, n: number, week = WEEK): Date {
   const d = new Date(`${startIso}T12:00:00`);
   if (isNaN(+d)) return new Date();
-  while (d.getDay() === 0) d.setDate(d.getDate() + 1);
+  const off = (x: Date) => x.getDay() === 0 || (week < 6 && x.getDay() === 6);
+  while (off(d)) d.setDate(d.getDate() + 1);
   let k = 0;
-  while (k < n) { d.setDate(d.getDate() + 1); if (d.getDay() !== 0) k++; }
+  while (k < n) { d.setDate(d.getDate() + 1); if (!off(d)) k++; }
   return d;
 }
