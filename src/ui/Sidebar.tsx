@@ -563,6 +563,7 @@ function Properties({ ed, onFocusCommand }: { ed: Editor; onFocusCommand: () => 
             ))}
           </div>
         )}
+        {n > 0 && ed.project.levels.length > 1 && <LevelTransfer ed={ed} />}
         {ed.sels.some((x) => x.type === "line") && (
           <button className="btn full" onClick={() => ed.linesToWalls()}>Convertir líneas en muros</button>
         )}
@@ -572,6 +573,23 @@ function Properties({ ed, onFocusCommand }: { ed: Editor; onFocusCommand: () => 
         )}
         {n > 0 && <button className="btn full" onClick={() => ed.deleteSel()}>{n > 1 ? `Borrar ${n} elementos` : "Borrar elemento"}</button>}
       </div>
+    </div>
+  );
+}
+
+/** Pasa la selección a otro nivel, copiándola o moviéndola, en el mismo sitio en planta. */
+function LevelTransfer({ ed }: { ed: Editor }) {
+  const others = ed.project.levels.map((l, i) => ({ l, i })).filter(({ l }) => l !== ed.model);
+  const [to, setTo] = useState(others[others.length - 1]?.i ?? 0);
+  const target = others.some((o) => o.i === to) ? to : others[0].i;
+  return (
+    <div className="full lvxfer">
+      <label htmlFor="lv-to">Pasar a</label>
+      <select id="lv-to" value={target} onChange={(e) => setTo(Number(e.target.value))}>
+        {others.map(({ l, i }) => <option key={i} value={i}>{l.name} ({fmtElev(l.elev)})</option>)}
+      </select>
+      <button className="btn" onClick={() => ed.transferSel(target, false)} title="Deja una copia en el otro nivel, en el mismo sitio en planta">Copiar</button>
+      <button className="btn" onClick={() => ed.transferSel(target, true)} title="Lo quita de este nivel y lo pone en el otro, en el mismo sitio en planta">Mover</button>
     </div>
   );
 }
@@ -607,8 +625,9 @@ function Levels({ ed }: { ed: Editor }) {
         <TerrainFields ed={ed} />
         <div className="full" style={{ display: "flex", gap: 6 }}>
           <button className="btn" style={{ flex: 1 }} onClick={() => ed.addLevel(false)} title="Nivel vacío encima, con el de abajo en gris como referencia">Nuevo nivel</button>
-          <button className="btn" style={{ flex: 1 }} onClick={() => ed.addLevel(true)} title="Copia muros, huecos, losas y escaleras del nivel activo">Duplicar</button>
+          <button className="btn" style={{ flex: 1 }} onClick={() => ed.addLevel(true)} title="Copia todo el nivel activo (muros, huecos, losas, escaleras, muebles, instalaciones y anotaciones) encima; la cubierta sube a la copia">Duplicar todo</button>
         </div>
+        <button className="btn full" onClick={() => ed.addLevel("struct")} title="Copia encima solo muros, puertas, ventanas, columnas, losas, escaleras, espacios y cotas: lo que se repite de una planta a otra">Duplicar solo muros y huecos</button>
         {levels.length > 1 && <button className="btn full" onClick={() => ed.deleteLevel()}>Borrar nivel</button>}
       </div>
     </section>

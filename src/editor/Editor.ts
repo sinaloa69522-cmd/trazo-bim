@@ -30,7 +30,7 @@ import type { Finding } from "../core/codeCheck";
 import { computeRooms, RC, roomAt, type RoomGrid } from "../core/rooms";
 import { hatchArea, hatchPattern, inHatch, maskLoops, IMPORTED } from "../core/hatch";
 import { DEFAULT_SNAPS, resolveSnap, snapGeometry, SNAP_MODES, SNAP_NAME, type SnapKind, type SnapPt } from "./snaps";
-import { deleteElements, reflection, rotation, scaling, screenAngle, transformElements, translation, type Xform } from "../core/transform";
+import { deleteElements, reflection, rotation, scaling, screenAngle, transferElements, transformElements, translation, type Xform } from "../core/transform";
 
 /** Centro (promedio de vértices) de un polígono. */
 const centroid = (r: Pt[]) => ({ x: r.reduce((s, q) => s + q.x, 0) / r.length, y: r.reduce((s, q) => s + q.y, 0) / r.length });
@@ -378,13 +378,15 @@ export class Editor {
     return Math.round((up.length ? Math.min(...up) - this.model.elev : this.storyHeight()) * 100) / 100;
   }
   /** Crea un nivel encima del activo, vacío o como copia del activo (muros, huecos, losas, escaleras…). */
-  addLevel(copy: boolean) {
+  /** Nivel nuevo encima: vacío (false), copia completa (true) o solo muros, huecos, columnas, losas y espacios ("struct"). */
+  addLevel(copy: boolean | "struct") {
     this.snapshot();
     const top = Math.max(...this.project.levels.map((l) => l.elev));
     const elev = Math.round((Math.max(top, this.model.elev) + this.storyHeight()) * 100) / 100;
     const n = this.project.levels.length;
     // la copia no lleva cubiertas (se mueven abajo) ni secciones (cortan todo el edificio)
-    const content = copy ? { ...cloneModel(this.model), roofs: [], sections: [] } : undefined;
+    const full = copy ? { ...cloneModel(this.model), roofs: [], sections: [] } : undefined;
+    const content = full && copy === "struct" ? { ...full, furniture: [], fixtures: [], runs: [], marks: [], texts: [], hatches: [], underlays: [], decks: [], lines: [] } : full;
     const lv = newLevel(n === 1 ? "Planta 1" : `Planta ${n}`, elev, content);
     // la planta nueva vacía arranca sobre su losa de entrepiso (el contorno de las losas de abajo),
     // con el hueco ya abierto sobre cada escalera que sube a ella
@@ -404,7 +406,25 @@ export class Editor {
     this.active = this.project.levels.indexOf(lv);
     this.sels = [];
     const slabNote = !copy && lv.slabs.length ? ` Lleva su losa de entrepiso${lv.slabs.some((x) => x.holes.length) ? ", con el hueco de la escalera abierto" : ""}.` : "";
-    this.message = copy ? `${lv.name} creada como copia, a ${fmtLen(elev)}.${moved ? " La cubierta ha subido a la nueva planta." : ""}` : `${lv.name} creada a ${fmtLen(elev)}. El nivel de abajo se ve en gris como referencia.${slabNote}${moved ? " La cubierta ha subido a la nueva planta." : ""}`;
+    this.message = copy ? `${lv.name} creada como copia${copy === "struct" ? " de muros, huecos, columnas, losas y espacios" : ""}, a ${fmtLen(elev)}.${moved ? " La cubierta ha subido a la nueva planta." : ""}` : `${lv.name} creada a ${fmtLen(elev)}. El nivel de abajo se ve en gris como referencia.${slabNote}${moved ? " La cubierta ha subido a la nueva planta." : ""}`;
+    this.changed();
+  }
+  /**
+   * Copia o mueve la selección a otro nivel, en el mismo sitio en planta, y pasa a ese nivel con lo
+   * pasado seleccionado.
+   */
+  transferSel(target: number, move: boolean) {
+    const dst = this.project.levels[target];
+    if (!dst || dst === this.model || !this.sels.length) return;
+    this.snapshot();
+    const from = this.model.name, res = transferElements(this.model, dst, this.sels, move);
+    if (!move) for (const r of res) if (r.type === "mark") { const mk = dst.marks.find((x) => x.id === r.id); if (mk?.kind === "detalle") mk.label = nextDetailNum(this.project); }
+    const skipped = this.sels.filter((r) => r.type !== "opening").length + this.sels.filter((r) => r.type === "opening" && !this.sels.some((w) => w.type === "wall" && w.id === this.model.openings.find((o) => o.id === r.id)?.wallId)).length - res.length;
+    this.active = target;
+    this.sels = res.map((r) => ({ type: r.type, id: r.id }));
+    const n = res.length, el = `${n} elemento${n === 1 ? "" : "s"}`;
+    this.message = n ? `${el} ${move ? "movido" : "copiado"}${n === 1 ? "" : "s"} de ${from} a ${dst.name}.${skipped > 0 ? ` ${skipped} no se pasaron: las secciones son de todo el edificio y las puertas o ventanas sueltas necesitan un muro en el mismo sitio.` : ""}`
+      : "No se pasó nada: las secciones son de todo el edificio y las puertas o ventanas necesitan un muro en el mismo sitio del otro nivel.";
     this.changed();
   }
   renameLevel(name: string) { this.edit(() => { this.model.name = name; }); }
