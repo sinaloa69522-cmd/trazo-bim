@@ -16,11 +16,11 @@ const C30 = Math.cos(Math.PI / 6), S30 = 0.5;
 const SAN_Z = -0.35, WATER_Z = 0.15, SLOPE = 0.02;
 
 /** Nombre corto del mueble más cercano a una salida (WC, LAV, REG, FREG…). */
-function muebleNear(p: Project, li: number, x: number, y: number): string | null {
-  const SHORT: Record<string, string> = { wc: "WC", basin: "LAV", shower: "REG", bath: "TINA", kitchen: "FREG", sink: "FREG", washer: "LAVADORA" };
+function muebleNear(p: Project, li: number, x: number, y: number, us = false): string | null {
+  const SHORT: Record<string, string> = us ? { wc: "WC", basin: "LAV", shower: "SHWR", bath: "TUB", kitchen: "K. SINK", sink: "SINK", washer: "CL. WASHER" } : { wc: "WC", basin: "LAV", shower: "REG", bath: "TINA", kitchen: "FREG", sink: "FREG", washer: "LAVADORA" };
   let best: { d: number; t: string } | null = null;
   for (const f of p.levels[li].furniture) {
-    const t = SHORT[f.kind] ?? (furnitureDef(f.kind).cat === "Baño" ? furnitureDef(f.kind).label : null);
+    const t = SHORT[f.kind] ?? (!us && furnitureDef(f.kind).cat === "Baño" ? furnitureDef(f.kind).label : null);
     if (!t) continue;
     const d = Math.hypot(f.x - x, f.y - y);
     if (d < 1.3 && (!best || d < best.d)) best = { d, t };
@@ -28,8 +28,12 @@ function muebleNear(p: Project, li: number, x: number, y: number): string | null
   return best?.t ?? null;
 }
 
-/** Tramos y etiquetas de una disciplina: hidráulica (agua fría y caliente) o sanitaria. */
-export function isoModel(p: Project, disc: "hid" | "san"): { segs: Seg[]; tags: Tag[] } {
+/**
+ * Tramos y etiquetas de una disciplina: hidráulica (agua fría y caliente) o sanitaria. En EE.UU. (us) los
+ * diámetros son los del IRC: 3" PVC desde el inodoro y en la bajante, 2" en los demás ramales, ½" PEX.
+ */
+export function isoModel(p: Project, disc: "hid" | "san", us = false): { segs: Seg[]; tags: Tag[] } {
+  const D = us ? { big: '3" PVC', small: '2" PVC', water: '½" PEX', stack: '3" STACK' } : { big: "Ø 100 mm", small: "Ø 50 mm", water: "Ø 13 mm", stack: "Ø 100 mm" };
   const segs: Seg[] = [], tags: Tag[] = [];
   const systems: RunSystem[] = disc === "hid" ? ["af", "ac"] : ["san"];
   p.levels.forEach((lv, li) => {
@@ -44,7 +48,7 @@ export function isoModel(p: Project, disc: "hid" | "san"): { segs: Seg[]; tags: 
       for (let i = 1; i < r.pts.length; i++) {
         const a = { ...r.pts[i - 1], z: zs[i - 1] }, b = { ...r.pts[i], z: zs[i] };
         if (Math.hypot(b.x - a.x, b.y - a.y) < 1e-6) continue;
-        segs.push({ a, b, sys: r.system, label: i === 1 ? (r.system === "san" ? (nearWc ? "Ø 100 mm" : "Ø 50 mm") : "Ø 13 mm") : undefined });
+        segs.push({ a, b, sys: r.system, label: i === 1 ? (r.system === "san" ? (nearWc ? D.big : D.small) : D.water) : undefined });
       }
     }
     // subidas y bajadas a cada salida desde el punto de la red que pasa por ella
@@ -53,11 +57,13 @@ export function isoModel(p: Project, disc: "hid" | "san"): { segs: Seg[]; tags: 
       if (!systems.includes(d.sys as RunSystem)) continue;
       const z = d.sys === "san" ? z0 + SAN_Z : z0 + WATER_Z, top = z0 + (d.sys === "san" ? 0 : f.h || d.h);
       if (Math.abs(top - z) > 1e-3) segs.push({ a: { x: f.x, y: f.y, z }, b: { x: f.x, y: f.y, z: top }, sys: d.sys as RunSystem });
-      const name = f.kind === "bajante" ? "BAP" : f.kind === "contador" ? "MEDIDOR" : f.kind === "llave" ? "LLAVE DE PASO" : f.kind === "termo" ? "CALENTADOR" : muebleNear(p, li, f.x, f.y);
+      const name = us
+        ? f.kind === "bajante" ? "STACK / VTR" : f.kind === "contador" ? "WATER METER" : f.kind === "llave" ? "SHUTOFF" : f.kind === "termo" ? "WATER HEATER" : f.kind === "sumidero" ? "FD" : f.kind === "registro" ? "CO" : muebleNear(p, li, f.x, f.y, true)
+        : f.kind === "bajante" ? "BAP" : f.kind === "contador" ? "MEDIDOR" : f.kind === "llave" ? "LLAVE DE PASO" : f.kind === "termo" ? "CALENTADOR" : muebleNear(p, li, f.x, f.y);
       if (name) tags.push({ at: { x: f.x, y: f.y, z: top }, text: name, sys: d.sys as RunSystem });
     }
     // la bajante sigue hasta el registro
-    if (disc === "san") for (const f of lv.fixtures.filter((x) => x.kind === "bajante")) segs.push({ a: { x: f.x, y: f.y, z: z0 + SAN_Z }, b: { x: f.x, y: f.y, z: z0 + SAN_Z - 0.4 }, sys: "san", label: "Ø 100 mm" });
+    if (disc === "san") for (const f of lv.fixtures.filter((x) => x.kind === "bajante")) segs.push({ a: { x: f.x, y: f.y, z: z0 + SAN_Z }, b: { x: f.x, y: f.y, z: z0 + SAN_Z - 0.4 }, sys: "san", label: D.stack });
   });
   // un solo nombre por mueble (sus tomas de fría y caliente están a unos centímetros)
   const kept: Tag[] = [];
@@ -68,16 +74,16 @@ export function isoModel(p: Project, disc: "hid" | "san"): { segs: Seg[]; tags: 
 const iso = (q: P3) => ({ u: (q.x - q.y) * C30, v: (q.x + q.y) * S30 - q.z });
 
 /** Dibuja un isométrico dentro del rectángulo (x, y, w, h) en px. */
-function drawIso(ctx: CanvasRenderingContext2D, m: ReturnType<typeof isoModel>, x: number, y: number, w: number, h: number, title: string, px: number) {
+function drawIso(ctx: CanvasRenderingContext2D, m: ReturnType<typeof isoModel>, x: number, y: number, w: number, h: number, title: string, px: number, us = false) {
   ctx.save();
   ctx.fillStyle = "#111"; ctx.font = `600 ${4 * px}px 'IBM Plex Sans Condensed', 'Arial Narrow', sans-serif`; ctx.textAlign = "left";
   ctx.fillText(title, x + 4 * px, y + h - 6 * px);
   ctx.fillRect(x + 4 * px, y + h - 4.6 * px, ctx.measureText(title).width, 0.35 * px);
   ctx.font = `${2.6 * px}px 'IBM Plex Mono', monospace`; ctx.fillStyle = "#444";
-  ctx.fillText("SIN ESCALA", x + 4 * px, y + h - 1.6 * px);
+  ctx.fillText(us ? "NOT TO SCALE" : "SIN ESCALA", x + 4 * px, y + h - 1.6 * px);
   if (!m.segs.length) {
     ctx.fillStyle = "#777"; ctx.textAlign = "center"; ctx.font = `${3.2 * px}px 'IBM Plex Sans', sans-serif`;
-    ctx.fillText("Sin tuberías dibujadas: traza la red con la herramienta Tubería (TU)", x + w / 2, y + h / 2);
+    ctx.fillText(us ? "No piping drawn: draw the runs with the Pipe tool (TU)" : "Sin tuberías dibujadas: traza la red con la herramienta Tubería (TU)", x + w / 2, y + h / 2);
     ctx.restore(); return;
   }
   const pts = m.segs.flatMap((s) => [iso(s.a), iso(s.b)]).concat(m.tags.map((t) => iso(t.at)));
@@ -106,7 +112,7 @@ function drawIso(ctx: CanvasRenderingContext2D, m: ReturnType<typeof isoModel>, 
     if (ang > Math.PI / 2) ang -= Math.PI; else if (ang < -Math.PI / 2) ang += Math.PI;
     ctx.save(); ctx.translate(mx, my); ctx.rotate(ang);
     ctx.fillStyle = COL[s.sys];
-    const txt = s.sys === "san" && Math.abs(s.a.z - s.b.z) > 1e-4 && L > 30 * px ? `${s.label}  pend. 2 %` : s.label;
+    const txt = s.sys === "san" && Math.abs(s.a.z - s.b.z) > 1e-4 && L > 30 * px ? `${s.label}  ${us ? "@ ¼\"/ft" : "pend. 2 %"}` : s.label;
     ctx.fillText(txt, 0, -1.2 * px);
     ctx.restore();
     if (s.sys === "san" && Math.abs(s.a.z - s.b.z) > 1e-4 && L > 12 * px) {
@@ -134,9 +140,9 @@ function drawIso(ctx: CanvasRenderingContext2D, m: ReturnType<typeof isoModel>, 
 }
 
 /** Lámina de isométricos: hidráulico a la izquierda y sanitario a la derecha, separados por una línea. */
-export function drawIsometrics(ctx: CanvasRenderingContext2D, p: Project, W: number, H: number, px: number) {
+export function drawIsometrics(ctx: CanvasRenderingContext2D, p: Project, W: number, H: number, px: number, us = false) {
   ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, W, H);
-  drawIso(ctx, isoModel(p, "hid"), 0, 0, W / 2, H, "ISOMÉTRICO HIDRÁULICO", px);
-  drawIso(ctx, isoModel(p, "san"), W / 2, 0, W / 2, H, "ISOMÉTRICO SANITARIO", px);
+  drawIso(ctx, isoModel(p, "hid", us), 0, 0, W / 2, H, us ? "WATER DISTRIBUTION ISOMETRIC" : "ISOMÉTRICO HIDRÁULICO", px, us);
+  drawIso(ctx, isoModel(p, "san", us), W / 2, 0, W / 2, H, us ? "DWV RISER DIAGRAM" : "ISOMÉTRICO SANITARIO", px, us);
   ctx.strokeStyle = "#111"; ctx.lineWidth = 0.25 * px; ctx.beginPath(); ctx.moveTo(W / 2, 4 * px); ctx.lineTo(W / 2, H - 4 * px); ctx.stroke();
 }
