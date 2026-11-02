@@ -2,6 +2,7 @@
 // cuadro de áreas, sistema constructivo, acabados, carpintería, instalaciones, revisión de reglamento,
 // reglamentos aplicables y firmas. Sale como documento (docx.ts) para Word o para imprimir.
 
+import { officeOf } from "./office";
 import { checkProject, RULES } from "./codeCheck";
 import type { Block, Doc } from "./docx";
 import { foundationType } from "./foundation";
@@ -147,7 +148,12 @@ export function memoria(p: Project): Doc {
   for (const g of GENERALES) { B.push({ h: g.title, level: 2 }); B.push({ list: g.notes }); }
 
   B.push({ h: "Responsables" });
-  B.push({ signs: [{ role: "Proyectista", name: info.author }, { role: "Director Responsable de Obra", name: "" }, { role: "Propietario", name: info.client }] });
+  const of = officeOf(p);
+  B.push({ signs: [
+    { role: of?.license ? `Proyectista · Céd. prof. ${of.license}` : "Proyectista", name: of?.responsible || info.author },
+    { role: of?.dro ? `Director Responsable de Obra · ${of.dro}` : "Director Responsable de Obra", name: of?.dro ? of.responsible : "" },
+    { role: "Propietario", name: info.client },
+  ] });
 
   return { title: "Memoria descriptiva", subtitle: `${info.name || "Casa habitación unifamiliar"}${info.client ? ` · ${info.client}` : ""}`, blocks: B };
 }

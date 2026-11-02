@@ -350,6 +350,23 @@ export interface ProjectInfo {
   site?: Site;
   /** Revisiones del juego, de la más antigua a la más reciente; van en el cajetín de todas las láminas */
   revisions?: Revision[];
+  /** Datos del despacho para el cajetín (office.ts); sin valor se usan los guardados en este navegador */
+  office?: Office;
+}
+
+/** Despacho y responsable que firman las láminas. Logo y firma: imágenes PNG en data URL, pequeñas. */
+export interface Office {
+  name: string;
+  /** Arquitecto o ingeniero responsable del proyecto */
+  responsible: string;
+  /** Cédula profesional del responsable */
+  license: string;
+  /** Registro de D.R.O. o perito, si lo tiene */
+  dro?: string;
+  /** Teléfono, correo o dirección, en una línea */
+  contact?: string;
+  logo?: string;
+  sign?: string;
 }
 
 /** Una revisión del juego de planos: número (o letra), fecha y qué cambió. */
@@ -451,6 +468,12 @@ export function normalizeProject(raw: unknown): Project {
   const info = { ...defaultInfo(), ...(r?.info ?? {}) };
   const st = info.site;
   if (st && !(Number.isFinite(st.lat) && Number.isFinite(st.lon))) delete info.site;
+  if (info.office !== undefined) {
+    const o = info.office as Partial<Office> | null, str = (v: unknown) => (typeof v === "string" ? v : "");
+    const img = (v: unknown) => (typeof v === "string" && v.startsWith("data:image/") ? v : undefined);
+    if (o && typeof o === "object") info.office = { name: str(o.name), responsible: str(o.responsible), license: str(o.license), dro: str(o.dro) || undefined, contact: str(o.contact) || undefined, logo: img(o.logo), sign: img(o.sign) };
+    else delete info.office;
+  }
   if (info.revisions !== undefined) {
     const rv = Array.isArray(info.revisions) ? info.revisions.filter((x) => x && typeof x === "object").map((x) => ({ no: String(x.no ?? ""), date: String(x.date ?? ""), desc: String(x.desc ?? "") })) : [];
     if (rv.length) info.revisions = rv; else delete info.revisions;

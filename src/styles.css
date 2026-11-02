@@ -530,7 +530,10 @@ dialog.docdlg[open]{display:flex}
 .pcover dl div{border-top:.2mm solid #ccc;padding-top:2mm}
 .pcover dt{font-size:7.5pt;letter-spacing:.1em;text-transform:uppercase;color:#888}
 .pcover dd{margin:1mm 0 0;font-size:15pt;font-weight:600}
-.pcover .pc-by{margin-top:auto;font-size:9pt;color:#666}
+.pcover .pc-by{margin-top:auto;display:flex;gap:4mm;align-items:center;font-size:8.5pt;color:#555;border-top:.2mm solid #ccc;padding-top:4mm}
+.pcover .pc-by img{max-height:14mm;max-width:30mm;object-fit:contain}
+.pcover .pc-by span,.pcover .pc-by b{display:block;line-height:1.35}
+.pcover .pc-by b{color:#1d1d1d;font-size:10pt}
 .pplan{display:flex;gap:8mm;padding:5mm 12mm 0;min-height:0}
 .pplan canvas{flex:none}
 .pplan aside{flex:1;min-width:0;font-size:9pt}
@@ -548,3 +551,19 @@ dialog.docdlg[open]{display:flex}
 .pkpi small{display:block;font-size:7.5pt;letter-spacing:.1em;text-transform:uppercase;color:#777}
 .pkpi b{font-family:var(--f-display);font-size:17pt;font-weight:600}
 .pnote{font-size:7.5pt;color:#777;line-height:1.4;margin:4mm 0 0}
+.cajetin .c-office{display:flex;align-items:center;gap:3mm;padding:2mm 3mm}
+.cajetin .c-office img{max-height:12mm;max-width:28mm;object-fit:contain;flex:none}
+.cajetin .c-office b{display:block;font-family:var(--f-display);font-size:10pt;font-weight:600;line-height:1.15}
+.cajetin .c-office .c-contact{display:block;font-size:6.5pt;letter-spacing:0;text-transform:none;color:#555;margin:.6mm 0 0}
+.cajetin .c-sign .c-lic{display:block;font-size:6.5pt;color:#444;margin-top:.5mm}
+.cajetin .c-sign .c-firma{flex:0 0 34%;position:relative;min-height:12mm}
+.cajetin .c-sign .c-firma img{display:block;max-height:10mm;max-width:100%;object-fit:contain;margin:-1mm auto 0}
+.cajetin .c-sign .c-line{display:block;border-bottom:.2mm solid #111;margin-top:7mm}
+.offed{width:min(420px,calc(100vw - 32px))}
+.offed .of-f{display:flex;flex-direction:column;gap:3px;font-size:11px;color:var(--muted);flex:1;min-width:0}
+.offed .of-f input{color:var(--fg);width:100%;box-sizing:border-box}
+.offed .of-img{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.offed .of-img>span{width:42px;font-size:11px;color:var(--muted)}
+.offed .of-prev{width:150px;height:48px;border:1px dashed var(--line);border-radius:4px;display:grid;place-items:center;background:#fff;overflow:hidden}
+.offed .of-prev img{max-width:100%;max-height:100%;object-fit:contain}
+.offed .of-prev small{color:#888;font-size:10px;text-align:center;padding:2px 4px;line-height:1.2}
