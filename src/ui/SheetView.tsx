@@ -84,6 +84,8 @@ const isPlan = (c: Content) => c === "plan" || c === "elec" || c === "plum" || P
 /** Láminas que van siempre con la planta baja. */
 const groundOnly = (c: Content) => c === "site" || c === "found" || c === "mxcim";
 const isText = (c: Content) => TEXT_SHEETS.includes(c);
+/** Láminas de isométricos de plomería: la mexicana (mxiso) y el riser diagram de EE.UU. */
+const isIso = (c: Content) => c === "mxiso" || c === "riser";
 const FACH_PARTS: Facade[][] = [["S", "N"], ["E", "O"]];
 const FACADE_EN: Record<Facade, string> = { S: "South", E: "East", N: "North", O: "West" };
 /** En pies y pulgadas las láminas van en inglés, como las pide el departamento de construcción. */
@@ -119,7 +121,7 @@ function viewsOf(ed: Editor, content: Content, part = 0): View[] {
 
 /** Escala automática de una lámina. */
 function autoScaleOf(ed: Editor, content: Content, level: number) {
-  if (isText(content) || content === "mxiso") return imperial() ? 48 : 50;
+  if (isText(content) || isIso(content)) return imperial() ? 48 : 50;
   if (content === "site") {
     // la parcela entera más sitio para las cotas y el nombre de la calle
     const st = site(ed.project.levels[0]), b = planBox(), w = st.w + 12 * FT, d = st.d + 16 * FT;
@@ -241,7 +243,7 @@ function Sheet({ ed, content, level, scale, zoom = 1, set, os = OVERSAMPLE }: { 
       drawElevation(ctx, el, (W - ew * s) / 2, (top + eh * s) / 2 + 4, s, "", { entourage: p.entourage !== false });
       return;
     }
-    if (content === "mxiso") { drawIsometrics(ctx, p, W, H, PX_MM); return; }
+    if (isIso(content)) { drawIsometrics(ctx, p, W, H, PX_MM, content === "riser"); return; }
     if (!isPlan(content)) {
       const s = (1000 / scale) * PX_MM, g = grid(views.length, stacked), cw = W / g.cols, ch = H / g.rows;
       ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, W, H);
@@ -311,14 +313,14 @@ function Sheet({ ed, content, level, scale, zoom = 1, set, os = OVERSAMPLE }: { 
       {content === "mxport" && <MxCoverBody ed={ed} box={planBox()} />}
       {content === "mxnotas" && <MxNotesBody box={planBox()} />}
       <div className="viewtitle" style={{ left: `${planBox().x + 6}mm`, top: `${planBox().y + planBox().h + 1}mm` }}>
-        <span className="vt-n">{isText(content) || content === "mxiso" ? planName.toUpperCase() : content === "elev" ? t("ALZADOS", "EXTERIOR ELEVATIONS") : content === "fach" ? views.map((v) => v.label).join(t(" y ", " & ")).toUpperCase() : content === "sec" ? t("SECCIONES", "BUILDING SECTIONS") : content === "site" ? planName.toUpperCase() : planName ? `${lv.name} · ${planName}`.toUpperCase() : lv.name.toUpperCase()}</span>
-        {content === "mxiso" && <span className="vt-s">SIN ESCALA · {p.levels.length > 1 ? "todos los niveles" : lv.name}</span>}
-        {!isText(content) && content !== "mxiso" && <>
+        <span className="vt-n">{isText(content) || isIso(content) ? planName.toUpperCase() : content === "elev" ? t("ALZADOS", "EXTERIOR ELEVATIONS") : content === "fach" ? views.map((v) => v.label).join(t(" y ", " & ")).toUpperCase() : content === "sec" ? t("SECCIONES", "BUILDING SECTIONS") : content === "site" ? planName.toUpperCase() : planName ? `${lv.name} · ${planName}`.toUpperCase() : lv.name.toUpperCase()}</span>
+        {isIso(content) && <span className="vt-s">{t("SIN ESCALA", "NOT TO SCALE")} · {p.levels.length > 1 ? t("todos los niveles", "all levels") : lv.name}</span>}
+        {!isText(content) && !isIso(content) && <>
           <span className="vt-s">{t("E ", "SCALE: ")}{scaleLabel(scale)}{isPlan(content) && content !== "site" && content !== "mxazo" && ` · ${t("cota", "F.F.")} ${fmtElev(lv.elev)}`}</span>
           <ScaleBar den={scale} />
         </>}
       </div>
-      {content !== "mxiso" && <div className="sheetnorth" style={{ left: `${planBox().x + planBox().w - 26}mm`, top: `${planBox().y + planBox().h - 9}mm` }}><NorthArrow /></div>}
+      {!isIso(content) && <div className="sheetnorth" style={{ left: `${planBox().x + planBox().w - 26}mm`, top: `${planBox().y + planBox().h - 9}mm` }}><NorthArrow /></div>}
       <aside ref={side} className="sheetside" style={{ left: `${sheetSize().w - FRAME - SIDE}mm`, top: `${FRAME}mm`, width: `${SIDE}mm`, height: `${sheetSize().h - 2 * FRAME}mm` }}>
         {permit ? <PermitSide ed={ed} content={content} level={level} set={set} /> : MX_EXTRA_SIDE.includes(content) ? <MxExtraSide ed={ed} content={content} set={set ?? mxSet(ed)} /> : !en && ((MX_KINDS as string[]).includes(content) || content === "elec") ? <MxSide ed={ed} content={content} level={level} /> : content === "elec" || content === "plum" ? <MepTables p={p} disc={content} level={level} notes={en} /> : <div className="tables">
           {content === "fach" && <>
@@ -356,7 +358,7 @@ function Sheet({ ed, content, level, scale, zoom = 1, set, os = OVERSAMPLE }: { 
           <RevisionBlock revs={info.revisions ?? []} en={en} />
           <div className="c-proj"><small>{t("Proyecto", "Project")}</small>{info.name || "—"}</div>
           <div className="c-row">
-            <div><small>{t("Plano", "Sheet title")}</small>{en && !permit && !isPlan(content) ? (SHEET_TITLES[content]?.en ?? "") : content === "elev" ? "Alzados norte, sur, este y oeste" : content === "fach" ? views.map((v) => v.label).join(" y ") : content === "sec" ? (views.length ? `Secciones ${secs.slice(0, 4).map((x) => `${x.name}-${x.name}'`).join(", ")}` : "Secciones") : isText(content) || content === "site" || content === "mxiso" ? planName : planName ? `${planName} · ${lv.name}` : lv.name}</div>
+            <div><small>{t("Plano", "Sheet title")}</small>{en && !permit && !isPlan(content) ? (SHEET_TITLES[content]?.en ?? "") : content === "elev" ? "Alzados norte, sur, este y oeste" : content === "fach" ? views.map((v) => v.label).join(" y ") : content === "sec" ? (views.length ? `Secciones ${secs.slice(0, 4).map((x) => `${x.name}-${x.name}'`).join(", ")}` : "Secciones") : isText(content) || content === "site" || isIso(content) ? planName : planName ? `${planName} · ${lv.name}` : lv.name}</div>
           </div>
           <div className="c-row">
             <div><small>{t("Autor", "Designer")}</small>{info.author || "—"}</div>
@@ -364,7 +366,7 @@ function Sheet({ ed, content, level, scale, zoom = 1, set, os = OVERSAMPLE }: { 
           </div>
           {office && <OfficeSign o={office} en={en} />}
           <div className="c-row">
-            <div><small>{t("Escala", "Scale")}</small>{content === "mxiso" ? "Sin escala" : isText(content) ? t("Indicada", isDetails(content) ? "As noted" : "N.T.S.") : scaleLabel(scale)}</div>
+            <div><small>{t("Escala", "Scale")}</small>{isIso(content) ? t("Sin escala", "N.T.S.") : isText(content) ? t("Indicada", isDetails(content) ? "As noted" : "N.T.S.") : scaleLabel(scale)}</div>
             <div><small>{t("Fecha", "Date")}</small>{info.date}</div>
             {(info.revisions ?? []).length > 0 && <div className="c-rv"><small>Rev.</small>{info.revisions![info.revisions!.length - 1].no}</div>}
             <div className="c-no"><small>{t("Lámina", "Sheet")}</small>{sheetNo}</div>
@@ -406,6 +408,7 @@ export function permitSet(ed: Editor): PermitEntry[] {
   lvs.forEach((_, i) => add("elec", i, "E", 101, planScale, lvTitle("elec", i)));
   add("details4", 0, "E", 501);
   lvs.forEach((_, i) => add("plum", i, "P", 101, planScale, lvTitle("plum", i)));
+  if (lvs.some((l) => l.runs.some((r) => r.system !== "elec"))) add("riser", 0, "P", 401);
   add("details5", 0, "P", 501);
   lvs.forEach((_, i) => add("hvac", i, "M", 101, planScale, lvTitle("hvac", i)));
   add("details6", 0, "M", 501);

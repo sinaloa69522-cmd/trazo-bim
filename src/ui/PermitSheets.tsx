@@ -3,6 +3,7 @@
 import { SiteMap } from "./SiteMap";
 import type { ReactNode } from "react";
 import { ROOFINGS, SIDINGS, usedFinishes } from "../core/finishes";
+import { dwvLoad } from "../core/dwv";
 import { foundationType } from "../core/foundation";
 import type { Project } from "../core/model";
 import { feetInches, fmtArea } from "../core/units";
@@ -11,8 +12,8 @@ import { ABBREVIATIONS, CODES, DEFERRED, DESIGN_CRITERIA, GENERAL_NOTES, SCOPE, 
 import type { Editor } from "../editor/Editor";
 import { SheetLegend } from "./SheetLegend";
 
-export type PermitKind = "cover" | "notes" | "site" | "found" | "floorfr" | "wallfr" | "rooffr" | "details" | "details2" | "details3" | "hvac" | "details4" | "details5" | "details6";
-export const PERMIT_KINDS: PermitKind[] = ["cover", "notes", "site", "found", "floorfr", "wallfr", "rooffr", "details", "details2", "details3", "hvac", "details4", "details5", "details6"];
+export type PermitKind = "cover" | "notes" | "site" | "found" | "floorfr" | "wallfr" | "rooffr" | "details" | "details2" | "details3" | "hvac" | "details4" | "details5" | "details6" | "riser";
+export const PERMIT_KINDS: PermitKind[] = ["cover", "notes", "site", "found", "floorfr", "wallfr", "rooffr", "details", "details2", "details3", "hvac", "details4", "details5", "details6", "riser"];
 /** Láminas sin dibujo de planta: se maquetan en HTML/SVG. */
 export const TEXT_SHEETS = ["cover", "notes", "details", "details2", "details3", "details4", "details5", "details6", "mxdet1", "mxdet2", "mxdet3", "mxarq", "mxinst", "mxport", "mxnotas", "mxdie", "mxdih", "mxdaa"];
 /** Láminas de detalles (A-501 a A-503 y los de instalaciones E-501, P-501, M-501). */
@@ -39,6 +40,7 @@ export const SHEET_TITLES: Record<string, { en: string; es: string }> = {
   hvac: { en: "Mechanical (HVAC) Plan", es: "HVAC (aire acondicionado)" },
   details4: { en: "Electrical Details", es: "Detalles de electricidad" },
   details5: { en: "Plumbing Details", es: "Detalles de plomería" },
+  riser: { en: "Plumbing Isometrics & Riser Diagram", es: "Isométricos de plomería (riser)" },
   details6: { en: "Mechanical (HVAC) Details", es: "Detalles de aire acondicionado" },
 };
 
@@ -134,6 +136,26 @@ export function PermitSide({ ed, content, level, set = [] }: { ed: Editor; conte
         <tbody>{h.supplies.map((s, i) => <tr key={i}><td><b>S-{i + 1}</b></td><td>{s.room}</td><td className="r">{s.cfm}</td><td className="r">{s.duct}"Ø</td></tr>)}
           <tr><td><b>R-1</b></td><td>RETURN</td><td className="r">{h.supplies.reduce((t, s) => t + s.cfm, 0)}</td><td className="r">16"Ø</td></tr></tbody></table>
     </> : <p className="empty">Define rooms to lay out the HVAC system.</p>;
+  } else if (content === "riser") {
+    const d = dwvLoad(ed.project);
+    const line = (c: string, dash = "", w = 1.2) => <svg width="15mm" height="3mm" viewBox="0 0 15 3"><line x1="1" y1="1.5" x2="14" y2="1.5" stroke={c} strokeWidth={w * 0.5} strokeDasharray={dash} /></svg>;
+    tables = <>
+      <h4>Legend</h4>
+      <table className="symleg"><tbody>
+        <tr><td>{line("#1f5fd1")}</td><td>COLD WATER (PEX)</td></tr>
+        <tr><td>{line("#d1352b", "2.2 0.8")}</td><td>HOT WATER (PEX)</td></tr>
+        <tr><td>{line("#7a4a22", "", 1.6)}</td><td>SANITARY DRAIN (PVC DWV)</td></tr>
+        <tr><td><svg width="15mm" height="3mm" viewBox="0 0 15 3"><path d="M5 1.5h6M11 1.5l-2 -0.9v1.8z" stroke="#7a4a22" strokeWidth="0.4" fill="#7a4a22" /></svg></td><td>FLOW, 1/4" PER FT MIN</td></tr>
+        <tr><td><b>VTR</b></td><td>VENT THROUGH ROOF</td></tr>
+        <tr><td><b>CO</b></td><td>CLEANOUT</td></tr>
+      </tbody></table>
+      <h4>Drainage fixture units (IRC P3004.1)</h4>
+      {d.rows.length ? <table><thead><tr><th>Fixture</th><th className="r">Qty</th><th className="r">DFU</th><th className="r">Trap</th></tr></thead>
+        <tbody>{d.rows.map((r) => <tr key={r.kind}><td>{r.name.toUpperCase()}</td><td className="r">{r.count}</td><td className="r">{r.count * r.dfu}</td><td className="r">{r.trap}</td></tr>)}
+          <tr><td><b>TOTAL</b></td><td /><td className="r"><b>{d.total}</b></td><td /></tr></tbody></table>
+        : <p className="empty">Place fixtures to size the drain.</p>}
+      {d.rows.length > 0 && <p className="empty">BUILDING DRAIN {d.drain} AT 1/4" PER FT ({d.total} DFU, IRC P3005.4.2).</p>}
+    </>;
   } else if (content === "cover") {
     tables = <>
       <h4>Sheet index</h4>
