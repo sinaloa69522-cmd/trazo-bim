@@ -30,7 +30,7 @@ export function officeOf(p: Project): Office | null {
 export const hasOffice = (o: Office) => !!(o.name || o.responsible || o.license || o.logo || o.sign);
 
 /** Nombre del responsable con su cédula, para firmas y cuadros: "Arq. Ana Ruiz · Céd. prof. 1234567". */
-export function responsibleLine(o: Office | null, fallback = "") {
+export function responsibleLine(o: Office | null, fallback = "", en = false) {
   if (!o) return fallback;
-  return [o.responsible || fallback, o.license && `Céd. prof. ${o.license}`].filter(Boolean).join(" · ");
+  return [o.responsible || fallback, o.license && `${en ? "License" : "Céd. prof."} ${o.license}`].filter(Boolean).join(" · ");
 }

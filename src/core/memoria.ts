@@ -2,6 +2,7 @@
 // cuadro de áreas, sistema constructivo, acabados, carpintería, instalaciones, revisión de reglamento,
 // reglamentos aplicables y firmas. Sale como documento (docx.ts) para Word o para imprimir.
 
+import { narrative } from "./narrative";
 import { officeOf } from "./office";
 import { checkProject, RULES } from "./codeCheck";
 import type { Block, Doc } from "./docx";
@@ -30,6 +31,8 @@ const fecha = (iso: string) => {
 const ROOF: Record<string, string> = { flat: "azotea plana", gable: "cubierta a dos aguas", hip: "cubierta a cuatro aguas", shed: "cubierta a un agua", mansard: "cubierta amansardada", gambrel: "cubierta holandesa" };
 
 export function memoria(p: Project): Doc {
+  // en pies y pulgadas: project narrative en inglés para el permiso de EE.UU.
+  if (p.units === "imperial") return narrative(p);
   const info = p.info, B: Block[] = [];
   const areas = areaTable(p.levels), useful = areas.reduce((s, l) => s + l.useful, 0), built = areas.reduce((s, l) => s + l.built, 0);
   const ft = foundationType(p);
