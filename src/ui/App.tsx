@@ -275,10 +275,10 @@ export function App() {
           e.target.value = "";
           if (f) void openAny(f);
         }} />
-        <div className="group" role="group" aria-label="Unidades" title="Cómo se escriben y se teclean las medidas. El dibujo no cambia.">
-          <span className="glbl">Unidades</span>
-          <button className="tb" aria-pressed={ed.project.units !== "imperial"} onClick={() => ed.setUnits("metric")}>m</button>
-          <button className="tb" aria-pressed={ed.project.units === "imperial"} onClick={() => ed.setUnits("imperial")} title="Pies y pulgadas, como en Estados Unidos">ft-in</button>
+        <div className="group" role="group" aria-label="País del proyecto" title="Cada país con su sistema constructivo, reglamento, láminas, presupuesto y unidades. El dibujo no cambia.">
+          <span className="glbl">País</span>
+          <button className="tb" aria-pressed={ed.project.units !== "imperial"} onClick={() => ed.setUnits("metric")} title="Block y concreto, Reglamento de Construcciones, juego ejecutivo, pesos y metros">México</button>
+          <button className="tb" aria-pressed={ed.project.units === "imperial"} onClick={() => ed.setUnits("imperial")} title="Wood frame, IRC, juego de permiso en inglés, dólares, pies y pulgadas">EE.UU.</button>
         </div>
         <div className="group exp" role="group" aria-label="Exportar">
           <span className="glbl">Exportar</span>

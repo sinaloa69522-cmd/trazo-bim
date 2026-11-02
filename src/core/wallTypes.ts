@@ -11,6 +11,8 @@ export interface WallType {
   hatch: Hatch;
   /** Material principal (va al IFC) */
   material: string;
+  /** Solo para EE.UU. (wood frame y CMU); sin marca, solo para México */
+  us?: boolean;
 }
 
 export const GENERIC = "generico";
@@ -22,12 +24,15 @@ export const WALL_TYPES: WallType[] = [
   { id: "tabique-ladrillo", name: "Tabique de ladrillo 12", thick: 0.12, hatch: "brick", material: "Ladrillo cerámico" },
   { id: "tabique-yeso", name: "Tabique de placa de yeso 10", thick: 0.1, hatch: "drywall", material: "Placa de yeso laminado" },
   // EE.UU.: montantes de madera con placa de yeso a ambos lados (y tablero exterior en el de 2x6)
-  { id: "us-2x6", name: "Bastidor de madera 2x6 (exterior, EE.UU.)", thick: 0.1651, hatch: "drywall", material: "Madera (wood frame 2x6)" },
-  { id: "us-2x4", name: "Bastidor de madera 2x4 (interior, EE.UU.)", thick: 0.1143, hatch: "drywall", material: "Madera (wood frame 2x4)" },
-  { id: "us-cmu8", name: "Block CMU 8\" (EE.UU.)", thick: 0.2032, hatch: "block", material: "Block de concreto (CMU)" },
+  { id: "us-2x6", name: "Bastidor de madera 2x6 (exterior, EE.UU.)", thick: 0.1651, hatch: "drywall", material: "Madera (wood frame 2x6)", us: true },
+  { id: "us-2x4", name: "Bastidor de madera 2x4 (interior, EE.UU.)", thick: 0.1143, hatch: "drywall", material: "Madera (wood frame 2x4)", us: true },
+  { id: "us-cmu8", name: "Block CMU 8\" (EE.UU.)", thick: 0.2032, hatch: "block", material: "Block de concreto (CMU)", us: true },
   { id: "block-15", name: "Muro de block 15", thick: 0.15, hatch: "block", material: "Block de concreto" },
   { id: GENERIC, name: "Muro genérico", thick: 0.15, hatch: "solid", material: "Genérico" },
 ];
+
+/** Tipos de muro del país del proyecto: los de México en metros, los de EE.UU. en pies; el genérico en los dos. */
+export const wallTypesFor = (us: boolean) => WALL_TYPES.filter((t) => t.id === GENERIC || !!t.us === us);
 
 export function wallType(id: string): WallType {
   return WALL_TYPES.find((t) => t.id === id) ?? WALL_TYPES[WALL_TYPES.length - 1];

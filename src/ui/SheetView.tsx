@@ -487,6 +487,9 @@ export function SheetView({ ed }: { ed: Editor }) {
   const zoom = userZoom ?? fitZoom;
   const [den, setDen] = useState<number | null>(null);
   const [content, setContent] = useState<Content>("plan");
+  // al cambiar de país, una lámina del juego del otro país vuelve a la planta
+  const usNow = ed.project.units === "imperial";
+  if ((usNow ? (MX_KINDS as string[]) : (PERMIT_KINDS as string[])).includes(content)) setContent("plan");
   const [part, setPart] = useState(0);
   const [lvl, setLvl] = useState<number | null>(null);
   const [all, setAll] = useState(false);
@@ -684,12 +687,12 @@ export function SheetView({ ed }: { ed: Editor }) {
             <option value="fach1">Fachadas este y oeste</option>
             <option value="elev">Alzados (4 en una lámina)</option>
             <option value="sec">Secciones ({secs.length > 4 ? "las 4 primeras" : secs.length})</option>
-            <optgroup label="Juego ejecutivo en metros (México)">
-              {MX_KINDS.map((k) => <option key={k} value={k}>{MX_TITLES[k]}</option>)}
-            </optgroup>
-            <optgroup label="Juego de permiso EE.UU. (en inglés)">
+            {/* cada país con su juego de planos: México en metros, EE.UU. en pies y en inglés */}
+            {imperial() ? <optgroup label="Juego de permiso EE.UU. (en inglés)">
               {PERMIT_KINDS.map((k) => <option key={k} value={k}>{SHEET_TITLES[k].es}</option>)}
-            </optgroup>
+            </optgroup> : <optgroup label="Juego ejecutivo de México">
+              {MX_KINDS.map((k) => <option key={k} value={k}>{MX_TITLES[k]}</option>)}
+            </optgroup>}
           </select>
         </label>
         <label>Escala

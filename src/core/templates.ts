@@ -13,6 +13,8 @@ export interface HouseTemplate {
   name: string;
   /** Una línea: medidas, superficie y espacios */
   desc: string;
+  /** País: las de México en metros, la de EE.UU. en pies */
+  us?: boolean;
   build(): Project;
 }
 
@@ -170,6 +172,6 @@ function usRanch(): Project {
 export const TEMPLATES: HouseTemplate[] = [
   { id: "2rec", name: "Casa de 2 recámaras", desc: "8 × 9 m · 72 m² · 2 recámaras, 1 baño, sala-comedor-cocina abierta", build: twoBed },
   { id: "3rec", name: "Casa de 3 recámaras", desc: "10 × 10 m · 100 m² · 3 recámaras, 2 baños, estancia abierta con cocina", build: threeBed },
-  { id: "us3", name: "Casa en EE.UU. de 3 recámaras (pies)", desc: "48' × 32' · 1,536 sq ft · 3 recámaras, 2 baños, wood frame, para permiso en EE.UU.", build: usRanch },
+  { id: "us3", name: "Casa de 3 recámaras (ranch)", desc: "48' × 32' · 1,536 sq ft · 3 recámaras, 2 baños, wood frame sobre losa", us: true, build: usRanch },
   { id: "angosta", name: "Casa en lote angosto", desc: "6 × 12 m · 72 m² · 2 recámaras, 1 baño, cocina-comedor y sala", build: narrowTwoBed },
 ];

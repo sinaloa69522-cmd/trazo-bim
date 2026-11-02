@@ -6,11 +6,11 @@ import { IDEAL_TREAD, POST_R, shortTread, sizedByTread, STAIR_TYPES, stairLabel,
 import { FURNITURE, FURNITURE_CATS, furnitureDef } from "../core/furniture";
 import { CIRCUITS, mepDef, mepOf, runLength, SYSTEMS, systemDef, type Discipline } from "../core/mep";
 import { SymbolIcon, SystemIcon } from "./MepIcons";
-import { GENERIC, WALL_TYPES, wallType, wallTypeLabel } from "../core/wallTypes";
+import { GENERIC, wallType, wallTypeLabel, wallTypesFor } from "../core/wallTypes";
 import { LAYERS, type Dormer, type DormerWindow, type Model, type RoofKind, type RunSystem, type StairKind } from "../core/model";
 import { DRAIN_LABEL, ROOF_LABEL, type Editor } from "../editor/Editor";
 import { fmtArea, fmtDim, fmtElev, fmtField, fmtLen, fmtSmall, imperial, lenUnit, parseLen } from "../core/units";
-import { finish, ROOFINGS, SIDINGS, type Finish } from "../core/finishes";
+import { finish, finishesFor, ROOFINGS, SIDINGS, type Finish } from "../core/finishes";
 import { finishSwatch } from "../editor/finishTextures";
 import { DECK_TYPES, deckGeom, deckTakeoff, deckType, RAILS, SIDE_NAME } from "../core/decks";
 import { FOUNDATIONS, foundationType, type FoundationKind } from "../core/foundation";
@@ -43,7 +43,8 @@ function WallTypeField({ id, value, label = "Tipo de muro", onChange }: { id: st
       <label htmlFor={id} className="full">{label}</label>
       <select id={id} className="full" value={value} onChange={(e) => e.target.value && onChange(e.target.value)}>
         {!value && <option value="">Elige un tipo…</option>}
-        {WALL_TYPES.map((t) => <option key={t.id} value={t.id}>{t.id === GENERIC ? t.name : `${t.name} (${fmtLen(t.thick)})`}</option>)}
+        {/* solo los tipos del país del proyecto, más el que ya tenga el muro */}
+        {[...wallTypesFor(imperial()), ...(value && !wallTypesFor(imperial()).some((t) => t.id === value) ? [wallType(value)] : [])].map((t) => <option key={t.id} value={t.id}>{t.id === GENERIC ? t.name : `${t.name} (${fmtLen(t.thick)})`}</option>)}
       </select>
     </>
   );
@@ -52,6 +53,8 @@ function WallTypeField({ id, value, label = "Tipo de muro", onChange }: { id: st
 /** Muestrario de acabados: una pastilla con la textura por material; la primera deja el de por defecto. */
 function FinishPicker({ label, list, value, none, multi, onChange }: { label: string; list: Finish[]; value: string | undefined; none: string; multi?: boolean; onChange: (id: string | undefined) => void }) {
   const cur = finish(value), noneOn = !cur && !multi;
+  // solo los acabados del país del proyecto, más el que ya tenga el elemento
+  list = [...finishesFor(list, imperial()), ...(cur && !finishesFor(list, imperial()).includes(cur) ? [cur] : [])];
   return (
     <div className="full finpick">
       <label>{label}: <b>{cur ? cur.name : none}</b></label>
@@ -276,7 +279,7 @@ function Properties({ ed, onFocusCommand }: { ed: Editor; onFocusCommand: () => 
       {r.kind === "flat" && <NumberField id={`${key}-pp`} label="Pretil (m, 0 sin pretil)" value={r.parapet ?? PARAPET.h} min={0} onCommit={(v) => ed.edit(() => { r.parapet = v; })} />}
       <NumberField id={`${key}-o`} label="Vuelo (m)" value={r.overhang} min={0} onCommit={(v) => ed.edit(() => { r.overhang = v; })} />
       <NumberField id={`${key}-b`} label="Arranque (m)" value={r.base} min={0} onCommit={(v) => ed.edit(() => { r.base = v; })} />
-      <FinishPicker label="Material de cubierta" list={ROOFINGS} value={r.finish} none={r.kind === "flat" ? "Sin definir" : "Teja cerámica (por defecto)"}
+      <FinishPicker label="Material de cubierta" list={ROOFINGS} value={r.finish} none={r.kind === "flat" ? "Sin definir" : imperial() ? "Teja asfáltica (por defecto)" : "Teja cerámica (por defecto)"}
         onChange={(f) => ed.setFinish([r.id], f, "roof")} />
       {r.kind !== "flat" && (r.dormers ?? []).map((dm, i) => <Fragment key={dm.id}>
         <p className="full sub">Buhardilla {i + 1}</p>
@@ -612,7 +615,7 @@ function Levels({ ed }: { ed: Editor }) {
           onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
           onBlur={(e) => { const v = e.target.value.trim(); if (v && v !== cur.name) ed.renameLevel(v); }} />
         <NumberField id="lv-elev" label="Cota (m)" value={cur.elev} onCommit={(v) => ed.setLevelElevation(v)} />
-        <div className="full finpick">
+        {imperial() ? <div className="full finpick">
           <label>Cimentación: <b>{foundationType(ed.project).name}</b></label>
           <div className="fingrid fdn" role="radiogroup" aria-label="Cimentación">
             {FOUNDATIONS.map((f) => (
@@ -621,7 +624,7 @@ function Levels({ ed }: { ed: Editor }) {
               </button>
             ))}
           </div>
-        </div>
+        </div> : <p className="full hint">Cimentación: zapatas corridas de concreto armado con cadena de desplante (lámina de cimentación EST).</p>}
         <TerrainFields ed={ed} />
         <div className="full" style={{ display: "flex", gap: 6 }}>
           <button className="btn" style={{ flex: 1 }} onClick={() => ed.addLevel(false)} title="Nivel vacío encima, con el de abajo en gris como referencia">Nuevo nivel</button>
@@ -763,15 +766,22 @@ function FurnitureIcon({ kind, size = 34 }: { kind: string; size?: number }) {
   );
 }
 
+/** Nombre en EE.UU. de lo que cambia de un país a otro. */
+const MEP_EN: Record<string, string> = {
+  enchufe: "Contacto 15/20 A (receptacle)", "enchufe-fuerza": "Contacto 240 V (range / dryer)", cuadro: "Tablero 200 A (main panel)",
+  acometida: "Acometida y medidor (service)", sumidero: "Coladera (floor drain)", bajante: "Bajante y ventila (stack / VTR)",
+  contador: "Medidor de agua (water meter)", registro: "Registro (cleanout)", termo: "Calentador 50 gal (water heater)",
+};
+
 function MepCatalog({ ed }: { ed: Editor }) {
   const disc: Discipline = mepDef(ed.defaults.mepKind).disc;
   return (
     <section>
       <h2>{disc === "elec" ? "Electricidad" : "Plomería"}</h2>
       <div className="catalog" role="radiogroup" aria-label="Elemento a colocar">
-        {mepOf(disc).map((f) => (
+        {mepOf(disc).filter((f) => !(imperial() && f.kind === "tinaco")).map((f) => (
           <button key={f.kind} role="radio" aria-checked={ed.defaults.mepKind === f.kind} className="cat sym-cat" onClick={() => ed.pickFixture(f.kind)}>
-            <SymbolIcon kind={f.kind} /><span>{f.label}<small>{f.circuit ? `${f.circuit} · ` : ""}h {fmtLen(f.h)}</small></span>
+            <SymbolIcon kind={f.kind} /><span>{(imperial() && MEP_EN[f.kind]) || f.label}<small>{f.circuit ? `${f.circuit} · ` : ""}h {fmtLen(f.h)}</small></span>
           </button>
         ))}
       </div>

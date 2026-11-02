@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { TEMPLATES } from "../core/templates";
 import type { Level } from "../core/model";
 import type { Editor } from "../editor/Editor";
@@ -19,13 +19,18 @@ function Thumb({ lv }: { lv: Level }) {
 export function TemplateDialog({ ed, onClose, onLoaded }: { ed: Editor; onClose: () => void; onLoaded: () => void }) {
   const ref = useRef<HTMLDialogElement>(null);
   const built = useMemo(() => TEMPLATES.map((t) => ({ t, lv: t.build().levels[0] })), []);
+  const [us, setUs] = useState(ed.project.units === "imperial");
   useEffect(() => { ref.current?.showModal(); }, []);
   return (
     <dialog ref={ref} onClose={onClose} className="tpldlg">
       <h3>Plantillas de casa</h3>
       <p className="hint">Empieza con una casa ya dibujada: muros, puertas, ventanas, espacios, muebles, losa, techo, cotas e instalaciones básicas. Reemplaza el dibujo actual; Deshacer lo recupera.</p>
+      <div className="group" role="tablist" aria-label="País">
+        <button className="tb" role="tab" aria-pressed={!us} onClick={() => setUs(false)}>México (metros)</button>
+        <button className="tb" role="tab" aria-pressed={us} onClick={() => setUs(true)}>Estados Unidos (pies)</button>
+      </div>
       <div className="tpls">
-        {built.map(({ t, lv }) => (
+        {built.filter(({ t }) => !!t.us === us).map(({ t, lv }) => (
           <button key={t.id} className="tpl" onClick={() => { ed.loadTemplate(t.id); onLoaded(); ref.current?.close(); }}>
             <Thumb lv={lv} />
             <b>{t.name}</b>
